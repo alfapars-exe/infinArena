@@ -3,13 +3,18 @@ import next from "next";
 import { Server as SocketIOServer } from "socket.io";
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = "localhost";
+const hostname = process.env.HOSTNAME || "localhost";
 const port = parseInt(process.env.PORT || "3000", 10);
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
+  // Initialize database
+  const { ensureDbMigrations } = await import("./src/lib/db/migrations");
+  await ensureDbMigrations();
+  console.log("✓ Database migrations completed");
+
   const { setupSocketHandlers } = await import("./src/lib/socket/server");
 
   const httpServer = createServer((req, res) => {

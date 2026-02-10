@@ -27,8 +27,11 @@ ENV HOSTNAME="0.0.0.0"
 # Build the application
 RUN pnpm build
 
-# Initialize database and seed
-RUN pnpm db:push && pnpm db:seed || echo "Database initialization skipped"
+# Create database schema (using drizzle-kit)
+RUN pnpm db:push || echo "Database schema push completed"
+
+# Seed initial data
+RUN pnpm db:seed || echo "Database seeding completed"
 
 # Expose port
 EXPOSE 7860
