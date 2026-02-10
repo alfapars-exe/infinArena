@@ -1,0 +1,129 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-inf-black text-white min-h-screen;
+    font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-inf-red text-white font-bold py-3 px-6 rounded-lg
+           hover:bg-red-700 transition-all duration-200 transform hover:scale-105
+           active:scale-95 shadow-lg;
+  }
+
+  .btn-secondary {
+    @apply bg-inf-blue text-white font-bold py-3 px-6 rounded-lg
+           hover:bg-blue-800 transition-all duration-200 transform hover:scale-105
+           active:scale-95 shadow-lg;
+  }
+
+  .btn-danger {
+    @apply bg-inf-red text-white font-bold py-3 px-6 rounded-lg
+           hover:bg-red-700 transition-all duration-200 transform hover:scale-105
+           active:scale-95 shadow-lg;
+  }
+
+  .btn-success {
+    @apply bg-inf-green text-white font-bold py-3 px-6 rounded-lg
+           hover:bg-green-700 transition-all duration-200 transform hover:scale-105
+           active:scale-95 shadow-lg;
+  }
+
+  .card {
+    @apply bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30
+           text-white placeholder-white/60 focus:outline-none focus:ring-2
+           focus:ring-inf-turquoise/50 focus:border-transparent transition-all;
+  }
+
+  select.input-field {
+    color-scheme: dark;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+  }
+
+  select.input-field option {
+    background-color: #1f2937;
+    color: #ffffff;
+  }
+
+  select.input-field option:checked {
+    background-color: #2563eb;
+    color: #ffffff;
+  }
+
+  .answer-btn {
+    @apply w-full py-6 rounded-lg font-bold text-xl text-white
+           transition-all duration-200 transform hover:scale-[1.02]
+           active:scale-[0.98] shadow-xl cursor-pointer
+           flex items-center justify-center gap-3;
+  }
+}
+
+/* Bootstrap + Tailwind interoperability helpers */
+.app-container {
+  width: min(1400px, 100%);
+  margin: 0 auto;
+}
+
+.modal-shell {
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
+}
+
+.modal-body-scroll {
+  max-height: calc(100vh - 12rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sticky-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #1f2937;
+}
+
+.sticky-modal-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: #1f2937;
+}
+
+.choice-row {
+  min-width: 0;
+}
+
+.choice-row input[type="text"] {
+  min-width: 0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+

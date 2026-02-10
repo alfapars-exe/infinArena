@@ -1,0 +1,115 @@
+﻿export interface QuestionPayload {
+  id: number;
+  questionText: string;
+  questionType:
+    | "multiple_choice"
+    | "true_false"
+    | "multi_select"
+    | "text_input"
+    | "ordering";
+  timeLimitSeconds: number;
+  mediaUrl?: string | null;
+  backgroundUrl?: string | null;
+  choices: {
+    id: number;
+    choiceText: string;
+    orderIndex: number;
+  }[];
+}
+
+export interface PlayerRanking {
+  playerId: number;
+  nickname: string;
+  avatar: string;
+  totalScore: number;
+  rank: number;
+  streak?: number;
+}
+
+export interface AnswerResult {
+  isCorrect: boolean;
+  pointsAwarded: number;
+  streakBonus: number;
+  totalScore: number;
+  correctChoiceId: number;
+  streak: number;
+}
+
+export interface AnswerAck {
+  received: true;
+}
+
+export interface QuestionStats {
+  choiceCounts: Record<number, number>;
+  correctChoiceId: number;
+  correctChoiceIds?: number[];
+  totalPlayers: number;
+  correctCount: number;
+  answeredCount: number;
+  questionNumber: number;
+  totalQuestions: number;
+  remainingQuestions: number;
+}
+
+export interface BatchAnswerResult {
+  isCorrect: boolean;
+  pointsAwarded: number;
+  streakBonus: number;
+  totalScore: number;
+  correctChoiceId: number;
+  streak: number;
+}
+
+export interface ClientToServerEvents {
+  "player:join": (data: { pin: string; nickname: string }) => void;
+  "player:answer": (data: {
+    questionId: number;
+    choiceId?: number;
+    choiceIds?: number[];
+    orderedChoiceIds?: number[];
+    textAnswer?: string;
+    responseTimeMs: number;
+  }) => void;
+  "admin:start-quiz": (data: { sessionId: number }) => void;
+  "admin:start-live": (data: { sessionId: number }) => void;
+  "admin:next-question": (data: { sessionId: number }) => void;
+  "admin:end-quiz": (data: { sessionId: number }) => void;
+  "admin:join-session": (data: { sessionId: number }) => void;
+}
+
+export interface ServerToClientEvents {
+  "lobby:player-joined": (data: {
+    playerId: number;
+    nickname: string;
+    avatar: string;
+    playerCount: number;
+  }) => void;
+  "lobby:player-left": (data: {
+    playerId: number;
+    nickname: string;
+    playerCount: number;
+  }) => void;
+  "game:countdown": (data: { count: number }) => void;
+  "game:question-start": (data: {
+    question: QuestionPayload;
+    questionNumber: number;
+    totalQuestions: number;
+  }) => void;
+  "game:answer-ack": (data: AnswerAck) => void;
+  "game:time-up": () => void;
+  "game:batch-results": (data: BatchAnswerResult) => void;
+  "game:answer-result": (data: AnswerResult) => void;
+  "game:question-stats": (data: QuestionStats) => void;
+  "game:leaderboard": (data: { rankings: PlayerRanking[] }) => void;
+  "game:quiz-ended": (data: { finalRankings: PlayerRanking[] }) => void;
+  "player:joined-success": (data: {
+    playerId: number;
+    sessionId: number;
+    quizTitle: string;
+    avatar: string;
+  }) => void;
+  "session:live": () => void;
+  error: (data: { message: string }) => void;
+}
+
+
