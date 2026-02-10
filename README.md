@@ -7,6 +7,7 @@ sdk: docker
 pinned: false
 license: mit
 app_port: 7860
+python_version: "3.9"
 ---
 
 # infinArena - Interactive Quiz Platform
