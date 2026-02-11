@@ -1,0 +1,19 @@
+name: Sync to Hugging Face
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Push to Hugging Face
+        run: |
+          git remote add hf https://argeinfina:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/argeinfina/infinarena.git || git remote set-url hf https://argeinfina:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/argeinfina/infinarena.git
+          git push hf main --force
