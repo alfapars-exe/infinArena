@@ -333,14 +333,15 @@ function AIGenerateModal({
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || t("ai.error"));
+        const detail = data.details ? ` (${String(data.details).slice(0, 200)})` : "";
+        setError((data.error || t("ai.error")) + detail);
         setLoading(false);
         return;
       }
 
       onSuccess(data.quiz.id);
-    } catch {
-      setError(t("ai.error"));
+    } catch (err: any) {
+      setError(t("ai.error") + (err?.message ? ` (${err.message})` : ""));
       setLoading(false);
     }
   };

@@ -173,6 +173,68 @@ CRITICAL RULES:
 - Do NOT include any text outside the JSON object`;
 }
 
+async function callHuggingFaceAPI(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  topic: string,
+  numQuestions: number,
+  useJsonFormat: boolean
+): Promise<{ content: string | null; error: string | null; status: number }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+
+  try {
+    const body: Record<string, unknown> = {
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: `Generate ${numQuestions} quiz questions about "${topic}".${!useJsonFormat ? " Return ONLY valid JSON, no other text." : ""}`,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 20000,
+    };
+
+    if (useJsonFormat) {
+      body.response_format = { type: "json_object" };
+    }
+
+    const res = await fetch(HUGGINGFACE_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "Unknown error");
+      return { content: null, error: errText, status: res.status };
+    }
+
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    return { content: content || null, error: null, status: res.status };
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    const isTimeout = err?.name === "AbortError";
+    return {
+      content: null,
+      error: isTimeout
+        ? "Request timed out (2 min)"
+        : err?.message || String(err),
+      status: isTimeout ? 504 : 0,
+    };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -213,40 +275,25 @@ export async function POST(request: NextRequest) {
     // Call HuggingFace API
     const systemPrompt = buildSystemPrompt(topic, difficulty, numQuestions, language);
 
-    const hfResponse = await fetch(HUGGINGFACE_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Generate ${numQuestions} quiz questions about "${topic}".`,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 20000,
-        response_format: { type: "json_object" },
-      }),
-    });
+    console.log(`[AI] Generating ${numQuestions} questions about "${topic}" with model ${model}`);
 
-    if (!hfResponse.ok) {
-      const errText = await hfResponse.text().catch(() => "Unknown error");
-      console.error("HuggingFace API error:", hfResponse.status, errText);
+    // Try with response_format first, fall back without it
+    let result = await callHuggingFaceAPI(apiKey, model, systemPrompt, topic, numQuestions, true);
+
+    if (!result.content && result.status === 400) {
+      console.log("[AI] Retrying without response_format...");
+      result = await callHuggingFaceAPI(apiKey, model, systemPrompt, topic, numQuestions, false);
+    }
+
+    if (result.error && !result.content) {
+      console.error("[AI] API error:", result.status, result.error);
       return NextResponse.json(
-        { error: "AI service error", details: errText },
-        { status: 502 }
+        { error: "AI service error", details: result.error },
+        { status: result.status >= 400 ? result.status : 502 }
       );
     }
 
-    const hfData = await hfResponse.json();
-    const content = hfData.choices?.[0]?.message?.content;
-
-    if (!content) {
+    if (!result.content) {
       return NextResponse.json(
         { error: "Empty response from AI" },
         { status: 502 }
@@ -256,10 +303,10 @@ export async function POST(request: NextRequest) {
     // Parse JSON response
     let parsed: { questions: AIQuestion[] };
     try {
-      parsed = JSON.parse(content);
+      parsed = JSON.parse(result.content);
     } catch {
       // Try to extract JSON from the response
-      const match = content.match(/\{[\s\S]*\}/);
+      const match = result.content.match(/\{[\s\S]*\}/);
       if (match) {
         try {
           parsed = JSON.parse(match[0]);
@@ -361,6 +408,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log(`[AI] Successfully created quiz with ${validQuestions.length}/${numQuestions} questions`);
+
     const status = validQuestions.length < numQuestions ? 201 : 200;
     return NextResponse.json(
       {
@@ -370,10 +419,10 @@ export async function POST(request: NextRequest) {
       },
       { status }
     );
-  } catch (err) {
-    console.error("AI generate error:", err);
+  } catch (err: any) {
+    console.error("[AI] Generate error:", err?.message || err);
     return NextResponse.json(
-      { error: "Failed to generate quiz" },
+      { error: "Failed to generate quiz", details: err?.message || String(err) },
       { status: 500 }
     );
   }
