@@ -3,10 +3,9 @@ import next from "next";
 import { Server as SocketIOServer } from "socket.io";
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME || "localhost";
-const port = parseInt(process.env.PORT || "3000", 10);
+const port = parseInt(process.env.PORT || "7860", 10);
 
-const app = next({ dev, hostname, port });
+const app = next({ dev });
 const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
@@ -28,9 +27,10 @@ app.prepare().then(async () => {
 
   setupSocketHandlers(io as any);
 
-  httpServer.listen(port, () => {
-    console.log(`> Ready on http://${hostname}:${port}`);
-    console.log(`> Admin panel: http://${hostname}:${port}/infinarenapanel`);
-    console.log(`> Player entry: http://${hostname}:${port}`);
+  httpServer.listen(port, "0.0.0.0", () => {
+    console.log(`> Ready on http://0.0.0.0:${port}`);
+    console.log(`> Admin panel: /infinarenapanel/login`);
+    console.log(`> Player entry: /`);
   });
+});
 });
