@@ -66,40 +66,110 @@ function buildSystemPrompt(
   language: string
 ): string {
   const lang = language === "tr" ? "Turkish" : "English";
-  return `You are a quiz generator. Generate exactly ${numQuestions} quiz questions about "${topic}" at ${difficulty} difficulty level. Write all questions and answers in ${lang}.
+  const tf = language === "tr" ? ["Doğru", "Yanlış"] : ["True", "False"];
+  const timeLimit = difficulty === "easy" ? 30 : difficulty === "medium" ? 20 : 15;
+  const basePoints = difficulty === "easy" ? 800 : difficulty === "medium" ? 1000 : 1200;
 
-Use ALL of these question types, distributed as evenly as possible:
-- multiple_choice: 2-4 choices, exactly 1 correct
-- true_false: exactly 2 choices ("True"/"False" or "Doğru"/"Yanlış"), 1 correct
-- multi_select: 3-4 choices, 2-3 correct
-- text_input: 1-3 accepted answers, ALL marked isCorrect=true
-- ordering: 3-5 items in the CORRECT order, ALL marked isCorrect=true
+  // Calculate distribution
+  const perType = Math.floor(numQuestions / 5);
+  const remainder = numQuestions % 5;
+  const dist = {
+    multiple_choice: perType + (remainder >= 1 ? 1 : 0),
+    true_false: perType + (remainder >= 2 ? 1 : 0),
+    multi_select: perType + (remainder >= 3 ? 1 : 0),
+    text_input: perType + (remainder >= 4 ? 1 : 0),
+    ordering: perType,
+  };
 
-Return ONLY valid JSON in this exact format:
+  return `You are a quiz generator. Generate EXACTLY ${numQuestions} questions about "${topic}" at ${difficulty} difficulty. Write everything in ${lang}.
+
+You MUST use ALL 5 question types with this EXACT distribution:
+- multiple_choice: ${dist.multiple_choice} question(s)
+- true_false: ${dist.true_false} question(s)
+- multi_select: ${dist.multi_select} question(s)
+- text_input: ${dist.text_input} question(s)
+- ordering: ${dist.ordering} question(s)
+
+Return ONLY a JSON object. Here is an example with one of each type:
+
 {
   "questions": [
     {
-      "questionText": "The question text",
+      "questionText": "What is the capital of France?",
       "questionType": "multiple_choice",
-      "timeLimitSeconds": 20,
-      "basePoints": 1000,
+      "timeLimitSeconds": ${timeLimit},
+      "basePoints": ${basePoints},
       "deductionPoints": 50,
       "deductionInterval": 1,
       "choices": [
-        { "choiceText": "Option A", "isCorrect": false },
-        { "choiceText": "Option B", "isCorrect": true },
-        { "choiceText": "Option C", "isCorrect": false },
-        { "choiceText": "Option D", "isCorrect": false }
+        { "choiceText": "London", "isCorrect": false },
+        { "choiceText": "Paris", "isCorrect": true },
+        { "choiceText": "Berlin", "isCorrect": false },
+        { "choiceText": "Madrid", "isCorrect": false }
+      ]
+    },
+    {
+      "questionText": "The Earth is flat.",
+      "questionType": "true_false",
+      "timeLimitSeconds": ${timeLimit},
+      "basePoints": ${basePoints},
+      "deductionPoints": 50,
+      "deductionInterval": 1,
+      "choices": [
+        { "choiceText": "${tf[0]}", "isCorrect": false },
+        { "choiceText": "${tf[1]}", "isCorrect": true }
+      ]
+    },
+    {
+      "questionText": "Which are primary colors?",
+      "questionType": "multi_select",
+      "timeLimitSeconds": ${timeLimit},
+      "basePoints": ${basePoints},
+      "deductionPoints": 50,
+      "deductionInterval": 1,
+      "choices": [
+        { "choiceText": "Red", "isCorrect": true },
+        { "choiceText": "Green", "isCorrect": false },
+        { "choiceText": "Blue", "isCorrect": true },
+        { "choiceText": "Yellow", "isCorrect": true }
+      ]
+    },
+    {
+      "questionText": "What is 2+2?",
+      "questionType": "text_input",
+      "timeLimitSeconds": ${timeLimit},
+      "basePoints": ${basePoints},
+      "deductionPoints": 50,
+      "deductionInterval": 1,
+      "choices": [
+        { "choiceText": "4", "isCorrect": true },
+        { "choiceText": "four", "isCorrect": true }
+      ]
+    },
+    {
+      "questionText": "Order these planets from closest to farthest from the Sun:",
+      "questionType": "ordering",
+      "timeLimitSeconds": ${timeLimit},
+      "basePoints": ${basePoints},
+      "deductionPoints": 50,
+      "deductionInterval": 1,
+      "choices": [
+        { "choiceText": "Mercury", "isCorrect": true },
+        { "choiceText": "Venus", "isCorrect": true },
+        { "choiceText": "Earth", "isCorrect": true },
+        { "choiceText": "Mars", "isCorrect": true }
       ]
     }
   ]
 }
 
-Rules:
-- timeLimitSeconds: easy=30, medium=20, hard=15
-- basePoints: easy=800, medium=1000, hard=1200
-- deductionPoints: always 50
-- deductionInterval: always 1
+CRITICAL RULES:
+- Generate EXACTLY ${numQuestions} questions total
+- true_false: EXACTLY 2 choices, one "${tf[0]}" and one "${tf[1]}"
+- text_input: ALL choices MUST have "isCorrect": true (they are accepted answers)
+- ordering: ALL choices MUST have "isCorrect": true (they are in correct order)
+- multi_select: at least 2 choices must have "isCorrect": true
+- multiple_choice: EXACTLY 1 choice with "isCorrect": true
 - Do NOT include any text outside the JSON object`;
 }
 
@@ -159,7 +229,7 @@ export async function POST(request: NextRequest) {
           },
         ],
         temperature: 0.7,
-        max_tokens: 4096,
+        max_tokens: 20000,
         response_format: { type: "json_object" },
       }),
     });
@@ -214,6 +284,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Auto-fix common AI mistakes before validation
+    for (const q of parsed.questions) {
+      if (!q.choices || !Array.isArray(q.choices)) continue;
+
+      // text_input and ordering: all choices must be isCorrect=true
+      if (q.questionType === "text_input" || q.questionType === "ordering") {
+        q.choices = q.choices.map((c) => ({ ...c, isCorrect: true }));
+      }
+
+      // true_false: ensure exactly 2 choices
+      if (q.questionType === "true_false" && q.choices.length !== 2) {
+        q.choices = q.choices.slice(0, 2);
+      }
+
+      // multi_select: if only 1 correct, make it multiple_choice instead
+      if (q.questionType === "multi_select") {
+        const correctCount = q.choices.filter((c) => c.isCorrect).length;
+        if (correctCount < 2) {
+          q.questionType = "multiple_choice";
+        }
+      }
+    }
+
     // Filter valid questions
     const validQuestions = parsed.questions.filter(validateQuestion);
 
@@ -226,9 +319,7 @@ export async function POST(request: NextRequest) {
 
     // Create quiz in DB
     const userId = parseInt((session.user as { id?: string }).id || "1");
-    const diffLabel =
-      difficulty === "easy" ? "Easy" : difficulty === "medium" ? "Medium" : "Hard";
-    const quizTitle = `${topic} (${diffLabel}) - AI`;
+    const quizTitle = topic;
 
     const [newQuiz] = await db
       .insert(quizzes)
