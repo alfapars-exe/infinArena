@@ -78,21 +78,8 @@ async function seed() {
     )`,
   ];
 
-  // Drop all tables first for clean recreation
+  // Create tables only if they don't exist (preserve existing data)
   await client.execute("PRAGMA foreign_keys = OFF");
-  const dropStatements = [
-    "DROP TABLE IF EXISTS player_answers",
-    "DROP TABLE IF EXISTS players",
-    "DROP TABLE IF EXISTS quiz_sessions",
-    "DROP TABLE IF EXISTS answer_choices",
-    "DROP TABLE IF EXISTS questions",
-    "DROP TABLE IF EXISTS quizzes",
-    "DROP TABLE IF EXISTS admins",
-  ];
-  for (const sql of dropStatements) {
-    await client.execute(sql);
-  }
-
   for (const sql of statements) {
     await client.execute(sql);
   }

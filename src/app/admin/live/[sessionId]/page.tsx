@@ -363,53 +363,64 @@ export default function LiveControlPage() {
             
             {/* Minimalist Music Controls */}
             {youtubeVideoId && (
-              <div className="flex items-center gap-2 text-white/80">
+              <div className="flex items-center gap-3 text-white/80">
                 <div className="hidden">
                   <div id="yt-player" />
                 </div>
                 <button
                   onClick={togglePlay}
-                  className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition-colors"
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
+                    isPlaying
+                      ? "bg-gradient-to-br from-inf-red to-rose-600 hover:from-red-700 hover:to-rose-700 text-white"
+                      : "bg-gradient-to-br from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white"
+                  }`}
                   aria-label={isPlaying ? t("live.pause") : t("live.play")}
                   title={isPlaying ? t("live.pause") : t("live.play")}
                 >
                   {isPlaying ? (
-                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor" aria-hidden="true">
-                        <rect x="14" y="5" width="4" height="14" rx="1" />
+                    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
                     </svg>
                   ) : (
-                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="currentColor" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
                       <path d="M8 5.5v13l10-6.5-10-6.5z" />
                     </svg>
                   )}
                 </button>
                 <button
                   onClick={() => setIsRepeat(!isRepeat)}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
                     isRepeat
-                      ? "bg-inf-turquoise text-white"
-                      : "bg-white/20 text-white/50 hover:bg-white/30"
+                      ? "bg-gradient-to-br from-inf-yellow to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white"
+                      : "bg-white/20 hover:bg-white/30 text-white/60 hover:text-white"
                   }`}
                   aria-label={t("live.loop")}
                   title={t("live.loop")}
                 >
-                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                     <path d="M3 12a7 7 0 0 1 7-7h7" />
                     <path d="M17 2l4 3-4 3" />
                     <path d="M21 12a7 7 0 0 1-7 7H7" />
                     <path d="M7 22l-4-3 4-3" />
                   </svg>
                 </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={volume}
-                  onChange={(e) => changeVolume(Number(e.target.value))}
-                  className="h-1 w-16 accent-white/60"
-                  aria-label={t("live.volume")}
-                  title={`${t("live.volume")}: ${volume}%`}
-                />
+                <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-full">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 text-white/70" fill="currentColor" aria-hidden="true">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.26 2.5-4.02zM14 3.1v2.7c2.89.86 5 3.54 5 6.9s-2.11 6.04-5 6.9v2.7c4.01-.91 7-4.49 7-9.6s-2.99-8.69-7-9.6z" />
+                  </svg>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={volume}
+                    onChange={(e) => changeVolume(Number(e.target.value))}
+                    className="h-2 w-20 accent-inf-turquoise cursor-pointer"
+                    aria-label={t("live.volume")}
+                    title={`${t("live.volume")}: ${volume}%`}
+                  />
+                  <span className="text-white/70 text-xs font-medium min-w-6">{volume}%</span>
+                </div>
               </div>
             )}
           </div>
@@ -449,12 +460,16 @@ export default function LiveControlPage() {
               {!youtubeVideoId && (
                 <div className="mx-auto mb-6 mb-md-8" style={{ maxWidth: "640px" }}>
                   {!showMusicInput ? (
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
                       onClick={() => setShowMusicInput(true)}
-                      className="text-white/60 hover:text-white text-sm transition-colors underline"
+                      className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all hover:shadow-lg"
                     >
-                      + {t("live.bgMusic")}
-                    </button>
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+                        <path d="M12 3v9.28c-.47-.46-1.12-.75-1.84-.75-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V7h4V3h-5z" />
+                      </svg>
+                      {t("live.bgMusic")}
+                    </motion.button>
                   ) : (
                     <div>
                       <label className="text-white/60 text-sm block mb-2">
@@ -471,13 +486,13 @@ export default function LiveControlPage() {
                         <button
                           onClick={loadYouTube}
                           disabled={!youtubeUrl.trim()}
-                          className="bg-inf-turquoise hover:bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+                          className="bg-gradient-to-r from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50 transition-all hover:shadow-lg"
                         >
                           {t("live.play")}
                         </button>
                         <button
                           onClick={() => setShowMusicInput(false)}
-                          className="text-white/40 hover:text-white/60 text-sm transition-colors px-2"
+                          className="text-white/40 hover:text-white/60 text-xl transition-colors px-2 font-bold"
                         >
                           ✕
                         </button>
@@ -515,12 +530,16 @@ export default function LiveControlPage() {
               {!youtubeVideoId && (
                 <div className="mx-auto mb-6" style={{ maxWidth: "640px" }}>
                   {!showMusicInput ? (
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
                       onClick={() => setShowMusicInput(true)}
-                      className="text-white/60 hover:text-white text-sm transition-colors underline"
+                      className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all hover:shadow-lg"
                     >
-                      + {t("live.bgMusic")}
-                    </button>
+                      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+                        <path d="M12 3v9.28c-.47-.46-1.12-.75-1.84-.75-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V7h4V3h-5z" />
+                      </svg>
+                      {t("live.bgMusic")}
+                    </motion.button>
                   ) : (
                     <div className="d-flex flex-column flex-md-row gap-2">
                       <input
@@ -533,13 +552,13 @@ export default function LiveControlPage() {
                       <button
                         onClick={loadYouTube}
                         disabled={!youtubeUrl.trim()}
-                        className="bg-inf-turquoise hover:bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+                        className="bg-gradient-to-r from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50 transition-all hover:shadow-lg"
                       >
                         {t("live.play")}
                       </button>
                       <button
                         onClick={() => setShowMusicInput(false)}
-                        className="text-white/40 hover:text-white/60 text-sm transition-colors px-2"
+                        className="text-white/40 hover:text-white/60 text-xl transition-colors px-2 font-bold"
                       >
                         ✕
                       </button>
