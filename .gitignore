@@ -1,12 +1,9 @@
 node_modules
 .next
 data/*.db
+data/uploads/*
 .env.local
 .env*.local
 *.tsbuildinfo
 next-env.d.ts
 nul
-public/uploads/*.png
-public/uploads/*.jpg
-public/uploads/*.jpeg
-public/uploads/*.gif

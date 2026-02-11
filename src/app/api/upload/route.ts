@@ -35,7 +35,9 @@ export async function POST(request: NextRequest) {
     // Generate unique filename
     const ext = file.name.split(".").pop() || "png";
     const uniqueName = `${randomBytes(16).toString("hex")}.${ext}`;
-    const uploadDir = join(process.cwd(), "public", "uploads");
+    
+    // Use data folder instead of public folder (for persistence)
+    const uploadDir = join(process.cwd(), "data", "uploads");
     const filePath = join(uploadDir, uniqueName);
 
     // Create uploads directory if it doesn't exist
@@ -47,7 +49,8 @@ export async function POST(request: NextRequest) {
 
     await writeFile(filePath, buffer);
 
-    const url = `/uploads/${uniqueName}`;
+    // Serve from /api/uploads endpoint instead of public
+    const url = `/api/uploads/${uniqueName}`;
     const absoluteUrl = new URL(url, request.nextUrl.origin).toString();
     return NextResponse.json({ url, absoluteUrl });
   } catch (err) {

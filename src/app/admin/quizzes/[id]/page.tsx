@@ -92,7 +92,7 @@ function getErrorMessage(err: unknown, fallback: string): string {
 export default function QuizEditor() {
   const { t } = useTranslation();
   const params = useParams<{ id: string }>();
-  const quizId = params?.id ?? "";
+  const quizId = params?.id ? parseInt(params.id, 10).toString() : "";
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,12 +127,22 @@ export default function QuizEditor() {
   }, [quizId]);
 
   const fetchQuiz = async () => {
-    const res = await fetch(`/api/quizzes/${quizId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setQuiz(data);
-      setEditTitle(data.title);
-      setEditDescription(data.description || "");
+    if (!quizId) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/quizzes/${quizId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setQuiz(data);
+        setEditTitle(data.title);
+        setEditDescription(data.description || "");
+      } else {
+        console.error(`Failed to fetch quiz ${quizId}:`, res.status);
+      }
+    } catch (err) {
+      console.error(`Error fetching quiz ${quizId}:`, err);
     }
     setLoading(false);
   };

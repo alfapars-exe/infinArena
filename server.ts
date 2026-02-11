@@ -14,10 +14,10 @@ app.prepare().then(async () => {
   await ensureDbMigrations();
   console.log("✓ Database migrations completed");
 
-  // Create uploads directory
+  // Create uploads directory in data folder (persists)
   const { mkdir } = await import("fs/promises");
   try {
-    await mkdir("./public/uploads", { recursive: true });
+    await mkdir("./data/uploads", { recursive: true });
     console.log("✓ Uploads directory ready");
   } catch (err) {
     console.warn("⚠ Could not create uploads directory:", err);
