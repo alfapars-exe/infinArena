@@ -33,4 +33,3 @@ app.prepare().then(async () => {
     console.log(`> Player entry: /`);
   });
 });
-});
