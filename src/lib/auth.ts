@@ -6,6 +6,7 @@ import { admins } from "./db/schema";
 import { eq } from "drizzle-orm";
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET || "infinarena-secret-key-2026-production-hf",
   providers: [
     CredentialsProvider({
       name: "Credentials",
