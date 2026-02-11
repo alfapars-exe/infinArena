@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
     if (!VALID_DIFFICULTIES.includes(difficulty)) {
       return NextResponse.json({ error: "Invalid difficulty" }, { status: 400 });
     }
-    if (!Number.isInteger(numQuestions) || numQuestions < 1 || numQuestions > 30) {
+    if (!Number.isInteger(numQuestions) || numQuestions < 1 || numQuestions > 200) {
       return NextResponse.json({ error: "Invalid question count" }, { status: 400 });
     }
     if (!VALID_MODELS.includes(model)) {

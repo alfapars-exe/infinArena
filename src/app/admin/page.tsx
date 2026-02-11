@@ -424,9 +424,9 @@ function AIGenerateModal({
             <input
               type="number"
               min={1}
-              max={30}
+              max={200}
               value={numQuestions}
-              onChange={(e) => setNumQuestions(Math.min(30, Math.max(1, parseInt(e.target.value) || 1)))}
+              onChange={(e) => setNumQuestions(Math.min(200, Math.max(1, parseInt(e.target.value) || 1)))}
               className="input-field bg-white/10 w-full"
               disabled={loading}
             />

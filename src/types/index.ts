@@ -57,12 +57,15 @@ export interface BatchAnswerResult {
   streakBonus: number;
   totalScore: number;
   correctChoiceId: number;
+  correctChoiceIds?: number[];
   streak: number;
   playerAnswer?: string[] | string | null;
+  correctAnswerText?: string[];
 }
 
 export interface ClientToServerEvents {
   "player:join": (data: { pin: string; nickname: string }) => void;
+  "player:rejoin": (data: { pin: string; playerId: number; nickname: string }) => void;
   "player:answer": (data: {
     questionId: number;
     choiceId?: number;
@@ -95,6 +98,7 @@ export interface ServerToClientEvents {
     question: QuestionPayload;
     questionNumber: number;
     totalQuestions: number;
+    serverStartTime: number;
   }) => void;
   "game:answer-ack": (data: AnswerAck) => void;
   "game:time-up": () => void;
@@ -108,6 +112,14 @@ export interface ServerToClientEvents {
     sessionId: number;
     quizTitle: string;
     avatar: string;
+  }) => void;
+  "player:rejoined-success": (data: {
+    playerId: number;
+    sessionId: number;
+    quizTitle: string;
+    avatar: string;
+    totalScore: number;
+    phase: string;
   }) => void;
   "session:live": () => void;
   error: (data: { message: string }) => void;

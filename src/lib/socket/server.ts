@@ -155,6 +155,86 @@ export function setupSocketHandlers(io: TypedServer) {
       }
     });
 
+    // Player rejoin after disconnect/refresh
+    socket.on("player:rejoin", async ({ pin, playerId, nickname }) => {
+      try {
+        const [dbSession] = await db
+          .select()
+          .from(quizSessions)
+          .where(eq(quizSessions.pin, pin));
+
+        if (!dbSession) {
+          socket.emit("error", { message: "Session not found" });
+          return;
+        }
+
+        const [player] = await db
+          .select()
+          .from(players)
+          .where(
+            and(
+              eq(players.id, playerId),
+              eq(players.sessionId, dbSession.id),
+              eq(players.nickname, nickname)
+            )
+          );
+
+        if (!player) {
+          socket.emit("error", { message: "Player not found, join again" });
+          return;
+        }
+
+        // Update player connection
+        await db
+          .update(players)
+          .set({ isConnected: true, socketId: socket.id })
+          .where(eq(players.id, playerId));
+
+        registerPlayerSocket(socket.id, playerId, dbSession.id);
+        socket.join(`session:${dbSession.id}`);
+
+        const [quiz] = await db
+          .select()
+          .from(quizzes)
+          .where(eq(quizzes.id, dbSession.quizId));
+
+        // Determine current phase
+        let phase = "lobby";
+        if (dbSession.status === "in_progress") {
+          phase = "question";
+        } else if (dbSession.status === "completed") {
+          phase = "ended";
+        }
+
+        // Update connected count
+        const session = getActiveSession(dbSession.id);
+        if (session) {
+          const connected = await db
+            .select()
+            .from(players)
+            .where(
+              and(
+                eq(players.sessionId, dbSession.id),
+                eq(players.isConnected, true)
+              )
+            );
+          session.totalConnectedPlayers = connected.length;
+        }
+
+        socket.emit("player:rejoined-success", {
+          playerId: player.id,
+          sessionId: dbSession.id,
+          quizTitle: quiz?.title || "Quiz",
+          avatar: player.avatar || "🎮",
+          totalScore: player.totalScore,
+          phase,
+        });
+      } catch (err) {
+        console.error("player:rejoin error", err);
+        socket.emit("error", { message: "Failed to rejoin" });
+      }
+    });
+
     socket.on("admin:start-quiz", async ({ sessionId }) => {
       try {
         await ensureDbMigrations();
@@ -546,6 +626,7 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
     },
     questionNumber: session.currentQuestionIndex + 1,
     totalQuestions: session.questions.length,
+    serverStartTime: session.questionStartTime,
   });
 
   session.timer = setTimeout(() => {
@@ -586,8 +667,12 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       streakBonus: answer.streakBonus,
       totalScore: answer.totalScore,
       correctChoiceId: currentQ.correctChoiceId,
+      correctChoiceIds: currentQ.correctChoiceIds,
       streak: answer.streak,
       playerAnswer: playerAnswerDisplay,
+      correctAnswerText: currentQ.choices
+        .filter((c) => currentQ.correctChoiceIds.includes(c.id))
+        .map((c) => c.choiceText),
     });
   }
 
@@ -610,7 +695,11 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
         streakBonus: 0,
         totalScore: p.totalScore,
         correctChoiceId: currentQ.correctChoiceId,
+        correctChoiceIds: currentQ.correctChoiceIds,
         streak: 0,
+        correctAnswerText: currentQ.choices
+          .filter((c) => currentQ.correctChoiceIds.includes(c.id))
+          .map((c) => c.choiceText),
       });
       // Reset streak for non-answerers
       session.playerStreaks.set(p.id, 0);

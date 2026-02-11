@@ -77,19 +77,6 @@ export default function PublishPage() {
   const publish = async () => {
     setPublishing(true);
 
-    // Save custom slug first
-    if (customSlug) {
-      await fetch(`/api/quizzes/${quizId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: quiz.title,
-          description: quiz.description,
-          customSlug: customSlug || null,
-        }),
-      });
-    }
-
     const res = await fetch(`/api/quizzes/${quizId}/publish`, {
       method: "POST",
     });
@@ -158,33 +145,6 @@ export default function PublishPage() {
           {t("publish.back")}
         </Link>
       </div>
-
-      {/* Custom URL */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white/5 rounded-2xl border border-white/10 p-6 mb-6"
-      >
-        <h2 className="text-lg font-semibold text-white mb-4">
-          {t("publish.customUrlOptional")}
-        </h2>
-        <div className="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2">
-          <span className="text-gray-400 text-sm">
-            {typeof window !== "undefined" ? window.location.origin : ""}/quiz/
-          </span>
-          <input
-            type="text"
-            value={customSlug}
-            onChange={(e) =>
-              setCustomSlug(
-                e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")
-              )
-            }
-            className="input-field bg-white/10 text-sm flex-1"
-            placeholder={t("publish.customSlugPlaceholder")}
-          />
-        </div>
-      </motion.div>
 
       {/* Publish Button */}
       <motion.div

@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { io, Socket } from "socket.io-client";
@@ -27,8 +27,6 @@ const CHOICE_COLORS = [
   "bg-slate-700 hover:bg-slate-600",
 ];
 
-const CHOICE_SHAPES = ["A", "B", "C", "D"];
-
 function getChoiceColor(index: number): string {
   return CHOICE_COLORS[index % CHOICE_COLORS.length];
 }
@@ -42,10 +40,6 @@ function getStableChoiceColor(text: string): string {
   return CHOICE_COLORS[Math.abs(hash) % CHOICE_COLORS.length];
 }
 
-function getChoiceShape(index: number): string {
-  return CHOICE_SHAPES[index % CHOICE_SHAPES.length];
-}
-
 function shuffleChoices<T>(arr: T[]): T[] {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -53,6 +47,149 @@ function shuffleChoices<T>(arr: T[]): T[] {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+// ---- Web Audio Sound Effects ----
+let audioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext {
+  if (!audioCtx) audioCtx = new AudioContext();
+  return audioCtx;
+}
+
+function playTick() {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 800;
+    gain.gain.value = 0.15;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.08);
+  } catch {}
+}
+
+function playTock() {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 600;
+    gain.gain.value = 0.12;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.08);
+  } catch {}
+}
+
+function playCorrectSound() {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 523;
+    gain.gain.value = 0.2;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1);
+    osc.frequency.setValueAtTime(784, ctx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0, ctx.currentTime + 0.4);
+    osc.stop(ctx.currentTime + 0.4);
+  } catch {}
+}
+
+function playWrongSound() {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.value = 200;
+    gain.gain.value = 0.15;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.frequency.setValueAtTime(150, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0, ctx.currentTime + 0.35);
+    osc.stop(ctx.currentTime + 0.35);
+  } catch {}
+}
+
+function playDrumroll() {
+  try {
+    const ctx = getAudioCtx();
+    for (let i = 0; i < 20; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = 100 + Math.random() * 50;
+      gain.gain.value = 0.05 + (i / 20) * 0.1;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.08;
+      osc.start(t);
+      osc.stop(t + 0.06);
+    }
+  } catch {}
+}
+
+function playFanfare() {
+  try {
+    const ctx = getAudioCtx();
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.value = 0.2;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.15;
+      osc.start(t);
+      gain.gain.setValueAtTime(0.2, t + 0.2);
+      gain.gain.linearRampToValueAtTime(0, t + 0.4);
+      osc.stop(t + 0.4);
+    });
+  } catch {}
+}
+
+// Motivational messages
+const MOTIVATIONAL_MESSAGES_EN = [
+  "Keep going! You're doing great!",
+  "Amazing effort! Stay focused!",
+  "You've got this!",
+  "Stay sharp, champion!",
+  "Brilliant! Keep it up!",
+  "Almost there! Don't give up!",
+  "You're on fire!",
+  "Impressive! Next question awaits!",
+  "Focus and conquer!",
+  "Superstar performance!",
+];
+
+const MOTIVATIONAL_MESSAGES_TR = [
+  "Harika gidiyorsun! Devam et!",
+  "Muhteşem çaba! Odaklan!",
+  "Yapabilirsin!",
+  "Dikkatli ol, şampiyon!",
+  "Mükemmel! Böyle devam!",
+  "Neredeyse bitti! Pes etme!",
+  "Ateş gibisin!",
+  "Etkileyici! Sıradaki soruya hazır ol!",
+  "Odaklan ve kazan!",
+  "Süperstar performansı!",
+];
+
+function getMotivationalMessage(language: string): string {
+  const messages = language === "tr" ? MOTIVATIONAL_MESSAGES_TR : MOTIVATIONAL_MESSAGES_EN;
+  return messages[Math.floor(Math.random() * messages.length)];
 }
 
 type Phase =
@@ -66,7 +203,7 @@ type Phase =
   | "ended";
 
 export default function PlayPage() {
-  const { t } = useTranslation();
+  const { t, locale: language } = useTranslation();
   const params = useParams<{ pin: string }>();
   const pin = params?.pin ?? "";
 
@@ -96,21 +233,83 @@ export default function PlayPage() {
   const [textAnswer, setTextAnswer] = useState("");
   const [didSubmit, setDidSubmit] = useState(false);
   const questionStartTime = useRef<number>(0);
+  const serverEndTimeRef = useRef<number>(0);
+  const timerRafRef = useRef<number>(0);
+  const lastTickRef = useRef<number>(0);
 
   // Result state
-  const [batchResult, setBatchResult] = useState<BatchAnswerResult | null>(
-    null
-  );
+  const [batchResult, setBatchResult] = useState<BatchAnswerResult | null>(null);
   const [totalScore, setTotalScore] = useState(0);
   const [currentStreak, setCurrentStreak] = useState(0);
   const [leaderboard, setLeaderboard] = useState<PlayerRanking[]>([]);
   const [finalRankings, setFinalRankings] = useState<PlayerRanking[]>([]);
   const [myRank, setMyRank] = useState(0);
+  const [motivationalMsg, setMotivationalMsg] = useState("");
+
+  // Podium animation
+  const [podiumStep, setPodiumStep] = useState(0);
+
+  // Session cache key
+  const sessionCacheKey = `quiz-session-${pin}`;
+
+  // Save session to localStorage
+  const saveSession = useCallback((pid: number, nick: string, av: string) => {
+    try {
+      localStorage.setItem(sessionCacheKey, JSON.stringify({
+        playerId: pid,
+        nickname: nick,
+        avatar: av,
+        timestamp: Date.now(),
+      }));
+    } catch {}
+  }, [sessionCacheKey]);
+
+  // Server-synced timer using requestAnimationFrame
+  const startSyncedTimer = useCallback((serverStart: number, timeLimitSeconds: number) => {
+    if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
+    serverEndTimeRef.current = serverStart + timeLimitSeconds * 1000;
+    lastTickRef.current = -1;
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((serverEndTimeRef.current - Date.now()) / 1000));
+      if (remaining !== lastTickRef.current) {
+        lastTickRef.current = remaining;
+        setTimeLeft(remaining);
+        // Tick-tock sound in last 5 seconds
+        if (remaining > 0 && remaining <= 5) {
+          if (remaining % 2 === 1) playTick();
+          else playTock();
+        }
+      }
+      if (remaining > 0) {
+        timerRafRef.current = requestAnimationFrame(tick);
+      }
+    };
+    timerRafRef.current = requestAnimationFrame(tick);
+  }, []);
 
   // Socket connection
   useEffect(() => {
     const s: TypedSocket = io({ path: "/api/socketio" });
     setSocket(s);
+
+    // Try rejoin from cache
+    s.on("connect", () => {
+      try {
+        const cached = localStorage.getItem(sessionCacheKey);
+        if (cached) {
+          const data = JSON.parse(cached);
+          // Only rejoin if cache is less than 4 hours old
+          if (Date.now() - data.timestamp < 4 * 60 * 60 * 1000) {
+            s.emit("player:rejoin", {
+              pin,
+              playerId: data.playerId,
+              nickname: data.nickname,
+            });
+          }
+        }
+      } catch {}
+    });
 
     s.on(
       "player:joined-success",
@@ -119,8 +318,32 @@ export default function PlayPage() {
         setQuizTitle(qt);
         setAvatar(av);
         setPhase("lobby");
+        setNickname((prev) => prev); // keep existing nickname
+        saveSession(pid, nickname || "", av);
       }
     );
+
+    s.on("player:rejoined-success", ({ playerId: pid, quizTitle: qt, avatar: av, totalScore: ts, phase: serverPhase }) => {
+      setPlayerId(pid);
+      setQuizTitle(qt);
+      setAvatar(av);
+      setTotalScore(ts);
+      // Restore nickname from cache
+      try {
+        const cached = localStorage.getItem(sessionCacheKey);
+        if (cached) {
+          const data = JSON.parse(cached);
+          setNickname(data.nickname);
+        }
+      } catch {}
+      if (serverPhase === "ended") {
+        setPhase("ended");
+      } else if (serverPhase === "question") {
+        setPhase("answered"); // They missed the current question, wait for results
+      } else {
+        setPhase("lobby");
+      }
+    });
 
     s.on("error", ({ message }) => {
       setError(message);
@@ -142,11 +365,10 @@ export default function PlayPage() {
 
     s.on(
       "game:question-start",
-      ({ question, questionNumber: qn, totalQuestions: tq }) => {
+      ({ question, questionNumber: qn, totalQuestions: tq, serverStartTime }) => {
         setCurrentQuestion(question);
         setQuestionNumber(qn);
         setTotalQuestions(tq);
-        setTimeLeft(question.timeLimitSeconds);
         setSelectedChoice(null);
         setSelectedChoices([]);
         setOrderedChoices(
@@ -157,8 +379,10 @@ export default function PlayPage() {
         setTextAnswer("");
         setDidSubmit(false);
         setBatchResult(null);
-        questionStartTime.current = Date.now();
+        questionStartTime.current = serverStartTime;
         setPhase("question");
+        // Start synced timer
+        startSyncedTimer(serverStartTime, question.timeLimitSeconds);
       }
     );
 
@@ -170,6 +394,7 @@ export default function PlayPage() {
     // Time is up
     s.on("game:time-up", () => {
       setTimeLeft(0);
+      if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
     });
 
     // Batch results come after time-up or all answered
@@ -178,14 +403,18 @@ export default function PlayPage() {
       setTotalScore(result.totalScore);
       setCurrentStreak(result.streak);
       setPhase("result");
+      setMotivationalMsg(getMotivationalMessage(language));
 
       if (result.isCorrect) {
+        playCorrectSound();
         confetti({
           particleCount: 100,
           spread: 70,
           origin: { y: 0.6 },
           colors: ["#BA2031", "#0C4D99", "#FBB615", "#20AE4C"],
         });
+      } else {
+        playWrongSound();
       }
     });
 
@@ -197,16 +426,28 @@ export default function PlayPage() {
     s.on("game:quiz-ended", ({ finalRankings: fr }) => {
       setFinalRankings(fr);
       setPhase("ended");
+      // Clear session cache
+      try { localStorage.removeItem(sessionCacheKey); } catch {}
 
-      confetti({
-        particleCount: 200,
-        spread: 100,
-        origin: { y: 0.4 },
-        colors: ["#BA2031", "#0C4D99", "#FBB615", "#20AE4C", "#863B96"],
-      });
+      // Podium animation: 3rd -> 2nd -> 1st
+      setPodiumStep(0);
+      playDrumroll();
+      setTimeout(() => setPodiumStep(1), 1500); // 3rd
+      setTimeout(() => setPodiumStep(2), 3000); // 2nd
+      setTimeout(() => {
+        setPodiumStep(3); // 1st
+        playFanfare();
+        confetti({
+          particleCount: 200,
+          spread: 100,
+          origin: { y: 0.4 },
+          colors: ["#BA2031", "#0C4D99", "#FBB615", "#20AE4C", "#863B96"],
+        });
+      }, 4500);
     });
 
     return () => {
+      if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
       s.disconnect();
     };
   }, []);
@@ -222,21 +463,20 @@ export default function PlayPage() {
     }
   }, [leaderboard, finalRankings, playerId]);
 
-  // Timer countdown
-  useEffect(() => {
-    if (phase !== "question" || timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((t) => Math.max(0, t - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [phase, timeLeft]);
-
   const joinGame = (e: React.FormEvent) => {
     e.preventDefault();
     if (!nickname.trim() || !socket) return;
     setError("");
     socket.emit("player:join", { pin, nickname: nickname.trim() });
+    // Save nickname for session cache (will be completed on joined-success)
   };
+
+  // Update session cache when nickname is set after join success
+  useEffect(() => {
+    if (playerId && nickname && avatar) {
+      saveSession(playerId, nickname, avatar);
+    }
+  }, [playerId, nickname, avatar, saveSession]);
 
   const submitAnswer = (choiceId: number) => {
     if (!socket || !currentQuestion || selectedChoice !== null) return;
@@ -475,15 +715,15 @@ export default function PlayPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col p-4"
+            className="flex-1 flex flex-col p-2 p-md-4"
           >
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3 mb-md-4">
               <span className="text-white/60 text-sm">
                 {questionNumber}/{totalQuestions}
               </span>
               <motion.div
-                className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-black border-4 ${
+                className={`w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center text-xl md:text-2xl font-black border-4 ${
                   timeLeft > 10
                     ? "border-green-400 text-green-400"
                     : timeLeft > 5
@@ -508,7 +748,7 @@ export default function PlayPage() {
             </div>
 
             {/* Progress bar */}
-            <div className="w-full bg-white/10 rounded-full h-2 mb-6">
+            <div className="w-full bg-white/10 rounded-full h-2 mb-4 mb-md-6">
               <motion.div
                 className="bg-inf-yellow h-2 rounded-full"
                 initial={{ width: "100%" }}
@@ -521,17 +761,17 @@ export default function PlayPage() {
             </div>
 
             {/* Question text + media */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-6 text-center">
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 p-md-6 mb-4 mb-md-6 text-center">
               {currentQuestion.mediaUrl && (
-                <div className="flex justify-center mb-6 bg-black/30 rounded-lg p-4">
+                <div className="flex justify-center mb-4 mb-md-6 bg-black/30 rounded-lg p-2 p-md-4">
                   <img
                     src={currentQuestion.mediaUrl}
                     alt="Question media"
-                    className="max-w-full max-h-96 rounded-lg object-contain"
+                    className="max-w-full max-h-48 md:max-h-96 rounded-lg object-contain"
                   />
                 </div>
               )}
-              <h2 className="text-xl md:text-2xl font-bold text-white">
+              <h2 className="text-lg md:text-2xl font-bold text-white">
                 {currentQuestion.questionText}
               </h2>
             </div>
@@ -539,7 +779,7 @@ export default function PlayPage() {
             {/* Answer UI */}
             {(currentQuestion.questionType === "multiple_choice" ||
               currentQuestion.questionType === "true_false") && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 flex-1">
                 {currentQuestion.choices.map((choice, i) => (
                   <motion.button
                     key={choice.id}
@@ -562,7 +802,7 @@ export default function PlayPage() {
                 <p className="text-center text-white/70 text-sm mb-3">
                   {t("play.multiSelectInstruction")}
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                   {currentQuestion.choices.map((choice, i) => {
                     const active = selectedChoices.includes(choice.id);
                     return (
@@ -645,7 +885,7 @@ export default function PlayPage() {
                   type="text"
                   value={textAnswer}
                   onChange={(e) => setTextAnswer(e.target.value)}
-                  className="w-full text-center text-2xl font-bold text-gray-800 py-4 px-4 rounded-xl border-2 border-gray-200 focus:border-inf-red focus:outline-none"
+                  className="w-full text-center text-xl md:text-2xl font-bold text-gray-800 py-3 md:py-4 px-4 rounded-xl border-2 border-gray-200 focus:border-inf-red focus:outline-none"
                   placeholder={t("play.textInputPlaceholder")}
                 />
                 <button
@@ -703,7 +943,7 @@ export default function PlayPage() {
             <motion.div
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="text-center"
+              className="text-center w-full max-w-lg"
             >
               {batchResult?.isCorrect ? (
                 <>
@@ -775,9 +1015,26 @@ export default function PlayPage() {
                 </>
               )}
 
+              {/* Correct Answer Display */}
+              {batchResult && batchResult.correctAnswerText && batchResult.correctAnswerText.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="mt-4 bg-green-500/20 border border-green-500/40 rounded-xl p-4"
+                >
+                  <p className="text-green-300 text-sm font-semibold mb-1">
+                    {t("play.correctAnswer")}:
+                  </p>
+                  <p className="text-white font-bold text-lg">
+                    {batchResult.correctAnswerText.join(", ")}
+                  </p>
+                </motion.div>
+              )}
+
               {/* Show answer details for non-multiple choice questions */}
               {currentQuestion && batchResult && (
-                <div className="mt-4 bg-white/10 rounded-lg p-4 text-left max-w-lg mx-auto">
+                <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
                   {currentQuestion.questionType === "ordering" && batchResult.playerAnswer && Array.isArray(batchResult.playerAnswer) ? (
                     <div>
                       <p className="text-white/80 text-sm font-semibold mb-2">
@@ -800,11 +1057,23 @@ export default function PlayPage() {
                         {t("play.yourAnswer")}:
                       </p>
                       <p className="text-white text-sm bg-black/30 rounded p-2 italic">
-                        "{batchResult.playerAnswer}"
+                        &quot;{batchResult.playerAnswer}&quot;
                       </p>
                     </div>
                   ) : null}
                 </div>
+              )}
+
+              {/* Motivational message */}
+              {motivationalMsg && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1 }}
+                  className="mt-4 text-inf-yellow font-semibold text-lg italic"
+                >
+                  {motivationalMsg}
+                </motion.div>
               )}
 
               <div className="mt-6 bg-white/10 rounded-full px-6 py-2 inline-block">
@@ -891,7 +1160,7 @@ export default function PlayPage() {
           </motion.div>
         )}
 
-        {/* Final Results */}
+        {/* Final Results - Podium Animation */}
         {phase === "ended" && (
           <motion.div
             key="ended"
@@ -920,13 +1189,13 @@ export default function PlayPage() {
                 className="mb-6"
               >
                 {myRank === 1 ? (
-                  <div className="text-7xl">??</div>
+                  <div className="text-7xl">🥇</div>
                 ) : myRank === 2 ? (
-                  <div className="text-7xl">??</div>
+                  <div className="text-7xl">🥈</div>
                 ) : myRank === 3 ? (
-                  <div className="text-7xl">??</div>
+                  <div className="text-7xl">🥉</div>
                 ) : (
-                  <div className="text-5xl">??</div>
+                  <div className="text-5xl">⭐</div>
                 )}
               </motion.div>
 
@@ -938,13 +1207,98 @@ export default function PlayPage() {
                 {t("play.points", { score: totalScore.toLocaleString() })}
               </p>
 
-              <div className="mt-8 bg-white/10 backdrop-blur-sm rounded-2xl p-4">
+              {/* Podium animation */}
+              {finalRankings.length >= 3 && (
+                <div className="flex items-end justify-center gap-3 mt-8 mb-6">
+                  {/* 3rd place */}
+                  <AnimatePresence>
+                    {podiumStep >= 1 && finalRankings[2] && (
+                      <motion.div
+                        initial={{ y: 100, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 200 }}
+                        className="text-center"
+                      >
+                        <div className="text-2xl mb-1">{finalRankings[2].avatar}</div>
+                        <div className="text-white text-xs font-bold mb-1 truncate max-w-[80px]">
+                          {finalRankings[2].nickname}
+                        </div>
+                        <div className="bg-amber-700 w-20 md:w-24 rounded-t-lg p-2 h-16 flex items-center justify-center">
+                          <div>
+                            <div className="text-lg font-black text-white">🥉</div>
+                            <div className="text-white/70 text-xs font-bold">
+                              {finalRankings[2].totalScore.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* 1st place */}
+                  <AnimatePresence>
+                    {podiumStep >= 3 && finalRankings[0] && (
+                      <motion.div
+                        initial={{ y: 100, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 200 }}
+                        className="text-center"
+                        style={{
+                          background: podiumStep >= 3 ? "radial-gradient(circle at 50% 0%, rgba(251,182,21,0.3) 0%, transparent 70%)" : undefined,
+                          borderRadius: "1rem",
+                          padding: "0.5rem",
+                        }}
+                      >
+                        <div className="text-3xl mb-1">{finalRankings[0].avatar}</div>
+                        <div className="text-white text-xs font-bold mb-1 truncate max-w-[90px]">
+                          {finalRankings[0].nickname}
+                        </div>
+                        <div className="bg-yellow-500 w-24 md:w-28 rounded-t-lg p-2 h-28 flex items-center justify-center">
+                          <div>
+                            <div className="text-2xl font-black text-black">🥇</div>
+                            <div className="text-black/70 text-sm font-bold">
+                              {finalRankings[0].totalScore.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* 2nd place */}
+                  <AnimatePresence>
+                    {podiumStep >= 2 && finalRankings[1] && (
+                      <motion.div
+                        initial={{ y: 100, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 200 }}
+                        className="text-center"
+                      >
+                        <div className="text-2xl mb-1">{finalRankings[1].avatar}</div>
+                        <div className="text-white text-xs font-bold mb-1 truncate max-w-[80px]">
+                          {finalRankings[1].nickname}
+                        </div>
+                        <div className="bg-gray-400 w-20 md:w-24 rounded-t-lg p-2 h-20 flex items-center justify-center">
+                          <div>
+                            <div className="text-lg font-black text-black">🥈</div>
+                            <div className="text-black/70 text-xs font-bold">
+                              {finalRankings[1].totalScore.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              <div className="mt-4 bg-white/10 backdrop-blur-sm rounded-2xl p-4">
                 {finalRankings.slice(0, 5).map((p, i) => (
                   <motion.div
                     key={p.playerId}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.5 + i * 0.1 }}
+                    transition={{ delay: 5 + i * 0.1 }}
                     className={`flex items-center justify-between p-3 rounded-lg mb-1 ${
                       p.playerId === playerId
                         ? "bg-inf-red/30 border border-inf-red"
@@ -975,6 +1329,3 @@ export default function PlayPage() {
     </div>
   );
 }
-
-
-

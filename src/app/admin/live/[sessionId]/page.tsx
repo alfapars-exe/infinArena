@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { io, Socket } from "socket.io-client";
@@ -133,17 +133,18 @@ export default function LiveControlPage() {
       setPhase("countdown");
     });
 
-    s.on("game:question-start", ({ question, questionNumber: qn, totalQuestions: tq }) => {
+    s.on("game:question-start", ({ question, questionNumber: qn, totalQuestions: tq, serverStartTime }) => {
       setCurrentQuestion(question);
       setQuestionNumber(qn);
       setTotalQuestions(tq);
-      setTimeLeft(question.timeLimitSeconds);
       setPhase("question");
       setStats(null);
+      startSyncedTimer(serverStartTime, question.timeLimitSeconds);
     });
 
     s.on("game:time-up", () => {
       setTimeLeft(0);
+      if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
     });
 
     s.on("game:question-stats", (data) => {
@@ -182,14 +183,29 @@ export default function LiveControlPage() {
     }
   }, [socket, sessionId]);
 
-  // Timer countdown
+  // Server-synced timer refs
+  const serverEndTimeRef = useRef<number>(0);
+  const timerRafRef = useRef<number>(0);
+
+  const startSyncedTimer = useCallback((serverStart: number, timeLimitSeconds: number) => {
+    if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
+    serverEndTimeRef.current = serverStart + timeLimitSeconds * 1000;
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((serverEndTimeRef.current - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining > 0) {
+        timerRafRef.current = requestAnimationFrame(tick);
+      }
+    };
+    timerRafRef.current = requestAnimationFrame(tick);
+  }, []);
+
   useEffect(() => {
-    if (phase !== "question" || timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((t) => Math.max(0, t - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [phase, timeLeft]);
+    return () => {
+      if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
+    };
+  }, []);
 
   // Load YouTube IFrame API
   useEffect(() => {
@@ -680,7 +696,6 @@ export default function LiveControlPage() {
                   key={c.id}
                   className={`${getChoiceColor(i)} rounded-xl p-6 flex items-center gap-4`}
                 >
-                  <span className="text-3xl text-white/80">{getChoiceShape(i)}</span>
                   <span className="text-xl font-bold text-white">{c.choiceText}</span>
                 </div>
               ))}
@@ -711,8 +726,12 @@ export default function LiveControlPage() {
                           c.id === stats.correctChoiceId ? "ring-4 ring-white" : ""
                         }`}
                       />
-                      <span className="text-white text-sm">{getChoiceShape(i)}</span>
-                      <span className="text-white/60 text-xs truncate max-w-full">
+                      <span className={`text-sm font-medium truncate max-w-full ${
+                        (stats.correctChoiceIds || []).includes(c.id) || c.id === stats.correctChoiceId
+                          ? "text-green-400 font-bold"
+                          : "text-white/60"
+                      }`}>
+                        {((stats.correctChoiceIds || []).includes(c.id) || c.id === stats.correctChoiceId) && "✓ "}
                         {c.choiceText}
                       </span>
                     </div>
@@ -793,7 +812,7 @@ export default function LiveControlPage() {
               onClick={nextQuestion}
               className="bg-inf-green hover:bg-green-700 text-white font-bold py-4 px-12 rounded-xl text-xl transition-colors shadow-xl"
             >
-              {t("live.nextQuestion")}
+              {questionNumber < totalQuestions ? t("live.nextQuestion") : t("live.showResults")}
             </motion.button>
           </motion.div>
         )}
