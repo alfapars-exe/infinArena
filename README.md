@@ -26,7 +26,7 @@ An interactive, real-time quiz platform similar to Kahoot, built with Next.js, S
 
 ## How to Use
 
-1. **Admin Panel**: Access at `/infinarenapanel/login` (default credentials: admin/admin)
+1. **Admin Panel**: Access at `/infinarenapanel/login` (credentials: admin / inFina2026!!**)
 2. **Create Quiz**: Add questions with multiple choice answers
 3. **Start Session**: Get a PIN code for players to join
 4. **Players Join**: Visit the homepage and enter the PIN
