@@ -261,6 +261,19 @@ export default function PlayPage() {
     setOrderedChoices(next);
   };
 
+  // Auto-submit ordering answer when time runs out
+  useEffect(() => {
+    if (
+      phase === "question" &&
+      currentQuestion?.questionType === "ordering" &&
+      timeLeft === 0 &&
+      orderedChoices.length > 0 &&
+      !didSubmit
+    ) {
+      submitAdvancedAnswer();
+    }
+  }, [timeLeft, phase, currentQuestion, orderedChoices, didSubmit]);
+
   const submitAdvancedAnswer = () => {
     if (!socket || !currentQuestion || phase !== "question") return;
     const responseTimeMs = Date.now() - questionStartTime.current;
@@ -572,43 +585,48 @@ export default function PlayPage() {
                   {t("play.orderingInstruction")}
                 </p>
                 <div className="space-y-2">
-                  {orderedChoices.map((choice, i) => (
-                    <div
-                      key={choice.id}
-                      className={`rounded-xl p-3 flex items-center gap-3 ${getChoiceColor(i)}`}
-                    >
-                      <span className="text-sm font-bold text-white bg-black/25 rounded px-2 py-1">
-                        {i + 1}
-                      </span>
-                      <span className="text-white font-semibold flex-1">
-                        {choice.choiceText}
-                      </span>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => moveOrderedChoice(i, -1)}
-                          disabled={i === 0}
-                          className="px-2 py-1 rounded bg-black/30 text-white disabled:opacity-40"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          onClick={() => moveOrderedChoice(i, 1)}
-                          disabled={i === orderedChoices.length - 1}
-                          className="px-2 py-1 rounded bg-black/30 text-white disabled:opacity-40"
-                        >
-                          ↓
-                        </button>
+                  {orderedChoices.map((choice, i) => {
+                    const colorClass = getChoiceColor(i);
+                    return (
+                      <div
+                        key={choice.id}
+                        className={`rounded-xl p-3 flex items-center gap-3 ${colorClass} transition-all duration-200`}
+                      >
+                        <span className="text-sm font-bold text-white bg-black/25 rounded px-2 py-1">
+                          {i + 1}
+                        </span>
+                        <span className="text-white font-semibold flex-1">
+                          {choice.choiceText}
+                        </span>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => moveOrderedChoice(i, -1)}
+                            disabled={i === 0}
+                            className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => moveOrderedChoice(i, 1)}
+                            disabled={i === orderedChoices.length - 1}
+                            className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
+                          >
+                            ↓
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-                <button
-                  onClick={submitAdvancedAnswer}
-                  disabled={orderedChoices.length === 0}
-                  className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
-                >
-                  {t("play.submit")}
-                </button>
+                {!didSubmit && (
+                  <button
+                    onClick={submitAdvancedAnswer}
+                    disabled={orderedChoices.length === 0}
+                    className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
+                  >
+                    {t("play.submit")}
+                  </button>
+                )}
               </div>
             )}
 
