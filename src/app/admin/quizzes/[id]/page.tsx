@@ -696,20 +696,22 @@ function QuestionModal({
           </div>
 
           {/* Image Upload */}
-          <div>
-            <label className="block text-white/70 text-sm font-medium mb-1">
+          <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+            <label className="block text-white/70 text-sm font-medium mb-3">
               {t("editor.image")}
             </label>
             {question.mediaUrl ? (
-              <div className="flex items-center gap-3">
-                <img
-                  src={question.mediaUrl}
-                  alt="Preview"
-                  className="max-h-24 rounded-lg object-contain"
-                />
+              <div className="flex flex-col items-start gap-4">
+                <div className="w-full bg-black/30 rounded-lg p-3 flex items-center justify-center min-h-48">
+                  <img
+                    src={question.mediaUrl}
+                    alt="Preview"
+                    className="max-w-full max-h-48 rounded-lg object-contain"
+                  />
+                </div>
                 <button
                   onClick={() => onChange({ ...question, mediaUrl: null })}
-                  className="text-inf-red hover:text-red-300 text-sm font-medium"
+                  className="text-inf-red hover:text-red-300 text-sm font-medium transition-colors"
                 >
                   {t("editor.remove")}
                 </button>
@@ -738,20 +740,22 @@ function QuestionModal({
           </div>
 
           {/* Background Upload */}
-          <div>
-            <label className="block text-white/70 text-sm font-medium mb-1">
+          <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+            <label className="block text-white/70 text-sm font-medium mb-3">
               {t("editor.backgroundImage")}
             </label>
             {question.backgroundUrl ? (
-              <div className="flex items-center gap-3">
-                <img
-                  src={question.backgroundUrl}
-                  alt="Background preview"
-                  className="max-h-24 rounded-lg object-contain"
-                />
+              <div className="flex flex-col items-start gap-4">
+                <div className="w-full bg-black/30 rounded-lg p-3 flex items-center justify-center min-h-48">
+                  <img
+                    src={question.backgroundUrl}
+                    alt="Background preview"
+                    className="max-w-full max-h-48 rounded-lg object-cover"
+                  />
+                </div>
                 <button
                   onClick={() => onChange({ ...question, backgroundUrl: null })}
-                  className="text-inf-red hover:text-red-300 text-sm font-medium"
+                  className="text-inf-red hover:text-red-300 text-sm font-medium transition-colors"
                 >
                   {t("editor.remove")}
                 </button>
