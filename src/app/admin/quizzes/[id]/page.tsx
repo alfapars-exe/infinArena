@@ -527,14 +527,23 @@ function QuestionModal({
     try {
       const res = await fetch("/api/upload", { method: "POST", body: formData });
       if (res.ok) {
-        const { url } = await res.json();
+        const data = await res.json();
+        const url = data.url || data.absoluteUrl;
+        if (!url) {
+          throw new Error("No URL returned from upload");
+        }
+        console.log(`✓ Upload successful: ${field} = ${url}`);
         onChange({ ...question, [field]: url });
       } else {
-        const err = await res.json();
-        alert(getErrorMessage(err, t("editor.uploadFailed")));
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        const errMsg = getErrorMessage(err, `${t("editor.uploadFailed")} (${res.status})`);
+        console.error(`✗ Upload failed: ${field}`, errMsg);
+        alert(errMsg);
       }
-    } catch {
-      alert(t("editor.uploadFailed"));
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : t("editor.uploadFailed");
+      console.error(`✗ Upload error: ${field}`, error);
+      alert(errMsg);
     }
     setUploading(false);
   };

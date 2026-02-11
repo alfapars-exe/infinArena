@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { writeFile } from "fs/promises";
+import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { randomBytes } from "crypto";
 
@@ -37,6 +37,13 @@ export async function POST(request: NextRequest) {
     const uniqueName = `${randomBytes(16).toString("hex")}.${ext}`;
     const uploadDir = join(process.cwd(), "public", "uploads");
     const filePath = join(uploadDir, uniqueName);
+
+    // Create uploads directory if it doesn't exist
+    try {
+      await mkdir(uploadDir, { recursive: true });
+    } catch (mkdirErr) {
+      console.error("Failed to create uploads directory:", mkdirErr);
+    }
 
     await writeFile(filePath, buffer);
 

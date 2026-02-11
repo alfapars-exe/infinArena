@@ -14,6 +14,15 @@ app.prepare().then(async () => {
   await ensureDbMigrations();
   console.log("✓ Database migrations completed");
 
+  // Create uploads directory
+  const { mkdir } = await import("fs/promises");
+  try {
+    await mkdir("./public/uploads", { recursive: true });
+    console.log("✓ Uploads directory ready");
+  } catch (err) {
+    console.warn("⚠ Could not create uploads directory:", err);
+  }
+
   const { setupSocketHandlers } = await import("./src/lib/socket/server");
 
   const httpServer = createServer((req, res) => {
