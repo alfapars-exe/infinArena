@@ -514,11 +514,13 @@ export default function PlayPage() {
             {/* Question text + media */}
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-6 text-center">
               {currentQuestion.mediaUrl && (
-                <img
-                  src={currentQuestion.mediaUrl}
-                  alt="Question media"
-                  className="max-h-48 mx-auto mb-4 rounded-lg object-contain"
-                />
+                <div className="flex justify-center mb-6 bg-black/30 rounded-lg p-4">
+                  <img
+                    src={currentQuestion.mediaUrl}
+                    alt="Question media"
+                    className="max-w-full max-h-96 rounded-lg object-contain"
+                  />
+                </div>
               )}
               <h2 className="text-xl md:text-2xl font-bold text-white">
                 {currentQuestion.questionText}
