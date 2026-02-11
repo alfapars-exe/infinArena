@@ -5,6 +5,7 @@ function isAbsoluteOrRelativeAssetUrl(value: string): boolean {
   const trimmed = value.trim();
   if (/^https?:\/\/.+/i.test(trimmed)) return true;
   if (trimmed.startsWith("/uploads/")) return true;
+  if (trimmed.startsWith("/api/uploads/")) return true;
   return false;
 }
 
