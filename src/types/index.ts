@@ -58,6 +58,7 @@ export interface BatchAnswerResult {
   totalScore: number;
   correctChoiceId: number;
   streak: number;
+  playerAnswer?: string[] | string | null;
 }
 
 export interface ClientToServerEvents {

@@ -766,6 +766,38 @@ export default function PlayPage() {
                 </>
               )}
 
+              {/* Show answer details for non-multiple choice questions */}
+              {currentQuestion && batchResult && (
+                <div className="mt-4 bg-white/10 rounded-lg p-4 text-left max-w-lg mx-auto">
+                  {currentQuestion.questionType === "ordering" && batchResult.playerAnswer ? (
+                    <div>
+                      <p className="text-white/80 text-sm font-semibold mb-2">
+                        {t("play.yourAnswer")}:
+                      </p>
+                      <div className="space-y-1">
+                        {batchResult.playerAnswer.map((item: any, idx: number) => (
+                          <div
+                            key={idx}
+                            className={`text-sm p-2 rounded ${getChoiceColor(idx)}`}
+                          >
+                            <span className="font-bold">{idx + 1}.</span> {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : currentQuestion.questionType === "text_input" && batchResult.playerAnswer ? (
+                    <div>
+                      <p className="text-white/80 text-sm font-semibold mb-2">
+                        {t("play.yourAnswer")}:
+                      </p>
+                      <p className="text-white text-sm bg-black/30 rounded p-2 italic">
+                        "{batchResult.playerAnswer}"
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               <div className="mt-6 bg-white/10 rounded-full px-6 py-2 inline-block">
                 <span className="text-white font-bold">
                   {t("play.total", { score: totalScore.toLocaleString() })}

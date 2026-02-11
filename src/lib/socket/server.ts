@@ -564,6 +564,22 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 
   // Now send batch results to each player
   for (const [, answer] of Array.from(session.pendingAnswers)) {
+    let playerAnswerDisplay: any = null;
+
+    // Prepare player answer for display based on question type
+    if (currentQ.questionType === "ordering") {
+      // Get choice text for ordered choices
+      const choiceTexts = answer.orderedChoiceIds
+        .map((choiceId) => {
+          const choice = currentQ.choices.find((c) => c.id === choiceId);
+          return choice?.choiceText || `Choice ${choiceId}`;
+        })
+        .filter((text) => text);
+      playerAnswerDisplay = choiceTexts.length > 0 ? choiceTexts : null;
+    } else if (currentQ.questionType === "text_input") {
+      playerAnswerDisplay = answer.textAnswer || null;
+    }
+
     io.to(answer.socketId).emit("game:batch-results", {
       isCorrect: answer.isCorrect,
       pointsAwarded: answer.points,
@@ -571,6 +587,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       totalScore: answer.totalScore,
       correctChoiceId: currentQ.correctChoiceId,
       streak: answer.streak,
+      playerAnswer: playerAnswerDisplay,
     });
   }
 
