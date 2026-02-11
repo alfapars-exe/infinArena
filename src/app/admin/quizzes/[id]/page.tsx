@@ -510,6 +510,8 @@ function QuestionModal({
 }) {
   const { t } = useTranslation();
   const [uploading, setUploading] = useState(false);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
+  const backgroundInputRef = useRef<HTMLInputElement>(null);
 
   const handleAssetUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -713,18 +715,25 @@ function QuestionModal({
                 </button>
               </div>
             ) : (
-              <label className="flex items-center gap-2 cursor-pointer bg-white/10 border border-white/20 rounded-lg px-4 py-3 hover:bg-white/15 transition-colors">
-                <span className="text-white/60 text-sm">
-                  {uploading ? t("editor.uploading") : t("editor.uploadImage")}
-                </span>
+              <>
+                <button
+                  onClick={() => mediaInputRef.current?.click()}
+                  disabled={uploading}
+                  className="w-full flex items-center gap-2 cursor-pointer bg-white/10 border border-white/20 rounded-lg px-4 py-3 hover:bg-white/15 transition-colors disabled:opacity-50"
+                >
+                  <span className="text-white/60 text-sm">
+                    {uploading ? t("editor.uploading") : t("editor.uploadImage")}
+                  </span>
+                </button>
                 <input
+                  ref={mediaInputRef}
                   type="file"
                   accept="image/*"
                   onChange={(e) => handleAssetUpload(e, "mediaUrl")}
                   className="hidden"
                   disabled={uploading}
                 />
-              </label>
+              </>
             )}
           </div>
 
@@ -748,18 +757,25 @@ function QuestionModal({
                 </button>
               </div>
             ) : (
-              <label className="flex items-center gap-2 cursor-pointer bg-white/10 border border-white/20 rounded-lg px-4 py-3 hover:bg-white/15 transition-colors">
-                <span className="text-white/60 text-sm">
-                  {uploading ? t("editor.uploading") : t("editor.uploadBackground")}
-                </span>
+              <>
+                <button
+                  onClick={() => backgroundInputRef.current?.click()}
+                  disabled={uploading}
+                  className="w-full flex items-center gap-2 cursor-pointer bg-white/10 border border-white/20 rounded-lg px-4 py-3 hover:bg-white/15 transition-colors disabled:opacity-50"
+                >
+                  <span className="text-white/60 text-sm">
+                    {uploading ? t("editor.uploading") : t("editor.uploadBackground")}
+                  </span>
+                </button>
                 <input
+                  ref={backgroundInputRef}
                   type="file"
                   accept="image/*"
                   onChange={(e) => handleAssetUpload(e, "backgroundUrl")}
                   className="hidden"
                   disabled={uploading}
                 />
-              </label>
+              </>
             )}
           </div>
 
