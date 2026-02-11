@@ -33,6 +33,15 @@ function getChoiceColor(index: number): string {
   return CHOICE_COLORS[index % CHOICE_COLORS.length];
 }
 
+function getStableChoiceColor(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return CHOICE_COLORS[Math.abs(hash) % CHOICE_COLORS.length];
+}
+
 function getChoiceShape(index: number): string {
   return CHOICE_SHAPES[index % CHOICE_SHAPES.length];
 }
@@ -542,7 +551,6 @@ export default function PlayPage() {
                     onClick={() => submitAnswer(choice.id)}
                     className={`answer-btn ${getChoiceColor(i)}`}
                   >
-                    <span className="text-2xl">{getChoiceShape(i)}</span>
                     <span>{choice.choiceText}</span>
                   </motion.button>
                 ))}
@@ -565,7 +573,6 @@ export default function PlayPage() {
                           active ? "ring-4 ring-white" : "opacity-90"
                         }`}
                       >
-                        <span className="text-2xl">{getChoiceShape(i)}</span>
                         <span>{choice.choiceText}</span>
                       </button>
                     );
@@ -588,7 +595,7 @@ export default function PlayPage() {
                 </p>
                 <div className="space-y-2">
                   {orderedChoices.map((choice, i) => {
-                    const colorClass = getChoiceColor(i);
+                    const colorClass = getStableChoiceColor(choice.choiceText);
                     return (
                       <div
                         key={choice.id}
@@ -780,7 +787,7 @@ export default function PlayPage() {
                         {batchResult.playerAnswer.map((item: any, idx: number) => (
                           <div
                             key={idx}
-                            className={`text-sm p-2 rounded ${getChoiceColor(idx)}`}
+                            className={`text-sm p-2 rounded ${getStableChoiceColor(String(item))}`}
                           >
                             <span className="font-bold">{idx + 1}.</span> {item}
                           </div>

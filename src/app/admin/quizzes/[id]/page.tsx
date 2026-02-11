@@ -59,6 +59,24 @@ function getChoiceColor(index: number): string {
   return CHOICE_COLORS[index % CHOICE_COLORS.length];
 }
 
+function getStableChoiceColor(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return CHOICE_COLORS[Math.abs(hash) % CHOICE_COLORS.length];
+}
+
+function getStableChoiceShape(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return CHOICE_SHAPES[Math.abs(hash) % CHOICE_SHAPES.length];
+}
+
 function getChoiceShape(index: number): string {
   return CHOICE_SHAPES[index % CHOICE_SHAPES.length];
 }
@@ -928,9 +946,9 @@ function QuestionModal({
               {question.choices.map((choice, ci) => (
                 <div
                   key={ci}
-                  className={`choice-row flex items-center gap-2 gap-md-3 ${getChoiceColor(ci)} rounded-lg p-2 p-md-3 flex-wrap flex-md-nowrap`}
+                  className={`choice-row flex items-center gap-2 gap-md-3 ${question.questionType === "ordering" ? getStableChoiceColor(choice.choiceText || String(ci)) : getChoiceColor(ci)} rounded-lg p-2 p-md-3 flex-wrap flex-md-nowrap`}
                 >
-                  <span className="text-white text-lg">{getChoiceShape(ci)}</span>
+                  <span className="text-white text-lg">{question.questionType === "ordering" ? getStableChoiceShape(choice.choiceText || String(ci)) : getChoiceShape(ci)}</span>
                   <input
                     type="text"
                     value={choice.choiceText}
