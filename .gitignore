@@ -2,6 +2,7 @@ node_modules
 .next
 data/*.db
 data/uploads/*
+public/uploads/*
 .env.local
 .env*.local
 *.tsbuildinfo

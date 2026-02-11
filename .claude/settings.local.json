@@ -6,7 +6,9 @@
       "Bash(pnpm init:*)",
       "Bash(pnpm install:*)",
       "Bash(pnpm approve-builds:*)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch:*)",
+      "Bash(git clean:*)"
     ]
   }
 }
