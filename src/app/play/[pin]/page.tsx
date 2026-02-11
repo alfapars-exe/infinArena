@@ -769,7 +769,7 @@ export default function PlayPage() {
               {/* Show answer details for non-multiple choice questions */}
               {currentQuestion && batchResult && (
                 <div className="mt-4 bg-white/10 rounded-lg p-4 text-left max-w-lg mx-auto">
-                  {currentQuestion.questionType === "ordering" && batchResult.playerAnswer ? (
+                  {currentQuestion.questionType === "ordering" && batchResult.playerAnswer && Array.isArray(batchResult.playerAnswer) ? (
                     <div>
                       <p className="text-white/80 text-sm font-semibold mb-2">
                         {t("play.yourAnswer")}:
@@ -785,7 +785,7 @@ export default function PlayPage() {
                         ))}
                       </div>
                     </div>
-                  ) : currentQuestion.questionType === "text_input" && batchResult.playerAnswer ? (
+                  ) : currentQuestion.questionType === "text_input" && batchResult.playerAnswer && typeof batchResult.playerAnswer === "string" ? (
                     <div>
                       <p className="text-white/80 text-sm font-semibold mb-2">
                         {t("play.yourAnswer")}:
