@@ -31,8 +31,8 @@ RUN pnpm build
 # Create database schema (using drizzle-kit)
 RUN pnpm db:push || echo "Database schema push completed"
 
-# Seed initial data
-RUN pnpm db:seed || echo "Database seeding completed"
+# DO NOT run db:seed here - preserve existing data during deployments
+# Seed only runs on first server startup to create admin user
 
 # Expose port
 EXPOSE 7860

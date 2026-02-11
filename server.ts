@@ -14,6 +14,14 @@ app.prepare().then(async () => {
   await ensureDbMigrations();
   console.log("✓ Database migrations completed");
 
+  // Initialize seed (creates admin user only if not exists, preserves quiz data)
+  try {
+    await import("./src/lib/db/seed");
+    console.log("✓ Database initialization completed");
+  } catch (err) {
+    console.warn("⚠ Database initialization warning:", err);
+  }
+
   // Create uploads directory in data folder (persists)
   const { mkdir } = await import("fs/promises");
   try {
