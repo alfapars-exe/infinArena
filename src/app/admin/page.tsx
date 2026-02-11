@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, useI18n } from "@/lib/i18n";
 
 interface Quiz {
   id: number;
@@ -23,6 +23,7 @@ export default function AdminDashboard() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [showAIModal, setShowAIModal] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -84,14 +85,24 @@ export default function AdminDashboard() {
             {t("dashboard.manageQuizzes")}
           </p>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setShowNewModal(true)}
-          className="bg-inf-green hover:bg-green-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-colors"
-        >
-          {t("dashboard.newQuiz")}
-        </motion.button>
+        <div className="d-flex gap-2 gap-md-3">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowAIModal(true)}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all"
+          >
+            ✨ {t("ai.generateWithAI")}
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowNewModal(true)}
+            className="bg-inf-green hover:bg-green-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-colors"
+          >
+            {t("dashboard.newQuiz")}
+          </motion.button>
+        </div>
       </div>
 
       {loading ? (
@@ -196,6 +207,19 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* AI Generate Modal */}
+      <AnimatePresence>
+        {showAIModal && (
+          <AIGenerateModal
+            onClose={() => setShowAIModal(false)}
+            onSuccess={(quizId: number) => {
+              setShowAIModal(false);
+              router.push(`/infinarenapanel/quizzes/${quizId}`);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       {/* New Quiz Modal */}
       <AnimatePresence>
         {showNewModal && (
@@ -271,5 +295,233 @@ export default function AdminDashboard() {
   );
 }
 
+const AI_MODELS = [
+  { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B (En Güçlü)" },
+  { id: "zai-org/GLM-4.7", name: "GLM-4.7" },
+  { id: "openai/gpt-oss-20b", name: "GPT-OSS 20B (En Hızlı)" },
+];
 
+function AIGenerateModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: (quizId: number) => void;
+}) {
+  const { t } = useTranslation();
+  const { locale } = useI18n();
+  const [topic, setTopic] = useState("");
+  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [numQuestions, setNumQuestions] = useState(10);
+  const [model, setModel] = useState(AI_MODELS[0].id);
+  const [language, setLanguage] = useState<"en" | "tr">(locale);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
+  const handleGenerate = async () => {
+    if (!topic.trim()) return;
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/ai/generate-quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic, difficulty, numQuestions, model, language }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || t("ai.error"));
+        setLoading(false);
+        return;
+      }
+
+      onSuccess(data.quiz.id);
+    } catch {
+      setError(t("ai.error"));
+      setLoading(false);
+    }
+  };
+
+  const difficulties = [
+    { key: "easy" as const, label: t("ai.difficultyEasy") },
+    { key: "medium" as const, label: t("ai.difficultyMedium") },
+    { key: "hard" as const, label: t("ai.difficultyHard") },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm d-flex align-items-start justify-content-center z-50 p-3 p-md-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-gray-800 rounded-2xl p-4 p-md-5 w-full border border-white/10 mt-2 mt-md-3"
+        style={{ maxWidth: "560px" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-2xl font-bold text-white mb-1">
+          ✨ {t("ai.generateQuiz")}
+        </h2>
+        <p className="text-gray-400 text-sm mb-5">{t("ai.generatingDesc").replace("...", "")}</p>
+
+        <div className="space-y-4">
+          {/* Topic */}
+          <div>
+            <label className="block text-white/70 text-sm font-medium mb-2">
+              {t("ai.topic")} *
+            </label>
+            <input
+              type="text"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              className="input-field bg-white/10"
+              placeholder={t("ai.topicPlaceholder")}
+              autoFocus
+              disabled={loading}
+            />
+          </div>
+
+          {/* Difficulty */}
+          <div>
+            <label className="block text-white/70 text-sm font-medium mb-2">
+              {t("ai.difficulty")}
+            </label>
+            <div className="d-flex gap-2">
+              {difficulties.map((d) => (
+                <button
+                  key={d.key}
+                  onClick={() => setDifficulty(d.key)}
+                  disabled={loading}
+                  className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                    difficulty === d.key
+                      ? d.key === "easy"
+                        ? "bg-green-600 text-white"
+                        : d.key === "medium"
+                        ? "bg-yellow-600 text-white"
+                        : "bg-red-600 text-white"
+                      : "bg-white/10 text-white/60 hover:bg-white/20"
+                  }`}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Number of Questions */}
+          <div>
+            <label className="block text-white/70 text-sm font-medium mb-2">
+              {t("ai.numQuestions")}
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={numQuestions}
+              onChange={(e) => setNumQuestions(Math.min(30, Math.max(1, parseInt(e.target.value) || 1)))}
+              className="input-field bg-white/10 w-full"
+              disabled={loading}
+            />
+          </div>
+
+          {/* Model */}
+          <div>
+            <label className="block text-white/70 text-sm font-medium mb-2">
+              {t("ai.model")}
+            </label>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="input-field bg-white/10 w-full"
+              disabled={loading}
+            >
+              {AI_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Language */}
+          <div>
+            <label className="block text-white/70 text-sm font-medium mb-2">
+              {t("ai.language")}
+            </label>
+            <div className="d-flex gap-2">
+              <button
+                onClick={() => setLanguage("en")}
+                disabled={loading}
+                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                  language === "en"
+                    ? "bg-blue-600 text-white"
+                    : "bg-white/10 text-white/60 hover:bg-white/20"
+                }`}
+              >
+                English
+              </button>
+              <button
+                onClick={() => setLanguage("tr")}
+                disabled={loading}
+                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                  language === "tr"
+                    ? "bg-blue-600 text-white"
+                    : "bg-white/10 text-white/60 hover:bg-white/20"
+                }`}
+              >
+                Türkçe
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+            {error}
+            <p className="text-red-400/70 text-xs mt-1">{t("ai.errorRetry")}</p>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 hover:bg-white/5 transition-colors font-medium disabled:opacity-50"
+          >
+            {t("ai.cancel")}
+          </button>
+          <motion.button
+            whileHover={{ scale: loading ? 1 : 1.02 }}
+            whileTap={{ scale: loading ? 1 : 0.98 }}
+            onClick={handleGenerate}
+            disabled={!topic.trim() || loading}
+            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-all d-flex align-items-center justify-content-center gap-2"
+          >
+            {loading ? (
+              <>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                  className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
+                />
+                {t("ai.generating")}
+              </>
+            ) : (
+              <>✨ {t("ai.generate")}</>
+            )}
+          </motion.button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
