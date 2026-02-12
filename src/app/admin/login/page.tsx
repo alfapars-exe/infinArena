@@ -42,6 +42,9 @@ export default function AdminLogin() {
         style={{ maxWidth: "520px" }}
       >
         <div className="text-center mb-8">
+          <div className="d-flex justify-content-center mb-4">
+            <img src="/logo.png" alt="infinArena" className="h-12 w-auto" />
+          </div>
           <motion.h1
             initial={{ scale: 0.5 }}
             animate={{ scale: 1 }}

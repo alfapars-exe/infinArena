@@ -185,14 +185,22 @@ async function seed() {
       .where(eq(admins.username, "admin"));
 
     if (existing.length === 0) {
-      const hash = bcrypt.hashSync("inFina2026!!**", 10);
+      const adminUsername = (process.env.ADMIN_USERNAME || "admin").trim();
+      const adminPassword = process.env.ADMIN_PASSWORD?.trim();
+
+      if (!adminPassword) {
+        console.warn("[db] ADMIN_PASSWORD not set; skipping admin seed");
+        return;
+      }
+
+      const hash = bcrypt.hashSync(adminPassword, 10);
       await dbAny.insert(admins).values({
-        username: "admin",
+        username: adminUsername,
         email: "admin@infinarena.com",
         passwordHash: hash,
         name: "Admin",
       });
-      console.log("✓ Admin user created: admin / inFina2026!!**");
+      console.log("✓ Admin user created via ADMIN_USERNAME/ADMIN_PASSWORD");
     } else {
       console.log("✓ Admin user already exists - no changes made");
     }
