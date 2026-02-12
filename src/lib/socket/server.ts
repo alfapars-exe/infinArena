@@ -92,8 +92,10 @@ export function setupSocketHandlers(io: TypedServer) {
         }
 
         if (!dbSession.isLive) {
-          socket.emit("error", { message: "Session not live yet. Wait for the host." });
-          return;
+          await db
+            .update(quizSessions)
+            .set({ isLive: true })
+            .where(eq(quizSessions.id, dbSession.id));
         }
 
         const [existingPlayer] = await db
@@ -727,8 +729,107 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     (answer) => answer.isCorrect
   ).length;
 
+  const playerById = new Map<
+    number,
+    { playerId: number; nickname: string; avatar: string }
+  >(
+    allPlayers.map((p: any) => [
+      p.id,
+      {
+        playerId: p.id,
+        nickname: p.nickname,
+        avatar: p.avatar || "🎮",
+      },
+    ])
+  );
+
+  const choiceTextById = new Map(
+    currentQ.choices.map((c) => [c.id, c.choiceText] as const)
+  );
+
+  const choiceSelectionBuckets = new Map<
+    number,
+    {
+      choiceId: number;
+      choiceText: string;
+      players: { playerId: number; nickname: string; avatar: string }[];
+    }
+  >(
+    currentQ.choices.map((c) => [
+      c.id,
+      {
+        choiceId: c.id,
+        choiceText: c.choiceText,
+        players: [] as { playerId: number; nickname: string; avatar: string }[],
+      },
+    ])
+  );
+
+  const answeredPlayers = Array.from(session.pendingAnswers.entries()).flatMap(
+    ([playerId, answer]) => {
+      const player = playerById.get(playerId);
+      if (!player) return [];
+
+      const selectedChoiceIds = Array.from(
+        new Set(
+          [
+            ...(answer.choiceId ? [answer.choiceId] : []),
+            ...answer.choiceIds,
+            ...answer.orderedChoiceIds,
+          ].filter((id) => Number.isInteger(id))
+        )
+      );
+
+      for (const choiceId of selectedChoiceIds) {
+        const bucket = choiceSelectionBuckets.get(choiceId);
+        if (bucket) {
+          bucket.players.push(player);
+        }
+      }
+
+      const selectedChoiceTexts = selectedChoiceIds
+        .map((choiceId) => choiceTextById.get(choiceId))
+        .filter((text): text is string => Boolean(text));
+
+      const orderedChoiceTexts = answer.orderedChoiceIds
+        .map((choiceId) => choiceTextById.get(choiceId))
+        .filter((text): text is string => Boolean(text));
+
+      return [
+        {
+          ...player,
+          selectedChoiceIds,
+          selectedChoiceTexts,
+          orderedChoiceTexts,
+          textAnswer: answer.textAnswer || null,
+          isCorrect: answer.isCorrect,
+        },
+      ];
+    }
+  );
+
+  const unansweredPlayers = allPlayers
+    .filter((p: any) => !session.pendingAnswers.has(p.id))
+    .map((p: any) => ({
+      playerId: p.id,
+      nickname: p.nickname,
+      avatar: p.avatar || "🎮",
+    }));
+
+  const choiceSelections = Array.from(choiceSelectionBuckets.values()).map(
+    (bucket) => ({
+      choiceId: bucket.choiceId,
+      choiceText: bucket.choiceText,
+      count: bucket.players.length,
+      players: bucket.players,
+    })
+  );
+
   // Send stats to admin
   io.to(session.adminSocketId).emit("game:question-stats", {
+    choiceSelections,
+    unansweredPlayers,
+    answeredPlayers,
     choiceCounts: session.choiceCounts,
     correctChoiceId: currentQ.correctChoiceId,
     correctChoiceIds: currentQ.correctChoiceIds,
@@ -799,5 +900,3 @@ async function endQuiz(io: TypedServer, sessionId: number) {
     resetAvatars();
   }
 }
-
-

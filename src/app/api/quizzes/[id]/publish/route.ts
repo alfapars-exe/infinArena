@@ -52,6 +52,7 @@ export async function POST(
     .values({
       quizId,
       pin,
+      isLive: true,
       createdAt: nowSql,
     })
     .returning();
@@ -62,5 +63,4 @@ export async function POST(
     url: `/play/${pin}`,
   });
 }
-
 

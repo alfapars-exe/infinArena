@@ -466,7 +466,7 @@ export default function PublishPage() {
                 }}
                 className="text-sm text-white/70 hover:text-white underline underline-offset-4"
               >
-                {t("live.changeMusic")}
+                {t("live.changeMusicLabel")}
               </button>
             </div>
           )}

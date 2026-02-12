@@ -357,6 +357,19 @@ export default function LiveControlPage() {
     }
   };
 
+  const getAnswerLabel = (
+    player: QuestionStats["answeredPlayers"][number]
+  ): string => {
+    if (player.textAnswer) return player.textAnswer;
+    if (player.orderedChoiceTexts.length > 0) {
+      return player.orderedChoiceTexts.join(" > ");
+    }
+    if (player.selectedChoiceTexts.length > 0) {
+      return player.selectedChoiceTexts.join(", ");
+    }
+    return "-";
+  };
+
   const questionBackgroundStyle =
     phase === "question" && currentQuestion?.backgroundUrl
       ? {
@@ -629,8 +642,19 @@ export default function LiveControlPage() {
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-6">
               <div className="flex items-end justify-center gap-4 h-64">
                 {currentQuestion.choices.map((c, i) => {
-                  const count = stats.choiceCounts[c.id] || 0;
-                  const maxCount = Math.max(...Object.values(stats.choiceCounts), 1);
+                  const selection = (stats.choiceSelections || []).find(
+                    (entry) => entry.choiceId === c.id
+                  );
+                  const count = selection?.count ?? stats.choiceCounts[c.id] ?? 0;
+                  const maxCount = Math.max(
+                    ...currentQuestion.choices.map((choice) => {
+                      const item = (stats.choiceSelections || []).find(
+                        (entry) => entry.choiceId === choice.id
+                      );
+                      return item?.count ?? stats.choiceCounts[choice.id] ?? 0;
+                    }),
+                    1
+                  );
                   const height = (count / maxCount) * 100;
 
                   return (
@@ -668,6 +692,97 @@ export default function LiveControlPage() {
               </div>
               <div className="mt-1 text-white/60 text-sm">
                 {t("live.remainingQuestions", { count: stats.remainingQuestions })}
+              </div>
+
+              <div className="mt-6 text-left">
+                <h3 className="text-white font-semibold mb-3">{t("live.statsByOption")}</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {currentQuestion.choices.map((choice) => {
+                    const selection = (stats.choiceSelections || []).find(
+                      (entry) => entry.choiceId === choice.id
+                    );
+                    const selectedPlayers = selection?.players || [];
+                    return (
+                      <div
+                        key={choice.id}
+                        className="bg-white/5 border border-white/10 rounded-xl p-3"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-white font-semibold text-sm">{choice.choiceText}</p>
+                          <span className="text-inf-yellow font-bold">{selectedPlayers.length}</span>
+                        </div>
+                        {selectedPlayers.length === 0 ? (
+                          <p className="text-white/40 text-xs">{t("live.noSelectionYet")}</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {selectedPlayers.map((player) => (
+                              <span
+                                key={`${choice.id}-${player.playerId}`}
+                                className="bg-white/10 text-white/80 text-xs px-2 py-1 rounded-full"
+                              >
+                                {player.avatar} {player.nickname}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div className="bg-red-500/10 border border-red-400/30 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-red-200 font-semibold text-sm">{t("live.noAnswer")}</p>
+                      <span className="text-red-300 font-bold">
+                        {stats.unansweredPlayers?.length || 0}
+                      </span>
+                    </div>
+                    {stats.unansweredPlayers && stats.unansweredPlayers.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {stats.unansweredPlayers.map((player) => (
+                          <span
+                            key={`no-answer-${player.playerId}`}
+                            className="bg-red-500/20 text-red-100 text-xs px-2 py-1 rounded-full"
+                          >
+                            {player.avatar} {player.nickname}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-white/40 text-xs">{t("live.noSelectionYet")}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 text-left">
+                <h3 className="text-white font-semibold mb-3">{t("live.playerResponses")}</h3>
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {(stats.answeredPlayers || []).length === 0 ? (
+                    <p className="text-white/40 text-xs">{t("live.noSelectionYet")}</p>
+                  ) : (
+                    (stats.answeredPlayers || []).map((player) => (
+                      <div
+                        key={`answer-${player.playerId}`}
+                        className="bg-white/5 border border-white/10 rounded-lg p-2 flex items-center justify-between gap-3"
+                      >
+                        <div className="text-white/90 text-sm truncate">
+                          {player.avatar} {player.nickname}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-white/80 text-xs md:text-sm">
+                            {getAnswerLabel(player)}
+                          </p>
+                          <p
+                            className={`text-[11px] font-semibold ${
+                              player.isCorrect ? "text-green-300" : "text-red-300"
+                            }`}
+                          >
+                            {player.isCorrect ? "Correct" : "Wrong"}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
 
@@ -843,5 +958,4 @@ export default function LiveControlPage() {
     </div>
   );
 }
-
 

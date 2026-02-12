@@ -43,6 +43,31 @@ export interface AnswerAck {
 }
 
 export interface QuestionStats {
+  choiceSelections: {
+    choiceId: number;
+    choiceText: string;
+    count: number;
+    players: {
+      playerId: number;
+      nickname: string;
+      avatar: string;
+    }[];
+  }[];
+  unansweredPlayers: {
+    playerId: number;
+    nickname: string;
+    avatar: string;
+  }[];
+  answeredPlayers: {
+    playerId: number;
+    nickname: string;
+    avatar: string;
+    selectedChoiceIds: number[];
+    selectedChoiceTexts: string[];
+    orderedChoiceTexts: string[];
+    textAnswer: string | null;
+    isCorrect: boolean;
+  }[];
   choiceCounts: Record<number, number>;
   correctChoiceId: number;
   correctChoiceIds?: number[];
@@ -127,5 +152,4 @@ export interface ServerToClientEvents {
   "session:live": () => void;
   error: (data: { message: string }) => void;
 }
-
 
