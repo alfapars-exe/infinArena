@@ -39,6 +39,13 @@ function normalizeText(value: string): string {
   return value.trim().toLocaleLowerCase("tr");
 }
 
+function toIntegerArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item));
+}
+
 function normalizeCorrectChoiceIds(
   choices: Array<{ id: number; isCorrect?: boolean }>,
   questionType: "multiple_choice" | "true_false" | "multi_select" | "text_input" | "ordering"
@@ -430,6 +437,9 @@ export function setupSocketHandlers(io: TypedServer) {
               choices.map((c: any) => ({ id: c.id, isCorrect: c.isCorrect })),
               questionType
             );
+            
+            logger.socket.info(`[QUIZ-LOAD] Q${q.id} Type=${questionType}: Choices=[${choices.map((c: any) => `${c.id}(${c.isCorrect ? '✓' : '✗'})`).join(', ')}], CorrectIds=[${correctChoiceIds.join(', ')}]`);
+            
             const correctOrderChoiceIds = [...choices]
               .sort((a, b) => a.orderIndex - b.orderIndex)
               .map((c: any) => c.id);
@@ -541,12 +551,8 @@ export function setupSocketHandlers(io: TypedServer) {
           serverResponseTime,
           currentQ.timeLimitSeconds * 1000
         );
-        const safeChoiceIds = Array.isArray(choiceIds)
-          ? choiceIds.filter((id) => Number.isInteger(id))
-          : [];
-        const safeOrderedChoiceIds = Array.isArray(orderedChoiceIds)
-          ? orderedChoiceIds.filter((id) => Number.isInteger(id))
-          : [];
+        const safeChoiceIds = toIntegerArray(choiceIds);
+        const safeOrderedChoiceIds = toIntegerArray(orderedChoiceIds);
         const safeTextAnswer = typeof textAnswer === "string" ? textAnswer.trim() : "";
 
         let isCorrect = false;
@@ -557,14 +563,17 @@ export function setupSocketHandlers(io: TypedServer) {
           currentQ.questionType === "multiple_choice" ||
           currentQ.questionType === "true_false"
         ) {
-          if (!choiceId || !Number.isInteger(choiceId)) {
+          const normalizedChoiceId = Number(choiceId);
+          if (!Number.isInteger(normalizedChoiceId)) {
             rejectAnswer("Choice is required");
             return;
           }
-          const normalizedChoiceId = Number(choiceId);
           const normalizedCorrectId = Number(currentQ.correctChoiceId);
           persistedChoiceId = normalizedChoiceId;
           isCorrect = normalizedChoiceId === normalizedCorrectId;
+          
+          logger.socket.info(`[SCORING] Q${questionId}: Player selected=${normalizedChoiceId} (type: ${typeof choiceId}), Correct=${normalizedCorrectId} (type: ${typeof currentQ.correctChoiceId}), isCorrect=${isCorrect}, ChoiceIds in Q: ${currentQ.choices.map(c => c.id).join(',')}`);
+          
           session.choiceCounts[normalizedChoiceId] = (session.choiceCounts[normalizedChoiceId] || 0) + 1;
         } else if (currentQ.questionType === "multi_select") {
           if (safeChoiceIds.length === 0) {

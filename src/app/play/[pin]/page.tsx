@@ -238,6 +238,8 @@ export default function PlayPage() {
   const [didSubmit, setDidSubmit] = useState(false);
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const isSubmittingAnswerRef = useRef(false);
+  const phaseRef = useRef<Phase>("nickname");
+  const submitWatchdogRef = useRef<number | NodeJS.Timeout | null>(null);
   const lastQuestionIdRef = useRef<number | null>(null);
   const currentQuestionMetaRef = useRef<{ id: number | null; serverStartTime: number }>({
     id: null,
@@ -294,9 +296,36 @@ export default function PlayPage() {
     } catch {}
   }, [pin, sessionCacheKey]);
 
+  const clearSubmitWatchdog = useCallback(() => {
+    if (submitWatchdogRef.current) {
+      window.clearTimeout(submitWatchdogRef.current);
+      submitWatchdogRef.current = null;
+    }
+  }, []);
+
+  const armSubmitWatchdog = useCallback((targetSocket: TypedSocket | null) => {
+    clearSubmitWatchdog();
+    submitWatchdogRef.current = window.setTimeout(() => {
+      if (!isSubmittingAnswerRef.current) return;
+      setIsSubmittingAnswer(false);
+      isSubmittingAnswerRef.current = false;
+      if (phaseRef.current === "answered") {
+        setDidSubmit(false);
+        setPhase("question");
+      }
+      if (targetSocket?.connected) {
+        emitRejoinFromCache(targetSocket);
+      }
+    }, 2500);
+  }, [clearSubmitWatchdog, emitRejoinFromCache]);
+
   useEffect(() => {
     isSubmittingAnswerRef.current = isSubmittingAnswer;
   }, [isSubmittingAnswer]);
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   // Server-synced timer using requestAnimationFrame
   const startSyncedTimer = useCallback((serverStart: number, timeLimitSeconds: number) => {
@@ -391,6 +420,7 @@ export default function PlayPage() {
     });
 
     s.on("error", ({ message }) => {
+      clearSubmitWatchdog();
       if (message === "Already answered") {
         setIsSubmittingAnswer(false);
         isSubmittingAnswerRef.current = false;
@@ -401,6 +431,7 @@ export default function PlayPage() {
         isSubmittingAnswerRef.current = false;
         setDidSubmit(false);
         setSelectedChoice(null);
+        setPhase("question");
       }
       setError(message);
     });
@@ -453,7 +484,9 @@ export default function PlayPage() {
         setDidSubmit(false);
         setIsSubmittingAnswer(false);
         isSubmittingAnswerRef.current = false;
+        clearSubmitWatchdog();
         setBatchResult(null);
+        setError("");
         questionStartTime.current = serverStartTime;
         scoringRef.current = {
           basePoints: question.basePoints || 1000,
@@ -469,6 +502,7 @@ export default function PlayPage() {
 
     // Answer acknowledged - stay in "answered" phase waiting for batch results
     s.on("game:answer-ack", () => {
+      clearSubmitWatchdog();
       setIsSubmittingAnswer(false);
       isSubmittingAnswerRef.current = false;
       setDidSubmit(true);
@@ -477,6 +511,7 @@ export default function PlayPage() {
 
     // Time is up
     s.on("game:time-up", () => {
+      clearSubmitWatchdog();
       setTimeLeft(0);
       setTimeProgress(0);
       setIsSubmittingAnswer(false);
@@ -486,6 +521,7 @@ export default function PlayPage() {
 
     // Batch results come after time-up or all answered
     s.on("game:batch-results", (result) => {
+      clearSubmitWatchdog();
       setBatchResult(result);
       setTotalScore(result.totalScore);
       setCurrentStreak(result.streak);
@@ -540,6 +576,7 @@ export default function PlayPage() {
     });
 
     return () => {
+      clearSubmitWatchdog();
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
       s.disconnect();
     };
@@ -634,7 +671,8 @@ export default function PlayPage() {
     setDidSubmit(false);
     setIsSubmittingAnswer(false);
     isSubmittingAnswerRef.current = false;
-  }, [currentQuestion]);
+    clearSubmitWatchdog();
+  }, [currentQuestion, clearSubmitWatchdog]);
 
   const submitAnswer = (choiceId: number) => {
     if (
@@ -642,6 +680,7 @@ export default function PlayPage() {
       !currentQuestion ||
       phase !== "question" ||
       selectedChoice !== null ||
+      isSubmittingAnswerRef.current ||
       didSubmit
     ) {
       return;
@@ -654,8 +693,10 @@ export default function PlayPage() {
       choiceId,
       responseTimeMs,
     });
+    setError("");
     setIsSubmittingAnswer(true);
     isSubmittingAnswerRef.current = true;
+    armSubmitWatchdog(socket);
   };
 
   const selectMultiChoice = (choiceId: number) => {
@@ -663,6 +704,7 @@ export default function PlayPage() {
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
+      isSubmittingAnswerRef.current ||
       didSubmit
     ) {
       return;
@@ -675,8 +717,10 @@ export default function PlayPage() {
       choiceIds: [choiceId],
       responseTimeMs,
     });
+    setError("");
     setIsSubmittingAnswer(true);
     isSubmittingAnswerRef.current = true;
+    armSubmitWatchdog(socket);
   };
 
   const moveOrderedChoice = (index: number, direction: -1 | 1) => {
@@ -695,17 +739,19 @@ export default function PlayPage() {
       currentQuestion?.questionType === "ordering" &&
       timeLeft === 0 &&
       orderedChoices.length > 0 &&
+      !isSubmittingAnswer &&
       !didSubmit
     ) {
       submitAdvancedAnswer();
     }
-  }, [timeLeft, phase, currentQuestion, orderedChoices, didSubmit]);
+  }, [timeLeft, phase, currentQuestion, orderedChoices, didSubmit, isSubmittingAnswer]);
 
   const submitAdvancedAnswer = () => {
     if (
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
+      isSubmittingAnswerRef.current ||
       didSubmit
     ) {
       return;
@@ -720,12 +766,20 @@ export default function PlayPage() {
         responseTimeMs,
       });
     } else if (currentQuestion.questionType === "ordering") {
-      if (orderedChoices.length === 0) return;
+      const orderedChoiceIds = orderedChoices
+        .map((c) => Number(c.id))
+        .filter((id) => Number.isInteger(id));
+      if (orderedChoiceIds.length !== orderedChoices.length) {
+        setError(t("play.answerFailed" as any) || "Answer submit failed.");
+        return;
+      }
       socket.emit("player:answer", {
         questionId: currentQuestion.id,
-        orderedChoiceIds: orderedChoices.map((c) => c.id),
+        orderedChoiceIds,
         responseTimeMs,
       });
+      setDidSubmit(true);
+      setPhase("answered");
     } else if (currentQuestion.questionType === "text_input") {
       if (!textAnswer.trim()) return;
       socket.emit("player:answer", {
@@ -737,8 +791,10 @@ export default function PlayPage() {
       return;
     }
 
+    setError("");
     setIsSubmittingAnswer(true);
     isSubmittingAnswerRef.current = true;
+    armSubmitWatchdog(socket);
   };
 
   const pageBackgroundStyle =
@@ -999,6 +1055,10 @@ export default function PlayPage() {
               </h2>
             </div>
 
+            {error && (
+              <p className="text-center text-sm text-inf-red mb-3">{error}</p>
+            )}
+
             {/* Answer UI */}
             {(currentQuestion.questionType === "multiple_choice" ||
               currentQuestion.questionType === "true_false") && (
@@ -1048,6 +1108,7 @@ export default function PlayPage() {
                     const isDisabled = phase !== "question" || didSubmit;
                     return (
                       <button
+                        type="button"
                         key={choice.id}
                         onClick={() => {
                           if (!isDisabled && Number.isInteger(choiceId)) {
@@ -1088,15 +1149,17 @@ export default function PlayPage() {
                         </span>
                         <div className="flex gap-1">
                           <button
+                            type="button"
                             onClick={() => moveOrderedChoice(i, -1)}
-                            disabled={i === 0}
+                            disabled={didSubmit || isSubmittingAnswer || i === 0}
                             className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
                           >
                             ↑
                           </button>
                           <button
+                            type="button"
                             onClick={() => moveOrderedChoice(i, 1)}
-                            disabled={i === orderedChoices.length - 1}
+                            disabled={didSubmit || isSubmittingAnswer || i === orderedChoices.length - 1}
                             className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
                           >
                             ↓
@@ -1108,8 +1171,9 @@ export default function PlayPage() {
                 </div>
                 {!didSubmit && (
                   <button
+                    type="button"
                     onClick={submitAdvancedAnswer}
-                    disabled={orderedChoices.length === 0}
+                    disabled={orderedChoices.length === 0 || isSubmittingAnswer}
                     className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
                   >
                     {t("play.submit")}
@@ -1128,8 +1192,9 @@ export default function PlayPage() {
                   placeholder={t("play.textInputPlaceholder")}
                 />
                 <button
+                  type="button"
                   onClick={submitAdvancedAnswer}
-                  disabled={!textAnswer.trim()}
+                  disabled={!textAnswer.trim() || isSubmittingAnswer}
                   className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
                 >
                   {t("play.submit")}
