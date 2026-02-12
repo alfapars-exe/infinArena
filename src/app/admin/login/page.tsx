@@ -43,7 +43,9 @@ export default function AdminLogin() {
       >
         <div className="text-center mb-8">
           <div className="d-flex justify-content-center mb-4">
-            <img src="/logo.png" alt="infinArena" className="h-12 w-auto" />
+            <div className="bg-white/95 rounded-xl px-3 py-1 shadow-lg">
+              <img src="/logo.png" alt="infinArena" className="h-12 w-auto" />
+            </div>
           </div>
           <motion.h1
             initial={{ scale: 0.5 }}

@@ -74,7 +74,9 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
           <div className="container-fluid app-container px-3 px-md-4">
             <div className="d-flex flex-wrap flex-md-nowrap align-items-center justify-content-between gap-2 py-2 py-md-0 min-h-[64px]">
               <Link href="/infinarenapanel" className="flex items-center gap-3">
-                <span className="text-2xl font-black text-white">infinArena</span>
+                <span className="bg-white/95 rounded-lg px-2 py-1 shadow-sm">
+                  <img src="/logo.png" alt="infinArena" className="h-7 md:h-8 w-auto" />
+                </span>
                 <span className="bg-white/20 text-white/80 text-xs font-medium px-2 py-1 rounded">
                   ADMIN
                 </span>
