@@ -21,6 +21,7 @@ interface MusicContextValue {
   changeVolume: (volume: number) => void;
   toggleRepeat: () => void;
   changeVideo: (videoId: string) => void;
+  clearVideo: () => void;
   extractVideoId: (url: string) => string | null;
 }
 
@@ -162,6 +163,16 @@ export function MusicProvider({ children }: MusicProviderProps) {
     updateMusicState({ youtubeVideoId: videoId });
   };
 
+  const clearVideo = () => {
+    if (playerRef.current) {
+      playerRef.current.stopVideo();
+    }
+    updateMusicState({
+      youtubeVideoId: null,
+      isPlaying: false,
+    });
+  };
+
   const extractVideoId = (url: string): string | null => {
     const patterns = [
       /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?/]+)/,
@@ -178,15 +189,16 @@ export function MusicProvider({ children }: MusicProviderProps) {
   };
 
   const value: MusicContextValue = {
-    youtubeVideoId: musicState.youtubeVideoId || null,
-    isPlaying: musicState.isPlaying || false,
-    volume: musicState.volume || 30,
-    isRepeat: musicState.isRepeat || true,
+    youtubeVideoId: musicState.youtubeVideoId ?? null,
+    isPlaying: musicState.isPlaying ?? false,
+    volume: musicState.volume ?? 30,
+    isRepeat: musicState.isRepeat ?? true,
     isPlayerReady,
     togglePlay,
     changeVolume,
     toggleRepeat,
     changeVideo,
+    clearVideo,
     extractVideoId,
   };
 

@@ -290,6 +290,22 @@ Ornekler:
 - `10200 -> v.1.100.100`
 - `10201 -> v.2.0.0`
 
+### Kahoot Audio Dosyalari (Admin Live)
+
+Admin live ekranindaki Kahoot muzigi `public/audio/kahoot` altindan sunulur. Dosya adlari URL-guvenli slug formatinda normalize edilmistir.
+
+Kaynak -> hedef eslesmeleri:
+- `Kahoot Lobby Music.mp3` -> `public/audio/kahoot/kahoot-lobby-music.mp3`
+- `Kahoot Gong Sound Effect.mp3` -> `public/audio/kahoot/kahoot-gong-sound-effect.mp3`
+- `Kahoot_ Podium Theme Music.mp3` -> `public/audio/kahoot/kahoot-podium-theme-music.mp3`
+- `Kahoot In Game Music (5 Second Count Down)_1..3.mp3` -> `public/audio/kahoot/kahoot-question-5s-1..3.mp3`
+- `Kahoot In Game Music (10 Second Count Down)_1..2.mp3` -> `public/audio/kahoot/kahoot-question-10s-1..2.mp3`
+- `Kahoot In Game Music (20 Second Countdown)_1..3.mp3` -> `public/audio/kahoot/kahoot-question-20s-1..3.mp3`
+- `Kahoot Music (30 Second Countdown)_1..3.mp3` -> `public/audio/kahoot/kahoot-question-30s-1..3.mp3`
+- `Kahoot Music (60 Second Count Down)_1..2.mp3` -> `public/audio/kahoot/kahoot-question-60s-1..2.mp3`
+- `Kahoot In Game Music (90 Second Countdown)_1.mp3` -> `public/audio/kahoot/kahoot-question-90s-1.mp3`
+- `Kahoot In Game Music (120 Second Countdown)_1.mp3` -> `public/audio/kahoot/kahoot-question-120s-1.mp3`
+
 ### HuggingFace Spaces
 
 1. Space'i Docker SDK ile olusturun

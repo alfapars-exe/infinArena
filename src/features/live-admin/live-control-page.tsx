@@ -1,11 +1,14 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, useCallback, useTransition } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import confetti from "canvas-confetti";
 import { io, Socket } from "socket.io-client";
 import { useTranslation } from "@/lib/i18n";
+import { useMusicPlayer } from "@/lib/music-context";
 import { ConnectionStatusOverlay } from "@/components/live/connection-status-overlay";
+import { useAdminKahootAudio } from "@/features/live-admin/hooks/use-admin-kahoot-audio";
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -27,14 +30,11 @@ const CHOICE_COLORS = [
   "bg-slate-600",
 ];
 const CHOICE_SHAPES = ["A", "B", "C", "D"];
-const MUSIC_STORAGE_KEY = "infinarena:music";
-
-type StoredMusic = {
-  youtubeVideoId?: string | null;
-  volume?: number;
-  isRepeat?: boolean;
-  isPlaying?: boolean;
-};
+const PODIUM_REVEAL_MS = {
+  third: 4000,
+  second: 8000,
+  first: 14000,
+} as const;
 
 function getChoiceColor(index: number): string {
   return CHOICE_COLORS[index % CHOICE_COLORS.length];
@@ -61,8 +61,6 @@ export default function LiveControlPage() {
   const { t } = useTranslation();
   const params = useParams<{ sessionId: string }>();
   const pin = params?.sessionId ?? "";
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const isPageInitialLoadRef = useRef(true);
   const socketConnectedAtLeastOnceRef = useRef(false);
 
@@ -87,10 +85,21 @@ export default function LiveControlPage() {
   const [notifications, setNotifications] = useState<
     { id: number; message: string }[]
   >([]);
-  const [musicVideoId, setMusicVideoId] = useState<string | null>(null);
-  const [musicVolume, setMusicVolume] = useState(50);
-  const [musicIsRepeat, setMusicIsRepeat] = useState(false);
-  const [musicIsPlaying, setMusicIsPlaying] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [showYoutubeInput, setShowYoutubeInput] = useState(false);
+  const [podiumStep, setPodiumStep] = useState(0);
+  const podiumTimersRef = useRef<number[]>([]);
+  const podiumConfettiTriggeredRef = useRef(false);
+  const music = useMusicPlayer();
+  const {
+    autoplayBlocked,
+    playLobbyLoop,
+    playQuestionLoop,
+    playGongOnce,
+    playPodiumLoop,
+    stopQuestionLoop,
+    stopAllKahootAudio,
+  } = useAdminKahootAudio();
 
   const pushNotification = (message: string) => {
     const id = Date.now();
@@ -99,6 +108,26 @@ export default function LiveControlPage() {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     }, 5000);
   };
+
+  const clearPodiumTimers = useCallback(() => {
+    podiumTimersRef.current.forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    podiumTimersRef.current = [];
+  }, []);
+
+  const setYoutubeMusic = useCallback(() => {
+    const videoId = music.extractVideoId(youtubeUrl.trim());
+    if (!videoId) return;
+    music.changeVideo(videoId);
+    setShowYoutubeInput(false);
+  }, [music, youtubeUrl]);
+
+  const removeYoutubeMusic = useCallback(() => {
+    music.clearVideo();
+    setYoutubeUrl("");
+    setShowYoutubeInput(false);
+  }, [music]);
 
   useEffect(() => {
     fetch(`/api/sessions/${pin}`)
@@ -233,13 +262,81 @@ export default function LiveControlPage() {
     };
   }, []);
 
-  const toggleMusicPlay = () => {
-    setMusicIsPlaying((prev) => !prev);
-  };
+  useEffect(() => {
+    if (phase === "lobby" || phase === "countdown") {
+      playLobbyLoop();
+      return;
+    }
+    if (phase === "question" && currentQuestion) {
+      playQuestionLoop(currentQuestion.timeLimitSeconds);
+      return;
+    }
+    if (phase === "stats") {
+      playGongOnce();
+      return;
+    }
+    if (phase === "leaderboard") {
+      stopQuestionLoop();
+      return;
+    }
+    if (phase === "ended") {
+      playPodiumLoop();
+    }
+  }, [
+    currentQuestion,
+    phase,
+    playGongOnce,
+    playLobbyLoop,
+    playPodiumLoop,
+    playQuestionLoop,
+    stopQuestionLoop,
+  ]);
 
-  const changeMusicVolume = (volume: number) => {
-    setMusicVolume(volume);
-  };
+  useEffect(() => {
+    if (phase !== "ended") {
+      clearPodiumTimers();
+      setPodiumStep(0);
+      podiumConfettiTriggeredRef.current = false;
+      return;
+    }
+
+    setPodiumStep(0);
+    clearPodiumTimers();
+    podiumConfettiTriggeredRef.current = false;
+
+    const thirdTimerId = window.setTimeout(() => {
+      setPodiumStep(1);
+    }, PODIUM_REVEAL_MS.third);
+    const secondTimerId = window.setTimeout(() => {
+      setPodiumStep(2);
+    }, PODIUM_REVEAL_MS.second);
+    const firstTimerId = window.setTimeout(() => {
+      setPodiumStep(3);
+    }, PODIUM_REVEAL_MS.first);
+
+    podiumTimersRef.current = [thirdTimerId, secondTimerId, firstTimerId];
+    return () => {
+      clearPodiumTimers();
+    };
+  }, [clearPodiumTimers, finalRankings, phase]);
+
+  useEffect(() => {
+    if (phase !== "ended" || podiumStep < 3 || podiumConfettiTriggeredRef.current) return;
+    podiumConfettiTriggeredRef.current = true;
+    confetti({
+      particleCount: 220,
+      spread: 110,
+      origin: { y: 0.45 },
+      colors: ["#BA2031", "#0C4D99", "#FBB615", "#20AE4C", "#FFFFFF"],
+    });
+  }, [phase, podiumStep]);
+
+  useEffect(() => {
+    return () => {
+      clearPodiumTimers();
+      stopAllKahootAudio();
+    };
+  }, [clearPodiumTimers, stopAllKahootAudio]);
 
   const startQuiz = () => {
     if (socket && sessionId) {
@@ -250,12 +347,6 @@ export default function LiveControlPage() {
   const nextQuestion = () => {
     if (socket && sessionId) {
       socket.emit("admin:next-question", { sessionId });
-    }
-  };
-
-  const endQuiz = () => {
-    if (socket && sessionId) {
-      socket.emit("admin:end-quiz", { sessionId });
     }
   };
 
@@ -270,6 +361,17 @@ export default function LiveControlPage() {
 
   const correctPlayers = stats?.answeredPlayers?.filter((player) => player.isCorrect) ?? [];
   const wrongPlayers = stats?.answeredPlayers?.filter((player) => !player.isCorrect) ?? [];
+  const podiumFirst = finalRankings[0];
+  const podiumSecond = finalRankings[1];
+  const podiumThird = finalRankings[2];
+  const podiumTintClass =
+    podiumStep >= 3
+      ? "from-yellow-300/20 via-rose-500/15 to-green-500/20"
+      : podiumStep >= 2
+      ? "from-slate-100/15 via-fuchsia-400/10 to-amber-500/20"
+      : podiumStep >= 1
+      ? "from-amber-700/20 via-red-500/10 to-violet-500/20"
+      : "from-white/10 via-white/0 to-white/0";
 
   return (
     <div
@@ -287,69 +389,113 @@ export default function LiveControlPage() {
             <span className="text-white/60 text-sm">
               {playerCount} {t("live.players")}
             </span>
-            
           </div>
-          {musicVideoId && (
-            <div className="flex flex-wrap items-center justify-center gap-3 mt-4 text-white/80">
-              <div className="hidden">
-                <div id="yt-player-live" />
-              </div>
-              <button
-                onClick={toggleMusicPlay}
-                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
-                  musicIsPlaying
-                    ? "bg-gradient-to-br from-inf-red to-rose-600 hover:from-red-700 hover:to-rose-700 text-white"
-                    : "bg-gradient-to-br from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white"
-                }`}
-                aria-label={musicIsPlaying ? t("live.pause") : t("live.play")}
-                title={musicIsPlaying ? t("live.pause") : t("live.play")}
-              >
-                {musicIsPlaying ? (
-                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
-                    <rect x="6" y="4" width="4" height="16" />
-                    <rect x="14" y="4" width="4" height="16" />
+          <div className="mt-4 mx-auto w-full max-w-3xl rounded-2xl border border-white/10 bg-black/25 p-3 md:p-4 text-left">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <p className="text-white/80 text-sm font-semibold">{t("live.youtubeMusicPanel")}</p>
+              <div className="flex flex-wrap items-center gap-2 text-white/80">
+                <button
+                  onClick={music.togglePlay}
+                  disabled={!music.youtubeVideoId}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                    music.isPlaying
+                      ? "bg-gradient-to-br from-inf-red to-rose-600 text-white hover:from-red-700 hover:to-rose-700"
+                      : "bg-gradient-to-br from-inf-turquoise to-cyan-500 text-white hover:from-teal-600 hover:to-cyan-600"
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  aria-label={music.isPlaying ? t("live.pause") : t("live.play")}
+                  title={music.isPlaying ? t("live.pause") : t("live.play")}
+                >
+                  {music.isPlaying ? (
+                    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
+                      <rect x="6" y="4" width="4" height="16" />
+                      <rect x="14" y="4" width="4" height="16" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
+                      <path d="M8 5.5v13l10-6.5-10-6.5z" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={music.toggleRepeat}
+                  disabled={!music.youtubeVideoId}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                    music.isRepeat
+                      ? "bg-gradient-to-br from-inf-yellow to-amber-500 text-white hover:from-yellow-500 hover:to-amber-600"
+                      : "bg-white/20 text-white/70 hover:bg-white/30 hover:text-white"
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  aria-label={t("live.loop")}
+                  title={t("live.loop")}
+                >
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                    <path d="M3 12a7 7 0 0 1 7-7h7" />
+                    <path d="M17 2l4 3-4 3" />
+                    <path d="M21 12a7 7 0 0 1-7 7H7" />
+                    <path d="M7 22l-4-3 4-3" />
                   </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
-                    <path d="M8 5.5v13l10-6.5-10-6.5z" />
+                </button>
+                <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-full">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 text-white/70" fill="currentColor" aria-hidden="true">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.26 2.5-4.02zM14 3.1v2.7c2.89.86 5 3.54 5 6.9s-2.11 6.04-5 6.9v2.7c4.01-.91 7-4.49 7-9.6s-2.99-8.69-7-9.6z" />
                   </svg>
-                )}
-              </button>
-              <button
-                onClick={() => setMusicIsRepeat(!musicIsRepeat)}
-                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
-                  musicIsRepeat
-                    ? "bg-gradient-to-br from-inf-yellow to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white"
-                    : "bg-white/20 hover:bg-white/30 text-white/60 hover:text-white"
-                }`}
-                aria-label={t("live.loop")}
-                title={t("live.loop")}
-              >
-                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                  <path d="M3 12a7 7 0 0 1 7-7h7" />
-                  <path d="M17 2l4 3-4 3" />
-                  <path d="M21 12a7 7 0 0 1-7 7H7" />
-                  <path d="M7 22l-4-3 4-3" />
-                </svg>
-              </button>
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-full">
-                <svg viewBox="0 0 24 24" className="w-4 h-4 text-white/70" fill="currentColor" aria-hidden="true">
-                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.26 2.5-4.02zM14 3.1v2.7c2.89.86 5 3.54 5 6.9s-2.11 6.04-5 6.9v2.7c4.01-.91 7-4.49 7-9.6s-2.99-8.69-7-9.6z" />
-                </svg>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={musicVolume}
-                  onChange={(e) => changeMusicVolume(Number(e.target.value))}
-                  className="h-2 w-20 accent-inf-turquoise cursor-pointer"
-                  aria-label={t("live.volume")}
-                  title={`${t("live.volume")}: ${musicVolume}%`}
-                />
-                <span className="text-white/70 text-xs font-medium min-w-6">{musicVolume}%</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={music.volume}
+                    onChange={(e) => music.changeVolume(Number(e.target.value))}
+                    className="h-2 w-20 accent-inf-turquoise cursor-pointer"
+                    aria-label={t("live.volume")}
+                    title={`${t("live.volume")}: ${music.volume}%`}
+                    disabled={!music.youtubeVideoId}
+                  />
+                  <span className="text-white/70 text-xs font-medium min-w-6">{music.volume}%</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!youtubeUrl && music.youtubeVideoId) {
+                      setYoutubeUrl(`https://youtu.be/${music.youtubeVideoId}`);
+                    }
+                    setShowYoutubeInput((prev) => !prev);
+                  }}
+                  className="text-sm text-white/80 hover:text-white underline underline-offset-4"
+                >
+                  {t("live.youtubeSet")}
+                </button>
+                <button
+                  type="button"
+                  onClick={removeYoutubeMusic}
+                  disabled={!music.youtubeVideoId}
+                  className="text-sm text-white/60 hover:text-white/90 disabled:opacity-40 disabled:cursor-not-allowed underline underline-offset-4"
+                >
+                  {t("live.youtubeRemove")}
+                </button>
               </div>
             </div>
-          )}
+            {showYoutubeInput && (
+              <div className="mt-3 flex flex-col md:flex-row gap-2">
+                <input
+                  type="text"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder={t("live.youtubeMusicPlaceholder")}
+                  className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white text-sm placeholder-white/40 focus:outline-none focus:border-inf-turquoise"
+                />
+                <button
+                  type="button"
+                  onClick={setYoutubeMusic}
+                  disabled={!youtubeUrl.trim()}
+                  className="bg-gradient-to-r from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+                >
+                  {t("live.youtubeSet")}
+                </button>
+              </div>
+            )}
+            {autoplayBlocked && (
+              <p className="mt-2 text-amber-200 text-xs">{t("live.audioAutoplayBlocked")}</p>
+            )}
+          </div>
         </div>
 
         <div className="position-fixed end-0 top-0 translate-middle-y-0 z-50 w-100 px-3 px-md-4 space-y-2" style={{ maxWidth: "min(360px, calc(100vw - 1rem))", marginTop: "80px" }}>
@@ -368,19 +514,15 @@ export default function LiveControlPage() {
           </AnimatePresence>
         </div>
 
-                <ConnectionStatusOverlay
-          isVisible={!isConnected || isPending}
+        <ConnectionStatusOverlay
+          isVisible={!isConnected}
           title={
-            isPending
-              ? t("common.pleaseWait")
-              : isPageInitialLoadRef.current || !socketConnectedAtLeastOnceRef.current
+            isPageInitialLoadRef.current || !socketConnectedAtLeastOnceRef.current
               ? t("common.reconnecting")
               : t("live.maintenanceMode")
           }
           subtitle={
-            isPending
-              ? t("common.pageLoading")
-              : isPageInitialLoadRef.current || !socketConnectedAtLeastOnceRef.current
+            isPageInitialLoadRef.current || !socketConnectedAtLeastOnceRef.current
               ? t("common.connecting")
               : t("live.reconnecting")
           }
@@ -896,104 +1038,119 @@ export default function LiveControlPage() {
         
         {phase === "ended" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
-            <motion.h2
-              initial={{ scale: 0.5 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 200 }}
-              className="text-4xl font-black text-white mb-8"
-            >
-              {t("live.finalResults")}
-            </motion.h2>
-
-            
-            <div className="flex items-end justify-center gap-4 mb-8">
-              {finalRankings.length > 1 && (
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/20 p-4 md:p-8">
+              <div
+                className={`pointer-events-none absolute inset-0 bg-gradient-to-br transition-all duration-700 ${podiumTintClass}`}
+              />
+              {podiumStep >= 3 && (
                 <motion.div
-                  initial={{ y: 50, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-center"
-                >
-                  <div className="text-3xl mb-1">{finalRankings[1].avatar}</div>
-                  <div className="text-white font-bold mb-2">
-                    {finalRankings[1].nickname}
-                  </div>
-                  <div className="bg-gray-400 w-32 rounded-t-lg p-4 h-32 flex items-center justify-center">
-                    <div>
-                      <div className="text-2xl font-black text-black">{t("live.rank2")}</div>
-                      <div className="text-black/70 text-sm font-bold">
-                        {finalRankings[1].totalScore.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="pointer-events-none absolute left-1/2 top-0 h-64 w-64 -translate-x-1/2 rounded-full bg-yellow-300/20 blur-3xl"
+                />
               )}
 
-              {finalRankings.length > 0 && (
-                <motion.div
-                  initial={{ y: 50, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.1 }}
-                  className="text-center"
-                >
-                  <div className="text-4xl mb-1">{finalRankings[0].avatar}</div>
-                  <div className="text-white font-bold mb-2">
-                    {finalRankings[0].nickname}
-                  </div>
-                  <div className="bg-yellow-500 w-36 rounded-t-lg p-4 h-44 flex items-center justify-center">
-                    <div>
-                      <div className="text-3xl font-black text-black">{t("live.rank1")}</div>
-                      <div className="text-black/70 font-bold">
-                        {finalRankings[0].totalScore.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
+              <motion.h2
+                initial={{ scale: 0.85 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 160 }}
+                className="relative text-3xl md:text-4xl font-black text-white mb-8"
+              >
+                {t("live.finalResults")}
+              </motion.h2>
 
-              {finalRankings.length > 2 && (
-                <motion.div
-                  initial={{ y: 50, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.5 }}
-                  className="text-center"
-                >
-                  <div className="text-2xl mb-1">{finalRankings[2].avatar}</div>
-                  <div className="text-white font-bold mb-2">
-                    {finalRankings[2].nickname}
-                  </div>
-                  <div className="bg-amber-700 w-28 rounded-t-lg p-4 h-24 flex items-center justify-center">
-                    <div>
-                      <div className="text-xl font-black text-white">{t("live.rank3")}</div>
-                      <div className="text-white/70 text-sm font-bold">
-                        {finalRankings[2].totalScore.toLocaleString()}
+              <div className="relative flex items-end justify-center gap-3 md:gap-6 mb-8 min-h-[300px]">
+                <AnimatePresence>
+                  {podiumStep >= 1 && podiumThird && (
+                    <motion.div
+                      initial={{ y: 80, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: 20, opacity: 0 }}
+                      className="text-center w-[26vw] min-w-[90px] max-w-[160px]"
+                    >
+                      <div className="text-2xl md:text-3xl mb-1">{podiumThird.avatar}</div>
+                      <div className="text-white font-bold text-xs md:text-sm mb-2 truncate">
+                        {podiumThird.nickname}
                       </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </div>
+                      <div className="bg-amber-700 rounded-t-xl px-2 py-4 h-24 md:h-28 flex items-center justify-center">
+                        <div>
+                          <div className="text-xl font-black text-white">{t("live.rank3")}</div>
+                          <div className="text-white font-bold text-sm">
+                            {podiumThird.totalScore.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-            
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 max-w-lg mx-auto">
-              {finalRankings.map((p, i) => (
-                <motion.div
-                  key={p.playerId}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5 + i * 0.05 }}
-                  className="flex items-center justify-between p-3 border-b border-white/10 last:border-0"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-white/60 font-bold w-6">{p.rank}</span>
-                    <span className="text-xl">{p.avatar}</span>
-                    <span className="text-white font-medium">{p.nickname}</span>
-                  </div>
-                  <span className="text-white font-bold">
-                    {p.totalScore.toLocaleString()}
-                  </span>
-                </motion.div>
-              ))}
+                <AnimatePresence>
+                  {podiumStep >= 3 && podiumFirst && (
+                    <motion.div
+                      initial={{ y: 100, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: 20, opacity: 0 }}
+                      className="text-center w-[33vw] min-w-[120px] max-w-[220px]"
+                    >
+                      <div className="text-3xl md:text-4xl mb-1">{podiumFirst.avatar}</div>
+                      <div className="text-white font-black text-sm md:text-base mb-2 truncate">
+                        {podiumFirst.nickname}
+                      </div>
+                      <div className="bg-yellow-500 rounded-t-xl px-2 py-4 h-36 md:h-44 flex items-center justify-center shadow-[0_0_30px_rgba(251,182,21,0.45)]">
+                        <div>
+                          <div className="text-2xl md:text-3xl font-black text-black">{t("live.rank1")}</div>
+                          <div className="text-black/80 font-black text-base md:text-lg">
+                            {podiumFirst.totalScore.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <AnimatePresence>
+                  {podiumStep >= 2 && podiumSecond && (
+                    <motion.div
+                      initial={{ y: 80, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: 20, opacity: 0 }}
+                      className="text-center w-[29vw] min-w-[98px] max-w-[180px]"
+                    >
+                      <div className="text-2xl md:text-3xl mb-1">{podiumSecond.avatar}</div>
+                      <div className="text-white font-bold text-xs md:text-sm mb-2 truncate">
+                        {podiumSecond.nickname}
+                      </div>
+                      <div className="bg-slate-300 rounded-t-xl px-2 py-4 h-28 md:h-32 flex items-center justify-center">
+                        <div>
+                          <div className="text-xl md:text-2xl font-black text-black">{t("live.rank2")}</div>
+                          <div className="text-black/75 font-bold text-sm md:text-base">
+                            {podiumSecond.totalScore.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <div className="relative bg-white/10 backdrop-blur-sm rounded-2xl p-4 md:p-6 max-w-3xl mx-auto text-left">
+                {finalRankings.map((player, index) => (
+                  <motion.div
+                    key={player.playerId}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: Math.min(0.4 + index * 0.05, 1) }}
+                    className="flex items-center justify-between p-3 border-b border-white/10 last:border-0"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-white/60 font-bold w-6">{player.rank}</span>
+                      <span className="text-xl">{player.avatar}</span>
+                      <span className="text-white font-medium truncate">{player.nickname}</span>
+                    </div>
+                    <span className="text-white font-bold">{player.totalScore.toLocaleString()}</span>
+                  </motion.div>
+                ))}
+              </div>
             </div>
           </motion.div>
         )}
