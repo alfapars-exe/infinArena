@@ -448,12 +448,12 @@ function AIGenerateModal({
             </label>
             <input
               type="number"
-              min={5}
-              max={120}
               value={timeLimitSeconds}
               onChange={(e) =>
                 setTimeLimitSeconds(
-                  Math.min(120, Math.max(5, parseInt(e.target.value) || 30))
+                  Number.isNaN(parseInt(e.target.value, 10))
+                    ? 0
+                    : parseInt(e.target.value, 10)
                 )
               }
               className="input-field bg-white/10 w-full"

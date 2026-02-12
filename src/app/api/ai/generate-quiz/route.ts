@@ -224,12 +224,39 @@ async function callHuggingFaceAPI(
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "Unknown error");
-      return { content: null, error: errText, status: res.status };
+      return { content: null, error: String(errText), status: res.status };
     }
 
     const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    return { content: content || null, error: null, status: res.status };
+    if (Array.isArray(data)) {
+      return {
+        content:
+          typeof data?.[0]?.generated_text === "string"
+            ? data?.[0]?.generated_text
+            : data?.[0]?.generated_text == null
+              ? null
+              : JSON.stringify(data?.[0]?.generated_text),
+        error: null,
+        status: res.status,
+      };
+    }
+
+    const content =
+      data?.choices?.[0]?.message?.content ??
+      data?.choices?.[0]?.text ??
+      data?.generated_text ??
+      data?.content ??
+      null;
+    return {
+      content:
+        typeof content === "string"
+          ? content
+          : content == null
+            ? null
+            : JSON.stringify(content),
+      error: null,
+      status: res.status,
+    };
   } catch (err: any) {
     clearTimeout(timeoutId);
     const isTimeout = err?.name === "AbortError";
@@ -273,7 +300,7 @@ export async function POST(request: NextRequest) {
     }
     if (
       timeLimitSeconds !== undefined &&
-      (!Number.isInteger(timeLimitSeconds) || timeLimitSeconds < 0 || timeLimitSeconds > 120)
+      (!Number.isInteger(timeLimitSeconds) || timeLimitSeconds < 0)
     ) {
       return NextResponse.json({ error: "Invalid time limit" }, { status: 400 });
     }
