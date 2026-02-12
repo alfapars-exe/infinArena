@@ -238,6 +238,11 @@ const translations = {
     "play.multiSelectInstruction": "Select all correct options",
     "play.orderingInstruction": "Sort the options in correct order",
     "play.textInputPlaceholder": "Type your answer",
+    "play.answerDistribution": "Answer Distribution",
+    "play.player": "player",
+    "play.players": "players",
+    "play.answered": "Answered",
+    "play.totalPlayers": "Total",
 
     // AI Quiz Generator
     "ai.generateWithAI": "Generate with AI",
@@ -479,6 +484,11 @@ const translations = {
     "play.multiSelectInstruction": "Tüm doğru seçenekleri işaretle",
     "play.orderingInstruction": "Seçenekleri doğru sıraya diz",
     "play.textInputPlaceholder": "Cevabını buraya yaz",
+    "play.answerDistribution": "Cevap Dağılımı",
+    "play.player": "oyuncu",
+    "play.players": "oyuncu",
+    "play.answered": "Cevaplandı",
+    "play.totalPlayers": "Toplam",
 
     // AI Quiz Generator
     "ai.generateWithAI": "Yapay Zeka ile Oluştur",

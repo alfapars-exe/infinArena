@@ -45,13 +45,31 @@ export function setupSocketHandlers(io: TypedServer) {
   io.on("connection", (socket) => {
     logger.socket.debug(`Connected: ${socket.id}`);
 
-    socket.on("admin:join-session", ({ sessionId }) => {
-      const session = getActiveSession(sessionId);
-      if (session) {
-        session.adminSocketId = socket.id;
+    socket.on("admin:join-session", async ({ sessionId }) => {
+      try {
+        const session = getActiveSession(sessionId);
+        if (session) {
+          session.adminSocketId = socket.id;
+        }
+        socket.join(`session:${sessionId}`);
+
+        // Opening admin live screen should make lobby joinable.
+        await db
+          .update(quizSessions)
+          .set({ isLive: true })
+          .where(
+            and(
+              eq(quizSessions.id, sessionId),
+              eq(quizSessions.status, "lobby")
+            )
+          );
+        io.to(`session:${sessionId}`).emit("session:live");
+
+        logger.socket.info(`Admin joined session ${sessionId}`);
+      } catch (err) {
+        logger.socket.error("admin:join-session error", err);
+        socket.emit("error", { message: "Failed to join admin session" });
       }
-      socket.join(`session:${sessionId}`);
-      logger.socket.info(`Admin joined session ${sessionId}`);
     });
 
     socket.on("admin:start-live", async ({ sessionId }) => {
@@ -81,7 +99,21 @@ export function setupSocketHandlers(io: TypedServer) {
           return;
         }
 
-        if (!dbSession.isLive) {
+        let canJoinLive = dbSession.isLive;
+        if (!canJoinLive) {
+          const room = io.sockets.adapter.rooms.get(`session:${dbSession.id}`);
+          const hasHostPresence = Boolean(room && room.size > 0);
+          if (hasHostPresence) {
+            await db
+              .update(quizSessions)
+              .set({ isLive: true })
+              .where(eq(quizSessions.id, dbSession.id));
+            canJoinLive = true;
+            io.to(`session:${dbSession.id}`).emit("session:live");
+          }
+        }
+
+        if (!canJoinLive) {
           socket.emit("error", { message: "Session not live yet. Wait for the host." });
           return;
         }
@@ -161,8 +193,18 @@ export function setupSocketHandlers(io: TypedServer) {
         }
 
         if (dbSession.status === "lobby" && !dbSession.isLive) {
-          socket.emit("error", { message: "Session not live yet. Wait for the host." });
-          return;
+          const room = io.sockets.adapter.rooms.get(`session:${dbSession.id}`);
+          const hasHostPresence = Boolean(room && room.size > 0);
+          if (hasHostPresence) {
+            await db
+              .update(quizSessions)
+              .set({ isLive: true })
+              .where(eq(quizSessions.id, dbSession.id));
+            io.to(`session:${dbSession.id}`).emit("session:live");
+          } else {
+            socket.emit("error", { message: "Session not live yet. Wait for the host." });
+            return;
+          }
         }
 
         const [player] = await db

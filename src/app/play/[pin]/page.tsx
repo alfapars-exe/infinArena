@@ -12,6 +12,7 @@ import type {
   QuestionPayload,
   PlayerRanking,
   BatchAnswerResult,
+  QuestionStats,
 } from "@/types";
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -198,6 +199,7 @@ type Phase =
   | "countdown"
   | "question"
   | "answered"
+  | "stats"
   | "result"
   | "leaderboard"
   | "ended";
@@ -240,6 +242,7 @@ export default function PlayPage() {
 
   // Result state
   const [batchResult, setBatchResult] = useState<BatchAnswerResult | null>(null);
+  const [questionStats, setQuestionStats] = useState<QuestionStats | null>(null);
   const [totalScore, setTotalScore] = useState(0);
   const [currentStreak, setCurrentStreak] = useState(0);
   const [leaderboard, setLeaderboard] = useState<PlayerRanking[]>([]);
@@ -448,6 +451,12 @@ export default function PlayPage() {
       } else {
         playWrongSound();
       }
+    });
+
+    // Question stats - show answer distribution
+    s.on("game:question-stats", (stats) => {
+      setQuestionStats(stats);
+      setPhase("stats");
     });
 
     s.on("game:leaderboard", ({ rankings }) => {
@@ -1141,6 +1150,128 @@ export default function PlayPage() {
                   {t("play.total", { score: totalScore.toLocaleString() })}
                 </span>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Question Stats - Answer Distribution */}
+        {phase === "stats" && questionStats && currentQuestion && (
+          <motion.div
+            key="stats"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex-1 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="w-full max-w-2xl"
+            >
+              <h2 className="text-2xl md:text-3xl font-bold text-white mb-4 text-center">
+                {t("play.answerDistribution")}
+              </h2>
+
+              {/* Question text */}
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 mb-6 text-center">
+                <p className="text-white text-lg font-semibold">
+                  {currentQuestion.questionText}
+                </p>
+              </div>
+
+              {/* Answer choices with bars */}
+              <div className="space-y-3">
+                {questionStats.choiceSelections.map((selection, idx) => {
+                  const isCorrect = 
+                    selection.choiceId === questionStats.correctChoiceId ||
+                    (questionStats.correctChoiceIds && questionStats.correctChoiceIds.includes(selection.choiceId));
+                  const percentage = questionStats.totalPlayers > 0
+                    ? Math.round((selection.count / questionStats.totalPlayers) * 100)
+                    : 0;
+
+                  return (
+                    <motion.div
+                      key={selection.choiceId}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className={`relative overflow-hidden rounded-xl border-2 ${
+                        isCorrect 
+                          ? "border-green-500 bg-green-500/20" 
+                          : "border-white/20 bg-white/5"
+                      }`}
+                    >
+                      {/* Background bar */}
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${percentage}%` }}
+                        transition={{ duration: 0.8, delay: idx * 0.1 + 0.3 }}
+                        className={`absolute inset-y-0 left-0 ${
+                          isCorrect ? "bg-green-500/30" : "bg-white/10"
+                        }`}
+                      />
+
+                      {/* Content */}
+                      <div className="relative flex items-center justify-between p-4">
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white ${
+                            getChoiceColor(idx).split(" ")[0]
+                          }`}>
+                            {String.fromCharCode(65 + idx)}
+                          </div>
+                          <span className="text-white font-medium flex-1">
+                            {selection.choiceText}
+                          </span>
+                          {isCorrect && (
+                            <span className="text-green-400 text-xl">✓</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-white/70 text-sm font-medium">
+                            {selection.count} {selection.count === 1 ? t("play.player") : t("play.players")}
+                          </span>
+                          <span className="text-white font-bold text-lg min-w-[3rem] text-right">
+                            {percentage}%
+                          </span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {/* Stats summary */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="mt-6 grid grid-cols-3 gap-3"
+              >
+                <div className="bg-white/10 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-white">
+                    {questionStats.answeredCount}
+                  </div>
+                  <div className="text-white/60 text-sm">
+                    {t("play.answered")}
+                  </div>
+                </div>
+                <div className="bg-green-500/20 border border-green-500/40 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-green-400">
+                    {questionStats.correctCount}
+                  </div>
+                  <div className="text-white/60 text-sm">
+                    {t("play.correct")}
+                  </div>
+                </div>
+                <div className="bg-white/10 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-white">
+                    {questionStats.totalPlayers}
+                  </div>
+                  <div className="text-white/60 text-sm">
+                    {t("play.totalPlayers")}
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
           </motion.div>
         )}

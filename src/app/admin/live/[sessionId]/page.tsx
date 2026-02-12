@@ -74,8 +74,6 @@ export default function LiveControlPage() {
   const [musicIsRepeat, setMusicIsRepeat] = useState(false);
   const [musicIsPlaying, setMusicIsPlaying] = useState(false);
   const musicPlayerRef = useRef<any>(null);
-  const shouldAutoGoLiveRef = useRef(false);
-  const hasTriggeredLiveRef = useRef(false);
 
 
   const pushNotification = (message: string) => {
@@ -95,8 +93,7 @@ export default function LiveControlPage() {
           setSessionId(data.sessionId);
           setQuizTitle(data.quizTitle);
           setPhase("lobby");
-          shouldAutoGoLiveRef.current = !data.isLive;
-          hasTriggeredLiveRef.current = false;
+          void fetch(`/api/sessions/${pin}/live`, { method: "POST" });
         }
       });
   }, [pin]);
@@ -109,10 +106,7 @@ export default function LiveControlPage() {
     s.on("connect", () => {
       if (sessionId) {
         s.emit("admin:join-session", { sessionId });
-        if (shouldAutoGoLiveRef.current && !hasTriggeredLiveRef.current) {
-          hasTriggeredLiveRef.current = true;
-          s.emit("admin:start-live", { sessionId });
-        }
+        s.emit("admin:start-live", { sessionId });
       }
     });
 
@@ -190,10 +184,7 @@ export default function LiveControlPage() {
   useEffect(() => {
     if (socket && sessionId) {
       socket.emit("admin:join-session", { sessionId });
-      if (shouldAutoGoLiveRef.current && !hasTriggeredLiveRef.current) {
-        hasTriggeredLiveRef.current = true;
-        socket.emit("admin:start-live", { sessionId });
-      }
+      socket.emit("admin:start-live", { sessionId });
     }
   }, [socket, sessionId]);
 
