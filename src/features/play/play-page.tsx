@@ -710,6 +710,8 @@ export default function PlayPage() {
     return <p className="text-white/60 text-sm">{t("play.noAnswerGiven")}</p>;
   };
 
+  const isWaitingNextQuestion = phase === "question" && timeLeft <= 0;
+
   useEffect(() => {
     if (!currentQuestion) return;
     if (lastQuestionIdRef.current === currentQuestion.id) return;
@@ -728,6 +730,7 @@ export default function PlayPage() {
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
+      timeLeft <= 0 ||
       selectedChoice !== null ||
       isSubmittingAnswerRef.current ||
       didSubmit
@@ -753,6 +756,7 @@ export default function PlayPage() {
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
+      timeLeft <= 0 ||
       isSubmittingAnswerRef.current ||
       didSubmit
     ) {
@@ -796,6 +800,7 @@ export default function PlayPage() {
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
+      timeLeft <= 0 ||
       isSubmittingAnswerRef.current ||
       didSubmit
     ) {
@@ -1091,15 +1096,28 @@ export default function PlayPage() {
               <p className="text-center text-sm text-inf-red mb-3">{error}</p>
             )}
 
+            {isWaitingNextQuestion && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full mb-4 rounded-xl border border-white/25 bg-white/10 px-4 py-4 text-center"
+              >
+                <p className="text-white/90 text-base md:text-lg font-semibold">
+                  {t("play.waitingNextQuestion")}
+                </p>
+              </motion.div>
+            )}
+
             
             {(currentQuestion.questionType === "multiple_choice" ||
-              currentQuestion.questionType === "true_false") && (
+              currentQuestion.questionType === "true_false") && !isWaitingNextQuestion && (
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                 {currentQuestion.choices.map((choice, i) => {
                   const choiceId = Number(choice.id);
                   const isSelected = selectedChoice === choiceId;
                   const isDisabled =
                     phase !== "question" ||
+                    timeLeft <= 0 ||
                     selectedChoice !== null ||
                     didSubmit;
                   
@@ -1133,7 +1151,7 @@ export default function PlayPage() {
               </div>
             )}
 
-            {currentQuestion.questionType === "multi_select" && (
+            {currentQuestion.questionType === "multi_select" && !isWaitingNextQuestion && (
               <div className="w-full">
                 <p className="text-center text-white/70 text-sm mb-3">
                   {t("play.multiSelectInstruction")}
@@ -1142,7 +1160,7 @@ export default function PlayPage() {
                   {currentQuestion.choices.map((choice, i) => {
                     const choiceId = Number(choice.id);
                     const active = selectedChoices.includes(choiceId);
-                    const isDisabled = phase !== "question" || didSubmit;
+                    const isDisabled = phase !== "question" || timeLeft <= 0 || didSubmit;
                     return (
                       <button
                         type="button"
@@ -1171,7 +1189,7 @@ export default function PlayPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (selectedChoices.length > 0 && !isSubmittingAnswer && !didSubmit) {
+                    if (selectedChoices.length > 0 && timeLeft > 0 && !isSubmittingAnswer && !didSubmit) {
                       const responseTimeMs = Date.now() - questionStartTime.current;
                       socket?.emit("player:answer", {
                         questionId: currentQuestion.id,
@@ -1184,7 +1202,7 @@ export default function PlayPage() {
                       armSubmitWatchdog(socket);
                     }
                   }}
-                  disabled={selectedChoices.length === 0 || isSubmittingAnswer || didSubmit}
+                  disabled={selectedChoices.length === 0 || timeLeft <= 0 || isSubmittingAnswer || didSubmit}
                   className="w-full bg-inf-green hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors"
                 >
                   {isSubmittingAnswer ? t("play.submit") + "..." : t("play.submit")}
@@ -1192,7 +1210,7 @@ export default function PlayPage() {
               </div>
             )}
 
-            {currentQuestion.questionType === "ordering" && (
+            {currentQuestion.questionType === "ordering" && !isWaitingNextQuestion && (
               <div className="w-full">
                 <p className="text-center text-white/70 text-sm mb-3">
                   {t("play.orderingInstruction")}
@@ -1215,7 +1233,7 @@ export default function PlayPage() {
                           <button
                             type="button"
                             onClick={() => moveOrderedChoice(i, -1)}
-                            disabled={didSubmit || isSubmittingAnswer || i === 0}
+                            disabled={didSubmit || isSubmittingAnswer || timeLeft <= 0 || i === 0}
                             className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
                           >
                             ↑
@@ -1223,7 +1241,7 @@ export default function PlayPage() {
                           <button
                             type="button"
                             onClick={() => moveOrderedChoice(i, 1)}
-                            disabled={didSubmit || isSubmittingAnswer || i === orderedChoices.length - 1}
+                            disabled={didSubmit || isSubmittingAnswer || timeLeft <= 0 || i === orderedChoices.length - 1}
                             className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
                           >
                             ↓
@@ -1237,7 +1255,7 @@ export default function PlayPage() {
                   <button
                     type="button"
                     onClick={submitAdvancedAnswer}
-                    disabled={orderedChoices.length === 0 || isSubmittingAnswer}
+                    disabled={orderedChoices.length === 0 || timeLeft <= 0 || isSubmittingAnswer}
                     className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
                   >
                     {t("play.submit")}
@@ -1246,19 +1264,20 @@ export default function PlayPage() {
               </div>
             )}
 
-            {currentQuestion.questionType === "text_input" && (
+            {currentQuestion.questionType === "text_input" && !isWaitingNextQuestion && (
               <div className="max-w-xl mx-auto w-full">
                 <input
                   type="text"
                   value={textAnswer}
                   onChange={(e) => setTextAnswer(e.target.value)}
+                  disabled={timeLeft <= 0 || isSubmittingAnswer}
                   className="w-full text-center text-xl md:text-2xl font-bold text-gray-800 py-3 md:py-4 px-4 rounded-xl border-2 border-gray-200 focus:border-inf-red focus:outline-none"
                   placeholder={t("play.textInputPlaceholder")}
                 />
                 <button
                   type="button"
                   onClick={submitAdvancedAnswer}
-                  disabled={!textAnswer.trim() || isSubmittingAnswer}
+                  disabled={!textAnswer.trim() || timeLeft <= 0 || isSubmittingAnswer}
                   className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
                 >
                   {t("play.submit")}
