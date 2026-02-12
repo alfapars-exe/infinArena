@@ -372,7 +372,7 @@ export function setupSocketHandlers(io: TypedServer) {
 
               // Also send batch results if available
               const playerAnswer = session.pendingAnswers.get(player.id);
-              if (playerAnswer) {
+              if (playerAnswer && currentQ) {
                 let playerAnswerDisplay: any = null;
 
                 if (currentQ.questionType === "ordering") {
@@ -405,7 +405,7 @@ export function setupSocketHandlers(io: TypedServer) {
           } else if (phase === "leaderboard") {
             // First send batch results for this player if they answered
             const playerAnswer = session.pendingAnswers.get(player.id);
-            if (playerAnswer) {
+            if (playerAnswer && currentQ) {
               let playerAnswerDisplay: any = null;
 
               if (currentQ.questionType === "ordering") {
