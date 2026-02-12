@@ -1,4 +1,4 @@
-﻿import { db, client, isSqlite } from "./index";
+﻿import { db, client, isSqlite, nowSql } from "./index";
 import { admins } from "./schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -199,6 +199,7 @@ async function seed() {
         email: "admin@infinarena.com",
         passwordHash: hash,
         name: "Admin",
+        createdAt: nowSql,
       });
       console.log("✓ Admin user created via ADMIN_USERNAME/ADMIN_PASSWORD");
     } else {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { and, eq } from "drizzle-orm";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, nowSql } from "@/lib/db";
 import { players, quizSessions } from "@/lib/db/schema";
 import { ensureDbMigrations } from "@/lib/db/migrations";
 
@@ -47,7 +47,7 @@ export async function POST(
     .set({
       status: "completed",
       isLive: false,
-      completedAt: new Date(),
+      completedAt: nowSql,
     })
     .where(eq(quizSessions.id, sessionId));
 

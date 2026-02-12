@@ -4,7 +4,7 @@ import type {
   ServerToClientEvents,
   PlayerRanking,
 } from "@/types";
-import { db } from "@/lib/db";
+import { db, nowSql } from "@/lib/db";
 import {
   quizSessions,
   questions,
@@ -120,6 +120,7 @@ export function setupSocketHandlers(io: TypedServer) {
             nickname,
             avatar,
             socketId: socket.id,
+            joinedAt: nowSql,
           })
           .returning();
 
@@ -325,7 +326,7 @@ export function setupSocketHandlers(io: TypedServer) {
 
         await db
           .update(quizSessions)
-          .set({ status: "in_progress", startedAt: new Date() })
+          .set({ status: "in_progress", startedAt: nowSql })
           .where(eq(quizSessions.id, sessionId));
 
         // 3-2-1 countdown
@@ -486,6 +487,7 @@ export function setupSocketHandlers(io: TypedServer) {
           isCorrect,
           responseTimeMs: actualResponseTime,
           pointsAwarded: points,
+          answeredAt: nowSql,
         });
 
         const [player] = await db
@@ -770,7 +772,7 @@ async function endQuiz(io: TypedServer, sessionId: number) {
 
   await db
     .update(quizSessions)
-    .set({ status: "completed", completedAt: new Date() })
+    .set({ status: "completed", completedAt: nowSql })
     .where(eq(quizSessions.id, sessionId));
 
   if (session) {

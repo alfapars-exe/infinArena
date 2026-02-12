@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, nowSql } from "@/lib/db";
 import {
   quizzes,
   questions,
@@ -85,7 +85,7 @@ export async function PUT(
       title: parsed.data.title,
       description: parsed.data.description || null,
       customSlug: parsed.data.customSlug || null,
-      updatedAt: new Date(),
+      updatedAt: nowSql,
     })
     .where(eq(quizzes.id, quizId))
     .returning();

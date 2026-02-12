@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, nowSql } from "@/lib/db";
 import { quizzes, quizSessions, questions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { generateUniquePin } from "@/lib/pin-generator";
@@ -43,7 +43,7 @@ export async function POST(
 
   await dbAny
     .update(quizzes)
-    .set({ status: "published", updatedAt: new Date() })
+    .set({ status: "published", updatedAt: nowSql })
     .where(eq(quizzes.id, quizId));
 
   const pin = await generateUniquePin();
@@ -52,6 +52,7 @@ export async function POST(
     .values({
       quizId,
       pin,
+      createdAt: nowSql,
     })
     .returning();
 

@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { drizzle as drizzleSqlite } from "drizzle-orm/libsql";
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
+import { sql } from "drizzle-orm";
 import { resolveDatabaseUrl } from "@/lib/storage";
 import fs from "fs";
 import path from "path";
@@ -39,3 +40,6 @@ const dbInstance = isSqlite
 
 export const db: any = dbInstance;
 export { client, isSqlite };
+
+/** Raw SQL expression for "current timestamp" — works for both SQLite and Postgres */
+export const nowSql = isSqlite ? sql`(unixepoch())` : sql`NOW()`;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, nowSql } from "@/lib/db";
 import { quizzes, questions, answerChoices } from "@/lib/db/schema";
 import { ensureDbMigrations } from "@/lib/db/migrations";
 
@@ -437,6 +437,8 @@ export async function POST(request: NextRequest) {
         title: quizTitle,
         description: `AI-generated quiz about ${topic}`,
         status: "draft",
+        createdAt: nowSql,
+        updatedAt: nowSql,
       })
       .returning();
 
