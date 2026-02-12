@@ -265,6 +265,31 @@ docker build -t infinarena .
 docker run -p 7860:7860 -v /data:/data infinarena
 ```
 
+### Admin Build Bilgisi
+
+Admin navbar'da gosterilen `Guncelleme: {date} | {version}` bilgisi build sirasinda otomatik uretilir:
+
+- `NEXT_PUBLIC_COMMIT_DATE`: `git log -1 --format=%cI`
+- `NEXT_PUBLIC_COMMIT_VERSION`: `git rev-list --count HEAD` sonucundan turetilen `v.x.x.x`
+
+Surumleme kurali:
+
+```text
+SLOT = 101  # her hane 0..100
+major = 1 + floor(commitCount / (SLOT * SLOT))
+remainder = commitCount % (SLOT * SLOT)
+minor = floor(remainder / SLOT)
+patch = remainder % SLOT
+version = v.{major}.{minor}.{patch}
+```
+
+Ornekler:
+- `1 -> v.1.0.1`
+- `100 -> v.1.0.100`
+- `101 -> v.1.1.0`
+- `10200 -> v.1.100.100`
+- `10201 -> v.2.0.0`
+
 ### HuggingFace Spaces
 
 1. Space'i Docker SDK ile olusturun
@@ -301,6 +326,16 @@ docker run -p 7860:7860 -v /data:/data infinarena
 | POST | `/api/ai/generate-quiz` | AI ile quiz olustur |
 | GET | `/api/sessions/:pin` | Oturum bilgisi |
 | POST | `/api/upload` | Medya yukleme |
+
+## Engineering Guide
+
+- **Feature klasorleme**: Sayfa seviyesindeki agir UI mantigi `src/features/*` altinda tutulur; `src/app/*` route dosyalari ince wrapper olarak kalir.
+- **Katman siniri**: `API Route -> Service -> Repository -> DB` akisi korunur. Route katmaninda dogrudan ORM sorgusu yazilmaz.
+- **Tip guvenligi**: `any` yerine domain tipleri (`src/lib/domain/*`) kullanilir; `unknown` girisleri service katmaninda dogrulanir.
+- **Import duzeni**: Once paket importlari, sonra `@/*` importlari, en sonda goreli importlar kullanilir.
+- **Bilesen sorumlulugu**: Uzun sayfalar tekrar eden parcalara ayrilir (overlay, leaderboard, question renderer vb.).
+- **Mobil uyumluluk**: Kritik ekranlarda `dvh` uyumlu yukseklik ve yatay tasma kontrolu zorunludur.
+- **Kalite kapisi**: PR/push icin `pnpm lint`, `pnpm typecheck`, `pnpm build` adimlari gecmelidir.
 
 ## Lisans
 

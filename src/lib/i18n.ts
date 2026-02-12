@@ -49,6 +49,10 @@ const translations = {
     "nav.dashboard": "Dashboard",
     "nav.logout": "Logout",
     "nav.buildInfo": "Updated: {date} | {version}",
+    "common.pleaseWait": "Please wait...",
+    "common.pageLoading": "Loading page...",
+    "common.reconnecting": "Reconnecting",
+    "common.connecting": "Connecting...",
 
     // Dashboard
     "dashboard.noQuizzes": "No quizzes yet",
@@ -262,6 +266,7 @@ const translations = {
     "play.youFinished": "You finished",
     "play.points": "{score} points",
     "play.submit": "Submit",
+    "play.answerFailed": "Answer submission failed.",
     "play.multiSelectInstruction": "Select all correct options",
     "play.orderingInstruction": "Sort the options in correct order",
     "play.textInputPlaceholder": "Type your answer",
@@ -302,6 +307,10 @@ const translations = {
     "nav.dashboard": "Panel",
     "nav.logout": "Çıkış Yap",
     "nav.buildInfo": "Güncelleme: {date} | {version}",
+    "common.pleaseWait": "Lutfen bekleyiniz...",
+    "common.pageLoading": "Sayfa yukleniyor...",
+    "common.reconnecting": "Yeniden baglaniliyor",
+    "common.connecting": "Baglaniliyor...",
 
     // Dashboard
     "dashboard.noQuizzes": "Henüz quiz yok",
@@ -515,6 +524,7 @@ const translations = {
     "play.youFinished": "Bitirdiğin yer",
     "play.points": "{score} puan",
     "play.submit": "Gönder",
+    "play.answerFailed": "Cevap gonderilemedi.",
     "play.multiSelectInstruction": "Tüm doğru seçenekleri işaretle",
     "play.orderingInstruction": "Seçenekleri doğru sıraya diz",
     "play.textInputPlaceholder": "Cevabını buraya yaz",

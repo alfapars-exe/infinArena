@@ -18,21 +18,21 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 
   const buildDate = process.env.NEXT_PUBLIC_COMMIT_DATE;
   const buildVersion = process.env.NEXT_PUBLIC_COMMIT_VERSION || "v.1.0.0";
-  const formattedBuildDate = buildDate
-    ? new Date(buildDate).toLocaleString(locale === "tr" ? "tr-TR" : "en-US", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })
-    : "—";
+  const parsedBuildDate = buildDate ? new Date(buildDate) : null;
+  const formattedBuildDate =
+    parsedBuildDate && !Number.isNaN(parsedBuildDate.getTime())
+      ? parsedBuildDate.toLocaleString(locale === "tr" ? "tr-TR" : "en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })
+      : "-";
   
   const handleLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
-      // Keep signOut non-redirected to avoid NextAuth callback URL mismatches in proxied envs.
       await signOut({ redirect: false });
     } catch {
-      // Ignore and force navigation below.
     } finally {
       window.location.replace("/infinarenapanel/login");
     }
@@ -50,15 +50,15 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black flex items-center justify-center">
+      <div className="min-h-[100dvh] bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black flex items-center justify-center">
         <div className="text-center px-4">
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
             className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full mx-auto mb-4"
           />
-          <p className="text-white text-xl font-bold mb-1">Lütfen bekleyiniz...</p>
-          <p className="text-white/60 text-sm">Oturum doğrulanıyor...</p>
+          <p className="text-white text-xl font-bold mb-1">{t("common.pleaseWait")}</p>
+          <p className="text-white/60 text-sm">{t("common.pageLoading")}</p>
         </div>
       </div>
     );
@@ -68,8 +68,8 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 
   return (
     <MusicProvider>
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-        {/* Top Navigation */}
+      <div className="min-h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+        
         <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
           <div className="container-fluid app-container px-3 px-md-4 relative">
             <div className="d-flex flex-wrap flex-md-nowrap align-items-center justify-content-between gap-2 py-2 py-md-0 min-h-[64px]">
@@ -104,7 +104,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
             </div>
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none hidden md:block">
               <img
                 src="/logo.png"
                 alt="infinArena"

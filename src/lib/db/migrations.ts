@@ -41,7 +41,7 @@ async function tableExists(table: string): Promise<boolean> {
   const result = (await query(
     "SELECT to_regclass($1) as name",
     [`public.${table}`]
-  )) as any[];
+  )) as Array<{ name?: string | null }>;
   return Array.isArray(result) ? Boolean(result[0]?.name) : false;
 }
 
@@ -70,6 +70,5 @@ export function ensureDbMigrations(): Promise<void> {
   }
   return migrationPromise;
 }
-
 
 

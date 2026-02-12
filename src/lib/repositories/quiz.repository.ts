@@ -1,6 +1,22 @@
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, nowSql } from "@/lib/db";
-import { quizzes, questions, answerChoices, quizSessions, players, playerAnswers } from "@/lib/db/schema";
-import { eq, desc, asc, inArray } from "drizzle-orm";
+import {
+  answerChoices,
+  playerAnswers,
+  players,
+  questions,
+  quizzes,
+  quizSessions,
+} from "@/lib/db/schema";
+import type {
+  AnswerChoiceRecord,
+  NewAnswerChoiceRecord,
+  NewQuestionRecord,
+  QuestionType,
+  QuestionWithChoices,
+  QuizRecord,
+  QuizWithQuestions,
+} from "@/lib/domain/quiz.types";
 
 export interface CreateQuizData {
   adminId: number;
@@ -19,7 +35,7 @@ export interface UpdateQuizData {
 export interface CreateQuestionData {
   quizId: number;
   questionText: string;
-  questionType: string;
+  questionType: QuestionType;
   orderIndex: number;
   timeLimitSeconds: number;
   basePoints: number;
@@ -37,12 +53,12 @@ export interface CreateChoiceData {
 }
 
 export const quizRepository = {
-  async findById(id: number) {
+  async findById(id: number): Promise<QuizRecord | null> {
     const [quiz] = await db.select().from(quizzes).where(eq(quizzes.id, id));
     return quiz ?? null;
   },
 
-  async findAllByAdmin(adminId: number) {
+  async findAllByAdmin(adminId: number): Promise<QuizRecord[]> {
     return db
       .select()
       .from(quizzes)
@@ -50,7 +66,7 @@ export const quizRepository = {
       .orderBy(desc(quizzes.updatedAt));
   },
 
-  async findWithQuestions(id: number) {
+  async findWithQuestions(id: number): Promise<QuizWithQuestions | null> {
     const [quiz] = await db.select().from(quizzes).where(eq(quizzes.id, id));
     if (!quiz) return null;
 
@@ -60,21 +76,25 @@ export const quizRepository = {
       .where(eq(questions.quizId, id))
       .orderBy(asc(questions.orderIndex));
 
-    const questionsWithChoices = await Promise.all(
-      quizQuestions.map(async (q: any) => {
+    const questionsWithChoices: QuestionWithChoices[] = await Promise.all(
+      quizQuestions.map(async (question) => {
         const choices = await db
           .select()
           .from(answerChoices)
-          .where(eq(answerChoices.questionId, q.id))
+          .where(eq(answerChoices.questionId, question.id))
           .orderBy(asc(answerChoices.orderIndex));
-        return { ...q, choices };
+
+        return {
+          ...question,
+          choices,
+        };
       })
     );
 
     return { ...quiz, questions: questionsWithChoices };
   },
 
-  async create(data: CreateQuizData) {
+  async create(data: CreateQuizData): Promise<QuizRecord> {
     const [quiz] = await db
       .insert(quizzes)
       .values({
@@ -89,7 +109,7 @@ export const quizRepository = {
     return quiz;
   },
 
-  async update(id: number, data: UpdateQuizData) {
+  async update(id: number, data: UpdateQuizData): Promise<QuizRecord> {
     const values: Record<string, unknown> = { updatedAt: nowSql };
     if (data.title !== undefined) values.title = data.title;
     if (data.description !== undefined) values.description = data.description;
@@ -104,19 +124,19 @@ export const quizRepository = {
     return updated;
   },
 
-  async delete(id: number) {
-    await db.transaction(async (tx: any) => {
+  async delete(id: number): Promise<void> {
+    await db.transaction(async (tx) => {
       const sessionRows = await tx
         .select({ id: quizSessions.id })
         .from(quizSessions)
         .where(eq(quizSessions.quizId, id));
-      const sessionIds = sessionRows.map((s: any) => s.id);
+      const sessionIds = sessionRows.map((session) => session.id);
 
       const questionRows = await tx
         .select({ id: questions.id })
         .from(questions)
         .where(eq(questions.quizId, id));
-      const questionIds = questionRows.map((q: any) => q.id);
+      const questionIds = questionRows.map((question) => question.id);
 
       if (questionIds.length > 0) {
         await tx.delete(playerAnswers).where(inArray(playerAnswers.questionId, questionIds));
@@ -133,8 +153,31 @@ export const quizRepository = {
   },
 
   async getQuestionCount(quizId: number): Promise<number> {
-    const qs = await db.select().from(questions).where(eq(questions.quizId, quizId));
-    return qs.length;
+    const rows = await db
+      .select({
+        questionCount: sql<number>`count(*)`,
+      })
+      .from(questions)
+      .where(eq(questions.quizId, quizId));
+
+    return Number(rows[0]?.questionCount || 0);
+  },
+
+  async getQuestionCountsByQuizIds(quizIds: number[]): Promise<Map<number, number>> {
+    if (quizIds.length === 0) {
+      return new Map<number, number>();
+    }
+
+    const rows = await db
+      .select({
+        quizId: questions.quizId,
+        questionCount: sql<number>`count(*)`,
+      })
+      .from(questions)
+      .where(inArray(questions.quizId, quizIds))
+      .groupBy(questions.quizId);
+
+    return new Map(rows.map((row) => [row.quizId, Number(row.questionCount)] as const));
   },
 
   async getQuestionsByQuizId(quizId: number) {
@@ -146,7 +189,19 @@ export const quizRepository = {
   },
 
   async createQuestion(data: CreateQuestionData) {
-    const [question] = await db.insert(questions).values(data).returning();
+    const payload: NewQuestionRecord = {
+      quizId: data.quizId,
+      questionText: data.questionText,
+      questionType: data.questionType,
+      orderIndex: data.orderIndex,
+      timeLimitSeconds: data.timeLimitSeconds,
+      basePoints: data.basePoints,
+      deductionPoints: data.deductionPoints,
+      deductionInterval: data.deductionInterval,
+      mediaUrl: data.mediaUrl || null,
+      backgroundUrl: data.backgroundUrl || null,
+    };
+    const [question] = await db.insert(questions).values(payload).returning();
     return question;
   },
 
@@ -159,7 +214,7 @@ export const quizRepository = {
     return updated;
   },
 
-  async deleteQuestion(id: number) {
+  async deleteQuestion(id: number): Promise<void> {
     await db.delete(questions).where(eq(questions.id, id));
   },
 
@@ -168,16 +223,24 @@ export const quizRepository = {
     return question ?? null;
   },
 
-  async createChoices(choicesData: CreateChoiceData[]) {
+  async createChoices(choicesData: CreateChoiceData[]): Promise<AnswerChoiceRecord[]> {
     if (choicesData.length === 0) return [];
-    return db.insert(answerChoices).values(choicesData).returning();
+
+    const payload: NewAnswerChoiceRecord[] = choicesData.map((choice) => ({
+      questionId: choice.questionId,
+      choiceText: choice.choiceText,
+      isCorrect: choice.isCorrect,
+      orderIndex: choice.orderIndex,
+    }));
+
+    return db.insert(answerChoices).values(payload).returning();
   },
 
-  async deleteChoicesByQuestion(questionId: number) {
+  async deleteChoicesByQuestion(questionId: number): Promise<void> {
     await db.delete(answerChoices).where(eq(answerChoices.questionId, questionId));
   },
 
-  async getChoicesByQuestion(questionId: number) {
+  async getChoicesByQuestion(questionId: number): Promise<AnswerChoiceRecord[]> {
     return db
       .select()
       .from(answerChoices)
@@ -185,3 +248,4 @@ export const quizRepository = {
       .orderBy(asc(answerChoices.orderIndex));
   },
 };
+

@@ -8,12 +8,16 @@ const getGitValue = (command) => {
   }
 };
 
+const SLOT_SIZE = 101;
 const rawCommitCount = Number.parseInt(getGitValue("git rev-list --count HEAD"), 10);
-const commitCount = Number.isFinite(rawCommitCount) && rawCommitCount > 0 ? rawCommitCount : 0;
+const commitCount = Number.isFinite(rawCommitCount) && rawCommitCount >= 0 ? rawCommitCount : 0;
 const commitDate = getGitValue("git log -1 --format=%cI");
-const versionMinor = Math.floor(commitCount / 101);
-const versionPatch = commitCount % 101;
-const versionString = `v.1.${versionMinor}.${versionPatch}`;
+const slotsPerMajor = SLOT_SIZE * SLOT_SIZE;
+const versionMajor = 1 + Math.floor(commitCount / slotsPerMajor);
+const remainder = commitCount % slotsPerMajor;
+const versionMinor = Math.floor(remainder / SLOT_SIZE);
+const versionPatch = remainder % SLOT_SIZE;
+const versionString = `v.${versionMajor}.${versionMinor}.${versionPatch}`;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

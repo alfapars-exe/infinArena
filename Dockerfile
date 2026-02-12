@@ -3,6 +3,9 @@ FROM node:20-slim
 
 WORKDIR /app
 
+# Install git for build metadata extraction (commit date/version)
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@10.29.2 --activate
 
@@ -28,7 +31,7 @@ ENV APP_STORAGE_DIR=/app/data
 ENV REQUIRE_PERSISTENT_STORAGE=false
 
 # Build the application
-RUN pnpm build
+RUN pnpm build && rm -rf .git
 
 # Do not run db:push or db:seed at build time.
 # Runtime startup handles migrations + idempotent seed against persistent storage.

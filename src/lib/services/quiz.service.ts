@@ -1,19 +1,23 @@
-import { quizRepository } from "@/lib/repositories/quiz.repository";
-import { sessionRepository } from "@/lib/repositories/session.repository";
-import { NotFoundError, ValidationError } from "@/lib/errors/app-error";
-import { quizSchema, questionSchema } from "@/lib/validators";
-import { generateUniquePin } from "@/lib/pin-generator";
-import { ensureDbMigrations } from "@/lib/db/migrations";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { admins } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import type {
+  AnswerChoiceRecord,
+  QuestionType,
+  QuestionWithChoices,
+  QuizSummary,
+  QuizWithQuestions,
+} from "@/lib/domain/quiz.types";
+import { NotFoundError, ValidationError } from "@/lib/errors/app-error";
+import { generateUniquePin } from "@/lib/pin-generator";
+import { quizRepository } from "@/lib/repositories/quiz.repository";
+import { sessionRepository } from "@/lib/repositories/session.repository";
+import { questionSchema, quizSchema } from "@/lib/validators";
+import { ensureDbMigrations } from "@/lib/db/migrations";
 
-type QuestionType =
-  | "multiple_choice"
-  | "true_false"
-  | "multi_select"
-  | "text_input"
-  | "ordering";
+type ParsedQuizInput = z.infer<typeof quizSchema>;
+type ParsedQuestionInput = z.infer<typeof questionSchema>;
 
 function coerceBoolean(value: unknown): boolean {
   if (typeof value === "boolean") return value;
@@ -63,16 +67,18 @@ function normalizeChoiceFlags(
     }));
   }
 
-  // multi_select
   const hasAtLeastOneCorrect = choices.some((choice) => choice.isCorrect);
   if (hasAtLeastOneCorrect) return choices;
+
   return choices.map((choice, index) => ({
     ...choice,
     isCorrect: index === 0,
   }));
 }
 
-export async function resolveAdminId(session: { user?: { id?: string; email?: string | null } }): Promise<number | null> {
+export async function resolveAdminId(session: {
+  user?: { id?: string; email?: string | null };
+}): Promise<number | null> {
   const rawId = session.user?.id;
   if (rawId) {
     const parsedId = Number.parseInt(rawId, 10);
@@ -87,36 +93,38 @@ export async function resolveAdminId(session: { user?: { id?: string; email?: st
     .from(admins)
     .where(eq(admins.email, email));
 
-  return (adminByEmail as any)?.id ?? null;
+  return adminByEmail?.id ?? null;
 }
 
-export async function getAllQuizzes(adminId: number) {
+export async function getAllQuizzes(adminId: number): Promise<QuizSummary[]> {
   await ensureDbMigrations();
+
   const allQuizzes = await quizRepository.findAllByAdmin(adminId);
+  const quizIds = allQuizzes.map((quiz) => quiz.id);
+  const questionCountByQuizId = await quizRepository.getQuestionCountsByQuizIds(quizIds);
 
-  return Promise.all(
-    (allQuizzes as any[]).map(async (quiz: any) => {
-      const count = await quizRepository.getQuestionCount(quiz.id);
-      return { ...quiz, questionCount: count };
-    })
-  );
+  return allQuizzes.map((quiz) => ({
+    ...quiz,
+    questionCount: questionCountByQuizId.get(quiz.id) ?? 0,
+  }));
 }
 
-export async function getQuizWithQuestions(quizId: number) {
+export async function getQuizWithQuestions(quizId: number): Promise<QuizWithQuestions> {
   await ensureDbMigrations();
+
   const quiz = await quizRepository.findWithQuestions(quizId);
   if (!quiz) throw new NotFoundError("Quiz", quizId);
 
-  const repairedQuestions = await Promise.all(
-    (quiz.questions as any[]).map(async (question: any) => {
-      if (!question?.id || !Array.isArray(question.choices) || question.choices.length === 0) {
+  const repairedQuestions: QuestionWithChoices[] = await Promise.all(
+    quiz.questions.map(async (question) => {
+      if (!question.id || question.choices.length === 0) {
         return question;
       }
 
       const questionType = normalizeQuestionType(question.questionType);
       const normalized = normalizeChoiceFlags(
         questionType,
-        question.choices.map((choice: any, index: number) => ({
+        question.choices.map((choice, index) => ({
           choiceText: String(choice.choiceText ?? ""),
           isCorrect: choice.isCorrect,
           orderIndex: Number.isInteger(choice.orderIndex) ? choice.orderIndex : index,
@@ -133,7 +141,7 @@ export async function getQuizWithQuestions(quizId: number) {
         return {
           ...question,
           questionType,
-          choices: question.choices.map((choice: any, index: number) => ({
+          choices: question.choices.map((choice: AnswerChoiceRecord, index: number) => ({
             ...choice,
             isCorrect: coerceBoolean(choice.isCorrect),
             orderIndex: index,
@@ -162,52 +170,57 @@ export async function getQuizWithQuestions(quizId: number) {
   return { ...quiz, questions: repairedQuestions };
 }
 
-export async function createQuiz(adminId: number, data: { title: string; description?: string; customSlug?: string }) {
+export async function createQuiz(adminId: number, data: unknown) {
   await ensureDbMigrations();
+
   const parsed = quizSchema.safeParse(data);
   if (!parsed.success) {
     throw new ValidationError("Invalid quiz data", parsed.error.errors);
   }
 
+  const payload: ParsedQuizInput = parsed.data;
   return quizRepository.create({
     adminId,
-    title: parsed.data.title,
-    description: parsed.data.description || null,
-    customSlug: parsed.data.customSlug || null,
+    title: payload.title,
+    description: payload.description || null,
+    customSlug: payload.customSlug || null,
   });
 }
 
-export async function updateQuiz(quizId: number, data: { title: string; description?: string; customSlug?: string }) {
+export async function updateQuiz(quizId: number, data: unknown) {
   const parsed = quizSchema.safeParse(data);
   if (!parsed.success) {
     throw new ValidationError("Invalid quiz data", parsed.error.errors);
   }
 
+  const payload: ParsedQuizInput = parsed.data;
   return quizRepository.update(quizId, {
-    title: parsed.data.title,
-    description: parsed.data.description || null,
-    customSlug: parsed.data.customSlug || null,
+    title: payload.title,
+    description: payload.description || null,
+    customSlug: payload.customSlug || null,
   });
 }
 
-export async function deleteQuiz(quizId: number) {
+export async function deleteQuiz(quizId: number): Promise<void> {
   await ensureDbMigrations();
   await quizRepository.delete(quizId);
 }
 
-export async function addQuestion(quizId: number, data: any) {
+export async function addQuestion(quizId: number, data: unknown) {
   await ensureDbMigrations();
+
   const parsed = questionSchema.safeParse(data);
   if (!parsed.success) {
     throw new ValidationError("Invalid question data", parsed.error.errors);
   }
 
+  const payload: ParsedQuestionInput = parsed.data;
   const requiresCorrectChoice =
-    parsed.data.questionType === "multiple_choice" ||
-    parsed.data.questionType === "true_false" ||
-    parsed.data.questionType === "multi_select";
-  const hasCorrect = parsed.data.choices.some((c) => c.isCorrect);
-  if (requiresCorrectChoice && !hasCorrect) {
+    payload.questionType === "multiple_choice" ||
+    payload.questionType === "true_false" ||
+    payload.questionType === "multi_select";
+
+  if (requiresCorrectChoice && !payload.choices.some((choice) => choice.isCorrect)) {
     throw new ValidationError("At least one choice must be correct");
   }
 
@@ -216,55 +229,58 @@ export async function addQuestion(quizId: number, data: any) {
 
   const question = await quizRepository.createQuestion({
     quizId,
-    questionText: parsed.data.questionText,
-    questionType: parsed.data.questionType,
+    questionText: payload.questionText,
+    questionType: payload.questionType,
     orderIndex,
-    timeLimitSeconds: parsed.data.timeLimitSeconds,
-    basePoints: parsed.data.basePoints,
-    deductionPoints: parsed.data.deductionPoints,
-    deductionInterval: parsed.data.deductionInterval,
-    mediaUrl: parsed.data.mediaUrl || null,
-    backgroundUrl: parsed.data.backgroundUrl || null,
+    timeLimitSeconds: payload.timeLimitSeconds,
+    basePoints: payload.basePoints,
+    deductionPoints: payload.deductionPoints,
+    deductionInterval: payload.deductionInterval,
+    mediaUrl: payload.mediaUrl || null,
+    backgroundUrl: payload.backgroundUrl || null,
   });
 
   const choices = await quizRepository.createChoices(
-    parsed.data.choices.map((c, i) => ({
+    payload.choices.map((choice, index) => ({
       questionId: question.id,
-      choiceText: c.choiceText,
-      isCorrect: c.isCorrect,
-      orderIndex: i,
+      choiceText: choice.choiceText,
+      isCorrect: choice.isCorrect,
+      orderIndex: index,
     }))
   );
 
   return { ...question, choices };
 }
 
-export async function updateQuestion(questionId: number, data: any) {
+export async function updateQuestion(questionId: number, data: unknown) {
   await ensureDbMigrations();
+
   const parsed = questionSchema.safeParse(data);
   if (!parsed.success) {
     throw new ValidationError("Invalid question data", parsed.error.errors);
   }
 
+  const payload: ParsedQuestionInput = parsed.data;
+
   await quizRepository.updateQuestion(questionId, {
-    questionText: parsed.data.questionText,
-    questionType: parsed.data.questionType,
-    timeLimitSeconds: parsed.data.timeLimitSeconds,
-    basePoints: parsed.data.basePoints,
-    deductionPoints: parsed.data.deductionPoints,
-    deductionInterval: parsed.data.deductionInterval,
-    mediaUrl: parsed.data.mediaUrl || null,
-    backgroundUrl: parsed.data.backgroundUrl || null,
+    questionText: payload.questionText,
+    questionType: payload.questionType,
+    timeLimitSeconds: payload.timeLimitSeconds,
+    basePoints: payload.basePoints,
+    deductionPoints: payload.deductionPoints,
+    deductionInterval: payload.deductionInterval,
+    mediaUrl: payload.mediaUrl || null,
+    backgroundUrl: payload.backgroundUrl || null,
   });
 
   await quizRepository.deleteChoicesByQuestion(questionId);
 
   const choices = await quizRepository.createChoices(
-    parsed.data.choices.map((c, i) => ({
+    payload.choices.map((choice, index) => ({
       questionId,
-      choiceText: c.choiceText,
-      isCorrect: c.isCorrect,
-      orderIndex: i,
+      choiceText: choice.choiceText,
+      isCorrect: choice.isCorrect,
+      orderIndex: index,
     }))
   );
 
@@ -272,13 +288,14 @@ export async function updateQuestion(questionId: number, data: any) {
   return { ...updated, choices };
 }
 
-export async function deleteQuestion(questionId: number) {
+export async function deleteQuestion(questionId: number): Promise<void> {
   await ensureDbMigrations();
   await quizRepository.deleteQuestion(questionId);
 }
 
 export async function publishQuiz(quizId: number) {
   await ensureDbMigrations();
+
   const quiz = await quizRepository.findById(quizId);
   if (!quiz) throw new NotFoundError("Quiz", quizId);
 
@@ -296,12 +313,13 @@ export async function publishQuiz(quizId: number) {
 
 export async function getQuizResults(quizId: number) {
   await ensureDbMigrations();
-  const sessions = await sessionRepository.findByQuizId(quizId);
 
+  const sessions = await sessionRepository.findByQuizId(quizId);
   return Promise.all(
-    (sessions as any[]).map(async (s: any) => {
-      const playerDetails = await sessionRepository.getSessionResults(s.id);
-      return { ...s, players: playerDetails };
-    })
+    sessions.map(async (session) => ({
+      ...session,
+      players: await sessionRepository.getSessionResults(session.id),
+    }))
   );
 }
+

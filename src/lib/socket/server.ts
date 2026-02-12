@@ -18,6 +18,7 @@ import { calculateScore } from "@/lib/scoring";
 import { getRandomAvatar, resetAvatars } from "@/lib/avatars";
 import { ensureDbMigrations } from "@/lib/db/migrations";
 import { logger } from "@/lib/logger";
+import type { AnswerChoiceRecord, QuestionRecord, QuestionType } from "@/lib/domain/quiz.types";
 import {
   createActiveSession,
   getActiveSession,
@@ -30,6 +31,7 @@ import {
 } from "./session-manager";
 
 type TypedServer = SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
+type PlayerAnswerDisplay = string[] | string | null;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -373,7 +375,7 @@ export function setupSocketHandlers(io: TypedServer) {
               // Also send batch results if available
               const playerAnswer = session.pendingAnswers.get(player.id);
               if (playerAnswer && currentQ) {
-                let playerAnswerDisplay: any = null;
+                let playerAnswerDisplay: PlayerAnswerDisplay = null;
 
                 if (currentQ.questionType === "ordering") {
                   const choiceTexts = playerAnswer.orderedChoiceIds
@@ -407,7 +409,7 @@ export function setupSocketHandlers(io: TypedServer) {
             // First send batch results for this player if they answered
             const playerAnswer = session.pendingAnswers.get(player.id);
             if (playerAnswer && currentQ) {
-              let playerAnswerDisplay: any = null;
+              let playerAnswerDisplay: PlayerAnswerDisplay = null;
 
               if (currentQ.questionType === "ordering") {
                 const choiceTexts = playerAnswer.orderedChoiceIds
@@ -442,10 +444,10 @@ export function setupSocketHandlers(io: TypedServer) {
               .select()
               .from(players)
               .where(eq(players.sessionId, session.sessionId))
-              .orderBy(desc(players.totalScore))) as any[];
+              .orderBy(desc(players.totalScore)));
 
             const rankings: PlayerRanking[] = allPlayers.map(
-              (p: any, i: number) => ({
+              (p, i: number) => ({
                 playerId: p.id,
                 nickname: p.nickname,
                 avatar: p.avatar || "🎮",
@@ -480,37 +482,32 @@ export function setupSocketHandlers(io: TypedServer) {
           return;
         }
 
-        const dbQuestions = (await db
+        const dbQuestions: QuestionRecord[] = await db
           .select()
           .from(questions)
           .where(eq(questions.quizId, dbSession.quizId))
-          .orderBy(asc(questions.orderIndex))) as any[];
+          .orderBy(asc(questions.orderIndex));
 
         const questionsWithChoices = await Promise.all(
-          dbQuestions.map(async (q: any) => {
-            const choices = (await db
+          dbQuestions.map(async (q) => {
+            const choices: AnswerChoiceRecord[] = await db
               .select()
               .from(answerChoices)
               .where(eq(answerChoices.questionId, q.id))
-              .orderBy(asc(answerChoices.orderIndex))) as any[];
+              .orderBy(asc(answerChoices.orderIndex));
 
-            const questionType = q.questionType as
-              | "multiple_choice"
-              | "true_false"
-              | "multi_select"
-              | "text_input"
-              | "ordering";
+            const questionType = q.questionType as QuestionType;
             const correctChoiceIds = normalizeCorrectChoiceIds(
-              choices.map((c: any) => ({ id: c.id, isCorrect: c.isCorrect })),
+              choices.map((c) => ({ id: c.id, isCorrect: c.isCorrect })),
               questionType
             );
             
-            logger.socket.info(`[QUIZ-LOAD] Q${q.id} Type=${questionType}: Choices=[${choices.map((c: any) => `${c.id}(${c.isCorrect ? '✓' : '✗'})`).join(', ')}], CorrectIds=[${correctChoiceIds.join(', ')}]`);
+            logger.socket.info(`[QUIZ-LOAD] Q${q.id} Type=${questionType}: Choices=[${choices.map((c) => `${c.id}(${c.isCorrect ? '✓' : '✗'})`).join(', ')}], CorrectIds=[${correctChoiceIds.join(', ')}]`);
             
             const correctOrderChoiceIds = [...choices]
               .sort((a, b) => a.orderIndex - b.orderIndex)
-              .map((c: any) => c.id);
-            const acceptedAnswers = choices.map((c: any) => normalizeText(c.choiceText));
+              .map((c) => c.id);
+            const acceptedAnswers = choices.map((c) => normalizeText(c.choiceText));
 
             return {
               id: q.id,
@@ -519,7 +516,7 @@ export function setupSocketHandlers(io: TypedServer) {
               timeLimitSeconds: q.timeLimitSeconds,
               mediaUrl: q.mediaUrl,
               backgroundUrl: q.backgroundUrl,
-              choices: choices.map((c: any) => ({
+              choices: choices.map((c) => ({
                 id: c.id,
                 choiceText: c.choiceText,
                 orderIndex: c.orderIndex,
@@ -912,14 +909,14 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 
   const connectedSocketByPlayerId = new Map<number, string>(
     allPlayers
-      .filter((p: any) => Boolean(p.socketId))
-      .map((p: any) => [p.id, p.socketId as string])
+      .filter((p) => Boolean(p.socketId))
+      .map((p) => [p.id, p.socketId as string])
   );
   const roomSocketByPlayerId = getActivePlayerSocketMap(io, session.sessionId);
 
   // Send batch results to each player who answered
   for (const [, answer] of Array.from(session.pendingAnswers)) {
-    let playerAnswerDisplay: any = null;
+    let playerAnswerDisplay: PlayerAnswerDisplay = null;
 
     if (currentQ.questionType === "ordering") {
       const choiceTexts = answer.orderedChoiceIds
@@ -987,7 +984,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     number,
     { playerId: number; nickname: string; avatar: string }
   >(
-    allPlayers.map((p: any) => [
+    allPlayers.map((p) => [
       p.id,
       { playerId: p.id, nickname: p.nickname, avatar: p.avatar || "🎮" },
     ])
@@ -1053,8 +1050,8 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   );
 
   const unansweredPlayers = allPlayers
-    .filter((p: any) => !session.pendingAnswers.has(p.id))
-    .map((p: any) => ({
+    .filter((p) => !session.pendingAnswers.has(p.id))
+    .map((p) => ({
       playerId: p.id,
       nickname: p.nickname,
       avatar: p.avatar || "🎮",
@@ -1091,13 +1088,13 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 async function sendLeaderboard(io: TypedServer, session: ActiveSession) {
   if (!session) return;
 
-  const allPlayers = (await db
+  const allPlayers = await db
     .select()
     .from(players)
     .where(eq(players.sessionId, session.sessionId))
-    .orderBy(desc(players.totalScore))) as any[];
+    .orderBy(desc(players.totalScore));
 
-  const rankings: PlayerRanking[] = allPlayers.map((p: any, i: number) => ({
+  const rankings: PlayerRanking[] = allPlayers.map((p, i: number) => ({
     playerId: p.id,
     nickname: p.nickname,
     avatar: p.avatar || "🎮",
@@ -1131,7 +1128,7 @@ async function endQuiz(io: TypedServer, sessionId: number) {
       .where(eq(players.sessionId, sessionId))
       .orderBy(desc(players.totalScore));
 
-    const finalRankings: PlayerRanking[] = allPlayers.map((p: any, i: number) => ({
+    const finalRankings: PlayerRanking[] = allPlayers.map((p, i: number) => ({
       playerId: p.id,
       nickname: p.nickname,
       avatar: p.avatar || "🎮",

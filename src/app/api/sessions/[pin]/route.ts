@@ -1,46 +1,15 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { quizSessions, quizzes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+import { getSessionByPin } from "@/lib/services/session-query.service";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { pin: string } }
 ) {
-  const { pin } = params;
-  const dbAny: any = db;
-
-  const [session] = await dbAny
-    .select()
-    .from(quizSessions)
-    .where(eq(quizSessions.pin, pin));
-
-  if (!session) {
-    return NextResponse.json(
-      { error: "Invalid PIN code" },
-      { status: 404 }
-    );
+  const result = await getSessionByPin(params.pin);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.message }, { status: result.status });
   }
 
-  if (session.status === "completed") {
-    return NextResponse.json(
-      { error: "This quiz has already ended" },
-      { status: 410 }
-    );
-  }
-
-  const [quiz] = await dbAny
-    .select()
-    .from(quizzes)
-    .where(eq(quizzes.id, session.quizId));
-
-  return NextResponse.json({
-    sessionId: session.id,
-    status: session.status,
-    quizTitle: quiz?.title || "Quiz",
-    pin: session.pin,
-    isLive: session.isLive,
-  });
+  return NextResponse.json(result.data);
 }
-
 

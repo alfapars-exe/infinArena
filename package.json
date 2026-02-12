@@ -6,6 +6,10 @@
     "dev": "tsx server.ts",
     "build": "next build",
     "start": "tsx server.ts",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm lint && pnpm typecheck && pnpm build",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/lib/db/seed.ts"
   },

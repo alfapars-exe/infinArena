@@ -38,8 +38,9 @@ const dbInstance = isSqlite
   ? drizzleSqlite(client as ReturnType<typeof createClient>, { schema })
   : drizzlePostgres(client as ReturnType<typeof postgres>, { schema });
 
-export const db: any = dbInstance;
+export type DatabaseClient = ReturnType<typeof drizzleSqlite>;
+export const db: DatabaseClient = dbInstance as unknown as DatabaseClient;
 export { client, isSqlite };
 
-/** Raw SQL expression for "current timestamp" — works for both SQLite and Postgres */
+/** Raw SQL expression for current timestamp, compatible with SQLite and Postgres. */
 export const nowSql = isSqlite ? sql`(unixepoch())` : sql`NOW()`;

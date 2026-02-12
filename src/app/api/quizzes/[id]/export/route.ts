@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Buffer } from "node:buffer";
 import { withAuth } from "@/lib/errors/with-auth";
 import { exportQuizDraftAsExcel, exportQuizDraftAsWord } from "@/lib/services/export.service";
 
@@ -9,8 +10,8 @@ export const GET = withAuth(async (request: NextRequest, _session, params) => {
 
   if (format === "word") {
     const buffer = await exportQuizDraftAsWord(quizId);
-    const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    return new NextResponse(bytes as any, {
+    const body = new Blob([Buffer.from(buffer)]);
+    return new NextResponse(body, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": `attachment; filename="quiz-${quizId}.docx"`,
@@ -19,8 +20,8 @@ export const GET = withAuth(async (request: NextRequest, _session, params) => {
   }
 
   const buffer = await exportQuizDraftAsExcel(quizId);
-  const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  return new NextResponse(bytes as any, {
+  const body = new Blob([Buffer.from(buffer)]);
+  return new NextResponse(body, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="quiz-${quizId}.xlsx"`,
