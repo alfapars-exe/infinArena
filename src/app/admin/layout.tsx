@@ -1,6 +1,6 @@
 "use client";
 
-import { SessionProvider, useSession } from "next-auth/react";
+import { SessionProvider, signOut, useSession } from "next-auth/react";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect } from "react";
 import Link from "next/link";
@@ -12,6 +12,11 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
+  
+  const handleLogout = async () => {
+    await signOut({ redirect: false });
+    router.replace("/infinarenapanel/login");
+  };
 
   useEffect(() => {
     if (status === "unauthenticated" && pathname !== "/infinarenapanel/login") {
@@ -41,7 +46,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       {/* Top Navigation */}
       <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
-        <div className="container-fluid app-container px-3 px-md-4">
+        <div className="container-fluid app-container px-3 px-md-4 relative">
           <div className="d-flex flex-wrap flex-md-nowrap align-items-center justify-content-between gap-2 py-2 py-md-0 min-h-[64px]">
             <Link href="/infinarenapanel" className="flex items-center gap-3">
               <span className="text-2xl font-black text-white">infinArena</span>
@@ -61,13 +66,21 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
               <span className="text-white/50 text-sm">
                 {session.user?.name}
               </span>
-              <Link
-                href="/api/auth/signout"
-                className="text-white/50 hover:text-white transition-colors text-sm"
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="text-white/50 hover:text-white transition-colors text-sm bg-transparent border-0 p-0"
               >
                 {t("nav.logout")}
-              </Link>
+              </button>
             </div>
+          </div>
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+            <img
+              src="/logo.png"
+              alt="infinArena"
+              className="h-8 md:h-9 w-auto"
+            />
           </div>
         </div>
       </nav>
@@ -105,7 +118,6 @@ export default function AdminLayout({
     </SessionProvider>
   );
 }
-
 
 
 

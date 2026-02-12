@@ -9,26 +9,22 @@ const app = next({ dev });
 const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
-  // Initialize database
+  const { ensureStorageReady } = await import("./src/lib/storage");
+  const storageStatus = ensureStorageReady();
+  console.log(`[storage] Root: ${storageStatus.storageRoot}`);
+  console.log(
+    `[storage] Persistent storage required: ${storageStatus.requirePersistentStorage}`
+  );
+
   const { ensureDbMigrations } = await import("./src/lib/db/migrations");
   await ensureDbMigrations();
-  console.log("✓ Database migrations completed");
+  console.log("[db] Migrations completed");
 
-  // Initialize seed (creates admin user only if not exists, preserves quiz data)
   try {
     await import("./src/lib/db/seed");
-    console.log("✓ Database initialization completed");
+    console.log("[db] Seed initialization completed");
   } catch (err) {
-    console.warn("⚠ Database initialization warning:", err);
-  }
-
-  // Create uploads directory in data folder (persists)
-  const { mkdir } = await import("fs/promises");
-  try {
-    await mkdir("./data/uploads", { recursive: true });
-    console.log("✓ Uploads directory ready");
-  } catch (err) {
-    console.warn("⚠ Could not create uploads directory:", err);
+    console.warn("[db] Seed initialization warning:", err);
   }
 
   const { setupSocketHandlers } = await import("./src/lib/socket/server");
@@ -46,7 +42,7 @@ app.prepare().then(async () => {
 
   httpServer.listen(port, "0.0.0.0", () => {
     console.log(`> Ready on http://0.0.0.0:${port}`);
-    console.log(`> Admin panel: /infinarenapanel/login`);
-    console.log(`> Player entry: /`);
+    console.log("> Admin panel: /infinarenapanel/login");
+    console.log("> Player entry: /");
   });
 });

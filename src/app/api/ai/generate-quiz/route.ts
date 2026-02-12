@@ -63,11 +63,19 @@ function buildSystemPrompt(
   topic: string,
   difficulty: string,
   numQuestions: number,
-  language: string
+  language: string,
+  timeLimitOverride?: number
 ): string {
   const lang = language === "tr" ? "Turkish" : "English";
   const tf = language === "tr" ? ["Doğru", "Yanlış"] : ["True", "False"];
-  const timeLimit = difficulty === "easy" ? 30 : difficulty === "medium" ? 20 : 15;
+  const timeLimit =
+    typeof timeLimitOverride === "number"
+      ? timeLimitOverride
+      : difficulty === "easy"
+      ? 30
+      : difficulty === "medium"
+      ? 20
+      : 15;
   const basePoints = difficulty === "easy" ? 800 : difficulty === "medium" ? 1000 : 1200;
 
   // Calculate distribution
@@ -245,7 +253,7 @@ export async function POST(request: NextRequest) {
     await ensureDbMigrations();
 
     const body = await request.json();
-    const { topic, difficulty, numQuestions, model, language } = body;
+    const { topic, difficulty, numQuestions, model, language, timeLimitSeconds } = body;
 
     // Validate inputs
     if (!topic || typeof topic !== "string" || topic.length < 1 || topic.length > 200) {
@@ -263,6 +271,12 @@ export async function POST(request: NextRequest) {
     if (!VALID_LANGUAGES.includes(language)) {
       return NextResponse.json({ error: "Invalid language" }, { status: 400 });
     }
+    if (
+      timeLimitSeconds !== undefined &&
+      (!Number.isInteger(timeLimitSeconds) || timeLimitSeconds < 5 || timeLimitSeconds > 120)
+    ) {
+      return NextResponse.json({ error: "Invalid time limit" }, { status: 400 });
+    }
 
     const apiKey = process.env.HUGGINGFACE_API_KEY;
     if (!apiKey || apiKey === "hf_xxxxxxxxxxxxxxxxxxxx") {
@@ -273,7 +287,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Call HuggingFace API
-    const systemPrompt = buildSystemPrompt(topic, difficulty, numQuestions, language);
+    const systemPrompt = buildSystemPrompt(
+      topic,
+      difficulty,
+      numQuestions,
+      language,
+      timeLimitSeconds
+    );
 
     console.log(`[AI] Generating ${numQuestions} questions about "${topic}" with model ${model}`);
 
@@ -333,6 +353,10 @@ export async function POST(request: NextRequest) {
 
     // Auto-fix common AI mistakes before validation
     for (const q of parsed.questions) {
+      if (typeof timeLimitSeconds === "number") {
+        q.timeLimitSeconds = timeLimitSeconds;
+      }
+
       if (!q.choices || !Array.isArray(q.choices)) continue;
 
       // text_input and ordering: all choices must be isCorrect=true

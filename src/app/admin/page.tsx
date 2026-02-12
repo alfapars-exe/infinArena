@@ -313,6 +313,7 @@ function AIGenerateModal({
   const [topic, setTopic] = useState("");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [numQuestions, setNumQuestions] = useState(10);
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(30);
   const [model, setModel] = useState(AI_MODELS[0].id);
   const [language, setLanguage] = useState<"en" | "tr">(locale);
   const [loading, setLoading] = useState(false);
@@ -327,7 +328,14 @@ function AIGenerateModal({
       const res = await fetch("/api/ai/generate-quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, difficulty, numQuestions, model, language }),
+        body: JSON.stringify({
+          topic,
+          difficulty,
+          numQuestions,
+          model,
+          language,
+          timeLimitSeconds,
+        }),
       });
 
       const data = await res.json();
@@ -428,6 +436,26 @@ function AIGenerateModal({
               max={200}
               value={numQuestions}
               onChange={(e) => setNumQuestions(Math.min(200, Math.max(1, parseInt(e.target.value) || 1)))}
+              className="input-field bg-white/10 w-full"
+              disabled={loading}
+            />
+          </div>
+
+          {/* Time Limit */}
+          <div>
+            <label className="block text-white/70 text-sm font-medium mb-2">
+              {t("editor.timeLimit")}
+            </label>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              value={timeLimitSeconds}
+              onChange={(e) =>
+                setTimeLimitSeconds(
+                  Math.min(120, Math.max(5, parseInt(e.target.value) || 30))
+                )
+              }
               className="input-field bg-white/10 w-full"
               disabled={loading}
             />

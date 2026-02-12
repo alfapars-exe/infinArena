@@ -62,15 +62,6 @@ export default function LiveControlPage() {
     { id: number; message: string }[]
   >([]);
 
-  // YouTube player state
-  const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(50);
-  const [isRepeat, setIsRepeat] = useState(false);
-  const ytPlayerRef = useRef<any>(null);
-  const activeVideoIdRef = useRef<string | null>(null);
-  const [showMusicInput, setShowMusicInput] = useState(false);
 
   const pushNotification = (message: string) => {
     const id = Date.now();
@@ -207,125 +198,6 @@ export default function LiveControlPage() {
     };
   }, []);
 
-  // Load YouTube IFrame API
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if ((window as any).YT) return;
-
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.head.appendChild(tag);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.destroy === "function") {
-        ytPlayerRef.current.destroy();
-      }
-    };
-  }, []);
-
-  const extractVideoId = (url: string): string | null => {
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-      /^([a-zA-Z0-9_-]{11})$/,
-    ];
-    for (const p of patterns) {
-      const m = url.match(p);
-      if (m) return m[1];
-    }
-    return null;
-  };
-
-  const initializePlayer = (vid: string) => {
-    if (!(window as any).YT?.Player) return false;
-    const mountNode = document.getElementById("yt-player");
-    if (!mountNode) return false;
-
-    if (ytPlayerRef.current && typeof ytPlayerRef.current.destroy === "function") {
-      ytPlayerRef.current.destroy();
-    }
-
-    ytPlayerRef.current = new (window as any).YT.Player("yt-player", {
-      videoId: vid,
-      playerVars: {
-        autoplay: 1,
-        loop: isRepeat ? 1 : 0,
-        playlist: isRepeat ? vid : undefined,
-      },
-      events: {
-        onReady: (e: any) => {
-          if (typeof e?.target?.setVolume === "function") {
-            e.target.setVolume(volume);
-          }
-          if (typeof e?.target?.playVideo === "function") {
-            e.target.playVideo();
-          }
-          setIsPlaying(true);
-        },
-        onStateChange: (e: any) => {
-          if (e.data === 0 && isRepeat && typeof e?.target?.playVideo === "function") {
-            e.target.playVideo();
-          }
-        },
-      },
-    });
-    activeVideoIdRef.current = vid;
-    return true;
-  };
-
-  useEffect(() => {
-    if (!youtubeVideoId) return;
-    let attempts = 0;
-    const maxAttempts = 30;
-
-    const tryInit = () => {
-      if (initializePlayer(youtubeVideoId)) return;
-      attempts += 1;
-      if (attempts < maxAttempts) {
-        setTimeout(tryInit, 100);
-      }
-    };
-
-    // Run after container render
-    setTimeout(tryInit, 0);
-  }, [youtubeVideoId, isRepeat]);
-
-  const loadYouTube = () => {
-    const vid = extractVideoId(youtubeUrl);
-    if (!vid) return;
-
-    if (activeVideoIdRef.current === vid && ytPlayerRef.current) {
-      if (typeof ytPlayerRef.current.playVideo === "function") {
-        ytPlayerRef.current.playVideo();
-      }
-      setIsPlaying(true);
-      return;
-    }
-
-    setYoutubeVideoId(vid);
-  };
-
-  const togglePlay = () => {
-    if (!ytPlayerRef.current) return;
-    const canPause = typeof ytPlayerRef.current.pauseVideo === "function";
-    const canPlay = typeof ytPlayerRef.current.playVideo === "function";
-    if (!canPause || !canPlay) return;
-
-    if (isPlaying) {
-      ytPlayerRef.current.pauseVideo();
-    } else {
-      ytPlayerRef.current.playVideo();
-    }
-    setIsPlaying(!isPlaying);
-  };
-
-  const changeVolume = (v: number) => {
-    setVolume(v);
-    if (ytPlayerRef.current && typeof ytPlayerRef.current.setVolume === "function") {
-      ytPlayerRef.current.setVolume(v);
-    }
-  };
 
   const startLive = () => {
     if (socket && sessionId) {
@@ -377,68 +249,6 @@ export default function LiveControlPage() {
               {playerCount} {t("live.players")}
             </span>
             
-            {/* Minimalist Music Controls */}
-            {youtubeVideoId && (
-              <div className="flex items-center gap-3 text-white/80">
-                <div className="hidden">
-                  <div id="yt-player" />
-                </div>
-                <button
-                  onClick={togglePlay}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
-                    isPlaying
-                      ? "bg-gradient-to-br from-inf-red to-rose-600 hover:from-red-700 hover:to-rose-700 text-white"
-                      : "bg-gradient-to-br from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white"
-                  }`}
-                  aria-label={isPlaying ? t("live.pause") : t("live.play")}
-                  title={isPlaying ? t("live.pause") : t("live.play")}
-                >
-                  {isPlaying ? (
-                    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
-                      <rect x="6" y="4" width="4" height="16" />
-                      <rect x="14" y="4" width="4" height="16" />
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
-                      <path d="M8 5.5v13l10-6.5-10-6.5z" />
-                    </svg>
-                  )}
-                </button>
-                <button
-                  onClick={() => setIsRepeat(!isRepeat)}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
-                    isRepeat
-                      ? "bg-gradient-to-br from-inf-yellow to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white"
-                      : "bg-white/20 hover:bg-white/30 text-white/60 hover:text-white"
-                  }`}
-                  aria-label={t("live.loop")}
-                  title={t("live.loop")}
-                >
-                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                    <path d="M3 12a7 7 0 0 1 7-7h7" />
-                    <path d="M17 2l4 3-4 3" />
-                    <path d="M21 12a7 7 0 0 1-7 7H7" />
-                    <path d="M7 22l-4-3 4-3" />
-                  </svg>
-                </button>
-                <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-full">
-                  <svg viewBox="0 0 24 24" className="w-4 h-4 text-white/70" fill="currentColor" aria-hidden="true">
-                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.26 2.5-4.02zM14 3.1v2.7c2.89.86 5 3.54 5 6.9s-2.11 6.04-5 6.9v2.7c4.01-.91 7-4.49 7-9.6s-2.99-8.69-7-9.6z" />
-                  </svg>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={volume}
-                    onChange={(e) => changeVolume(Number(e.target.value))}
-                    className="h-2 w-20 accent-inf-turquoise cursor-pointer"
-                    aria-label={t("live.volume")}
-                    title={`${t("live.volume")}: ${volume}%`}
-                  />
-                  <span className="text-white/70 text-xs font-medium min-w-6">{volume}%</span>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -472,52 +282,6 @@ export default function LiveControlPage() {
                 {t("live.playersCannotJoin")}
               </p>
 
-              {/* Optional YouTube URL input */}
-              {!youtubeVideoId && (
-                <div className="mx-auto mb-6 mb-md-8" style={{ maxWidth: "640px" }}>
-                  {!showMusicInput ? (
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      onClick={() => setShowMusicInput(true)}
-                      className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all hover:shadow-lg"
-                    >
-                      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
-                        <path d="M12 3v9.28c-.47-.46-1.12-.75-1.84-.75-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V7h4V3h-5z" />
-                      </svg>
-                      {t("live.bgMusic")}
-                    </motion.button>
-                  ) : (
-                    <div>
-                      <label className="text-white/60 text-sm block mb-2">
-                        {t("live.bgMusic")}
-                      </label>
-                      <div className="d-flex flex-column flex-md-row gap-2">
-                        <input
-                          type="text"
-                          value={youtubeUrl}
-                          onChange={(e) => setYoutubeUrl(e.target.value)}
-                          placeholder={t("live.youtubePlaceholder")}
-                          className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-inf-turquoise"
-                        />
-                        <button
-                          onClick={loadYouTube}
-                          disabled={!youtubeUrl.trim()}
-                          className="bg-gradient-to-r from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50 transition-all hover:shadow-lg"
-                        >
-                          {t("live.play")}
-                        </button>
-                        <button
-                          onClick={() => setShowMusicInput(false)}
-                          className="text-white/40 hover:text-white/60 text-xl transition-colors px-2 font-bold"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -541,47 +305,6 @@ export default function LiveControlPage() {
                 {t("live.sharePinCode")}:{" "}
                 <span className="text-3xl font-black text-white">{pin}</span>
               </p>
-
-              {/* Optional YouTube URL input (if not already loaded) */}
-              {!youtubeVideoId && (
-                <div className="mx-auto mb-6" style={{ maxWidth: "640px" }}>
-                  {!showMusicInput ? (
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      onClick={() => setShowMusicInput(true)}
-                      className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-6 py-3 rounded-full font-semibold transition-all hover:shadow-lg"
-                    >
-                      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
-                        <path d="M12 3v9.28c-.47-.46-1.12-.75-1.84-.75-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V7h4V3h-5z" />
-                      </svg>
-                      {t("live.bgMusic")}
-                    </motion.button>
-                  ) : (
-                    <div className="d-flex flex-column flex-md-row gap-2">
-                      <input
-                        type="text"
-                        value={youtubeUrl}
-                        onChange={(e) => setYoutubeUrl(e.target.value)}
-                        placeholder={t("live.youtubeMusicPlaceholder")}
-                        className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-inf-turquoise"
-                      />
-                      <button
-                        onClick={loadYouTube}
-                        disabled={!youtubeUrl.trim()}
-                        className="bg-gradient-to-r from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-6 py-2 rounded-lg font-semibold disabled:opacity-50 transition-all hover:shadow-lg"
-                      >
-                        {t("live.play")}
-                      </button>
-                      <button
-                        onClick={() => setShowMusicInput(false)}
-                        className="text-white/40 hover:text-white/60 text-xl transition-colors px-2 font-bold"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
 
               <div className="flex flex-wrap gap-2 justify-center mb-8">
                 <AnimatePresence>

@@ -1,7 +1,8 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
+import { NextRequest, NextResponse } from "next/server";
+import { writeFile } from "fs/promises";
 import { join } from "path";
 import { randomBytes } from "crypto";
+import { ensureStorageReady, resolveUploadsDir } from "@/lib/storage";
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,7 +13,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // Validate file type
     const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
@@ -21,7 +21,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       return NextResponse.json(
         { error: "File too large. Maximum size is 5MB." },
@@ -32,34 +31,20 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // Generate unique filename
     const ext = file.name.split(".").pop() || "png";
     const uniqueName = `${randomBytes(16).toString("hex")}.${ext}`;
-    
-    // Use data folder instead of public folder (for persistence)
-    const uploadDir = join(process.cwd(), "data", "uploads");
-    const filePath = join(uploadDir, uniqueName);
 
-    // Create uploads directory if it doesn't exist
-    try {
-      await mkdir(uploadDir, { recursive: true });
-    } catch (mkdirErr) {
-      console.error("Failed to create uploads directory:", mkdirErr);
-    }
+    ensureStorageReady();
+    const uploadDir = resolveUploadsDir();
+    const filePath = join(uploadDir, uniqueName);
 
     await writeFile(filePath, buffer);
 
-    // Serve from /api/uploads endpoint instead of public
     const url = `/api/uploads/${uniqueName}`;
     const absoluteUrl = new URL(url, request.nextUrl.origin).toString();
     return NextResponse.json({ url, absoluteUrl });
   } catch (err) {
     console.error("Upload error:", err);
-    return NextResponse.json(
-      { error: "Failed to upload file" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });
   }
 }
-
-

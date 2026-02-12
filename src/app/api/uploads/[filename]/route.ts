@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import { join } from "path";
+import { ensureStorageReady, resolveUploadsDir } from "@/lib/storage";
 
 export async function GET(
   request: NextRequest,
@@ -9,15 +10,14 @@ export async function GET(
   try {
     const filename = params.filename;
 
-    // Validate filename to prevent directory traversal
     if (!filename || filename.includes("..") || filename.includes("/")) {
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
-    const filePath = join(process.cwd(), "data", "uploads", filename);
+    ensureStorageReady();
+    const filePath = join(resolveUploadsDir(), filename);
     const buffer = await readFile(filePath);
 
-    // Determine content type
     const ext = filename.split(".").pop()?.toLowerCase();
     let contentType = "application/octet-stream";
     if (ext === "png") contentType = "image/png";

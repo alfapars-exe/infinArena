@@ -132,6 +132,10 @@ const translations = {
     "publish.customSlugPlaceholder": "my-awesome-quiz",
     "publish.playersCount": "{count} players",
     "publish.copied": "Copied!",
+    "publish.terminateSession": "End Session",
+    "publish.terminating": "Ending...",
+    "publish.terminateConfirm": "End this session? Players with this PIN will no longer be able to join.",
+    "publish.terminateFailed": "Failed to end session",
 
     // Results
     "results.title": "Quiz Results",
@@ -363,6 +367,10 @@ const translations = {
     "publish.customSlugPlaceholder": "harika-quizim",
     "publish.playersCount": "{count} oyuncu",
     "publish.copied": "Kopyalandı!",
+    "publish.terminateSession": "Oturumu Sonlandır",
+    "publish.terminating": "Sonlandırılıyor...",
+    "publish.terminateConfirm": "Bu oturum sonlandırılsın mı? Bu PIN ile artık oyuncu katılamaz.",
+    "publish.terminateFailed": "Oturum sonlandırılamadı",
 
     // Results
     "results.title": "Quiz Sonuçları",

@@ -24,15 +24,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=7860
 ENV HOSTNAME="0.0.0.0"
 ENV NEXTAUTH_SECRET="infinarena-secret-key-2026-production-hf"
+ENV APP_STORAGE_DIR=/data/infinarena
+ENV REQUIRE_PERSISTENT_STORAGE=true
 
 # Build the application
 RUN pnpm build
 
-# Create database schema (using drizzle-kit)
-RUN pnpm db:push || echo "Database schema push completed"
-
-# DO NOT run db:seed here - preserve existing data during deployments
-# Seed only runs on first server startup to create admin user
+# Do not run db:push or db:seed at build time.
+# Runtime startup handles migrations + idempotent seed against persistent storage.
 
 # Expose port
 EXPOSE 7860

@@ -6,6 +6,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
 
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === "string" && err.trim()) return err;
+  if (err && typeof err === "object") {
+    const maybeError = (err as { error?: unknown }).error;
+    if (typeof maybeError === "string" && maybeError.trim()) return maybeError;
+    const maybeMessage = (err as { message?: unknown }).message;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
+  }
+  return fallback;
+}
+
 export default function ResultsPage() {
   const { t } = useTranslation();
   const params = useParams<{ id: string }>();
@@ -14,6 +25,7 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
+  const [terminatingSessionId, setTerminatingSessionId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchResults();
@@ -27,6 +39,38 @@ export default function ResultsPage() {
       if (data.length > 0) setSelectedSession(data[0]);
     }
     setLoading(false);
+  };
+
+  const terminateSession = async (sessionId: number) => {
+    if (!confirm(t("publish.terminateConfirm"))) return;
+
+    setTerminatingSessionId(sessionId);
+    try {
+      const res = await fetch(
+        `/api/quizzes/${quizId}/sessions/${sessionId}/terminate`,
+        { method: "POST" }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(getErrorMessage(err, t("publish.terminateFailed")));
+        return;
+      }
+
+      await fetchResults();
+      setSelectedPlayer(null);
+    } catch (err) {
+      alert(getErrorMessage(err, t("publish.terminateFailed")));
+    } finally {
+      setTerminatingSessionId(null);
+    }
+  };
+
+  const getSessionStatusLabel = (status: string) => {
+    if (status === "lobby") return t("publish.status.lobby");
+    if (status === "in_progress") return t("publish.status.inProgress");
+    if (status === "completed") return t("publish.status.completed");
+    return status;
   };
 
   if (loading) {
@@ -96,15 +140,32 @@ export default function ResultsPage() {
                       className={`text-xs px-2 py-0.5 rounded-full ${
                         s.status === "completed"
                           ? "bg-green-500/20 text-green-300"
+                          : s.status === "lobby"
+                          ? "bg-yellow-500/20 text-yellow-300"
                           : "bg-blue-500/20 text-blue-300"
                       }`}
                     >
-                      {s.status}
+                      {getSessionStatusLabel(s.status)}
                     </span>
                   </div>
                   <p className="text-gray-400 text-sm mt-1">
                     {t("results.playersCount", { count: s.players?.length || 0 })}
                   </p>
+                  {s.status !== "completed" && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void terminateSession(s.id);
+                      }}
+                      disabled={terminatingSessionId === s.id}
+                      className="mt-2 text-xs text-red-300 hover:text-red-200 disabled:opacity-60 transition-colors"
+                    >
+                      {terminatingSessionId === s.id
+                        ? t("publish.terminating")
+                        : t("publish.terminateSession")}
+                    </button>
+                  )}
                 </button>
               ))}
             </div>

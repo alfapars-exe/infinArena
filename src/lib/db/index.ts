@@ -1,21 +1,31 @@
-﻿import { createClient } from "@libsql/client";
+import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
-import * as schema from "./schema";
-import path from "path";
+import { resolveDatabaseUrl } from "@/lib/storage";
 import fs from "fs";
+import path from "path";
+import * as schema from "./schema";
 
-const dataDir = path.join(process.cwd(), "data");
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+const databaseUrl = resolveDatabaseUrl();
+
+function ensureDatabaseDirectory(url: string): void {
+  if (!url.startsWith("file:")) {
+    return;
+  }
+
+  const rawPath = url.slice("file:".length);
+  if (!rawPath) {
+    return;
+  }
+
+  const dbPath = path.isAbsolute(rawPath) ? rawPath : path.join(process.cwd(), rawPath);
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 }
 
-const dbPath = path.join(dataDir, "quiz.db");
+ensureDatabaseDirectory(databaseUrl);
 
 const client = createClient({
-  url: `file:${dbPath}`,
+  url: databaseUrl,
 });
 
 export const db = drizzle(client, { schema });
 export { client };
-
-

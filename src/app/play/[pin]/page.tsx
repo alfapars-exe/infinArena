@@ -589,6 +589,9 @@ export default function PlayPage() {
       style={pageBackgroundStyle}
     >
       <div className="container-fluid app-container px-2 px-md-3 py-2 py-md-3 flex-grow-1 d-flex flex-column">
+        <div className="w-full d-flex justify-content-center mb-2">
+          <img src="/logo.png" alt="infinArena" className="h-10 md:h-12 w-auto" />
+        </div>
       <AnimatePresence mode="wait">
         {/* Nickname Entry */}
         {phase === "nickname" && (
