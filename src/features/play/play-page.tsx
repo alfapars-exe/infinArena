@@ -961,8 +961,9 @@ export default function PlayPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col p-2 p-md-4"
+            className="flex-1 flex flex-col p-2 p-md-4 overflow-x-hidden"
           >
+            <div className="w-full max-w-5xl mx-auto min-w-0">
             
             <div className="flex items-center justify-between mb-3 mb-md-4">
               <span className="text-white/60 text-sm">
@@ -1017,7 +1018,7 @@ export default function PlayPage() {
                   />
                 </div>
               )}
-              <h2 className="text-lg md:text-2xl font-bold text-white">
+              <h2 className="text-lg md:text-2xl font-bold text-white break-words whitespace-normal leading-snug">
                 {currentQuestion.questionText}
               </h2>
             </div>
@@ -1029,7 +1030,7 @@ export default function PlayPage() {
             
             {(currentQuestion.questionType === "multiple_choice" ||
               currentQuestion.questionType === "true_false") && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 flex-1">
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                 {currentQuestion.choices.map((choice, i) => {
                   const choiceId = Number(choice.id);
                   const isSelected = selectedChoice === choiceId;
@@ -1066,7 +1067,7 @@ export default function PlayPage() {
             )}
 
             {currentQuestion.questionType === "multi_select" && (
-              <div className="flex-1">
+              <div className="w-full">
                 <p className="text-center text-white/70 text-sm mb-3">
                   {t("play.multiSelectInstruction")}
                 </p>
@@ -1122,25 +1123,25 @@ export default function PlayPage() {
             )}
 
             {currentQuestion.questionType === "ordering" && (
-              <div className="flex-1">
+              <div className="w-full">
                 <p className="text-center text-white/70 text-sm mb-3">
                   {t("play.orderingInstruction")}
                 </p>
-                <div className="space-y-2">
+                <div className="space-y-2 w-full">
                   {orderedChoices.map((choice, i) => {
                     const colorClass = getStableChoiceColor(choice.choiceText);
                     return (
                       <div
                         key={choice.id}
-                        className={`rounded-xl p-3 flex items-center gap-3 ${colorClass} transition-all duration-200`}
+                        className={`w-full min-w-0 rounded-xl p-3 flex items-center gap-3 ${colorClass} transition-all duration-200`}
                       >
-                        <span className="text-sm font-bold text-white bg-black/25 rounded px-2 py-1">
+                        <span className="text-sm font-bold text-white bg-black/25 rounded px-2 py-1 shrink-0">
                           {i + 1}
                         </span>
-                        <span className="text-white font-semibold flex-1">
+                        <span className="text-white font-semibold flex-1 break-words whitespace-normal">
                           {choice.choiceText}
                         </span>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 shrink-0">
                           <button
                             type="button"
                             onClick={() => moveOrderedChoice(i, -1)}
@@ -1176,7 +1177,7 @@ export default function PlayPage() {
             )}
 
             {currentQuestion.questionType === "text_input" && (
-              <div className="flex-1 max-w-xl mx-auto w-full">
+              <div className="max-w-xl mx-auto w-full">
                 <input
                   type="text"
                   value={textAnswer}
@@ -1194,6 +1195,7 @@ export default function PlayPage() {
                 </button>
               </div>
             )}
+            </div>
           </motion.div>
         )}
 
