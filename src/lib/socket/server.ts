@@ -388,6 +388,7 @@ export function setupSocketHandlers(io: TypedServer) {
                 }
 
                 socket.emit("game:batch-results", {
+                  questionId: currentQ.id,
                   isCorrect: playerAnswer.isCorrect,
                   pointsAwarded: playerAnswer.points,
                   streakBonus: playerAnswer.streakBonus,
@@ -421,6 +422,7 @@ export function setupSocketHandlers(io: TypedServer) {
               }
 
               socket.emit("game:batch-results", {
+                questionId: currentQ.id,
                 isCorrect: playerAnswer.isCorrect,
                 pointsAwarded: playerAnswer.points,
                 streakBonus: playerAnswer.streakBonus,
@@ -938,6 +940,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     if (!targetSocketId) continue;
 
     io.to(targetSocketId).emit("game:batch-results", {
+      questionId: currentQ.id,
       isCorrect: answer.isCorrect,
       pointsAwarded: answer.points,
       streakBonus: answer.streakBonus,
@@ -959,6 +962,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       (p.socketId && io.sockets.sockets.has(p.socketId) ? p.socketId : null);
     if (!session.answeredPlayerIds.has(p.id) && targetSocketId) {
       io.to(targetSocketId).emit("game:batch-results", {
+        questionId: currentQ.id,
         isCorrect: false,
         pointsAwarded: 0,
         streakBonus: 0,

@@ -207,14 +207,18 @@ Return ONLY a JSON object. Here is an example with one of each type:
   ]
 }
 
-CRITICAL RULES:
+CRITICAL RULES FOR "isCorrect" VALUES:
+1. multiple_choice: EXACTLY 1 choice MUST have "isCorrect": true, all others MUST be false
+2. true_false: EXACTLY 2 choices total (one "${tf[0]}" and one "${tf[1]}"), EXACTLY 1 MUST have "isCorrect": true
+3. multi_select: AT LEAST 2 choices MUST have "isCorrect": true (can be more, but minimum 2)
+4. text_input: ALL choices MUST have "isCorrect": true (they are all accepted answers)
+5. ordering: ALL choices MUST have "isCorrect": true (they are listed in correct order)
+
+OTHER RULES:
 - Generate EXACTLY ${numQuestions} questions total
-- true_false: EXACTLY 2 choices, one "${tf[0]}" and one "${tf[1]}"
-- text_input: ALL choices MUST have "isCorrect": true (they are accepted answers)
-- ordering: ALL choices MUST have "isCorrect": true (they are in correct order)
-- multi_select: at least 2 choices must have "isCorrect": true
-- multiple_choice: EXACTLY 1 choice with "isCorrect": true
-- Do NOT include any text outside the JSON object`;
+- Follow the exact distribution of question types shown above
+- Do NOT include any text outside the JSON object
+- Each question must have meaningful and accurate content`;
 }
 
 async function callHuggingFaceAPI(
@@ -327,17 +331,53 @@ function autoFixQuestions(questions: AIQuestion[], timeLimitSeconds?: number): v
 
     if (!q.choices || !Array.isArray(q.choices)) continue;
 
+    // Fix text_input and ordering - all choices should be correct
     if (q.questionType === "text_input" || q.questionType === "ordering") {
       q.choices = q.choices.map((c) => ({ ...c, isCorrect: true }));
     }
 
+    // Fix true_false - ensure exactly 2 choices
     if (q.questionType === "true_false" && q.choices.length !== 2) {
       q.choices = q.choices.slice(0, 2);
     }
 
+    // Fix multiple_choice and true_false - ensure exactly 1 correct answer
+    if (q.questionType === "multiple_choice" || q.questionType === "true_false") {
+      const correctCount = q.choices.filter((c) => c.isCorrect).length;
+      
+      if (correctCount === 0) {
+        // No correct answer - mark the first one as correct
+        if (q.choices.length > 0) {
+          q.choices[0].isCorrect = true;
+        }
+      } else if (correctCount > 1) {
+        // Multiple correct answers - keep only the first correct one
+        let foundFirst = false;
+        q.choices = q.choices.map((c) => {
+          if (c.isCorrect && !foundFirst) {
+            foundFirst = true;
+            return c;
+          }
+          return { ...c, isCorrect: false };
+        });
+      }
+    }
+
+    // Fix multi_select - ensure at least 2 correct answers
     if (q.questionType === "multi_select") {
       const correctCount = q.choices.filter((c) => c.isCorrect).length;
-      if (correctCount < 2) {
+      
+      if (correctCount === 0) {
+        // No correct answers - mark first 2 as correct
+        if (q.choices.length >= 2) {
+          q.choices[0].isCorrect = true;
+          q.choices[1].isCorrect = true;
+        } else if (q.choices.length === 1) {
+          q.choices[0].isCorrect = true;
+          q.questionType = "multiple_choice";
+        }
+      } else if (correctCount === 1) {
+        // Only 1 correct - change to multiple_choice
         q.questionType = "multiple_choice";
       }
     }

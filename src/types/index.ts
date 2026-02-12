@@ -80,6 +80,7 @@ export interface QuestionStats {
 }
 
 export interface BatchAnswerResult {
+  questionId: number;
   isCorrect: boolean;
   pointsAwarded: number;
   streakBonus: number;

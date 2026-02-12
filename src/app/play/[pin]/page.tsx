@@ -468,6 +468,9 @@ export default function PlayPage() {
           setCurrentQuestion(question);
           setQuestionNumber(qn);
           setTotalQuestions(tq);
+          if (phaseRef.current !== "answered") {
+            setPhase("question");
+          }
           startSyncedTimer(serverStartTime, question.timeLimitSeconds);
           return;
         }
@@ -527,6 +530,15 @@ export default function PlayPage() {
 
     // Batch results come after time-up or all answered
     s.on("game:batch-results", (result) => {
+      const activeQuestionId = currentQuestionMetaRef.current.id;
+      if (
+        activeQuestionId !== null &&
+        Number.isInteger(result.questionId) &&
+        result.questionId !== activeQuestionId
+      ) {
+        // Ignore stale results for an older question that arrived late.
+        return;
+      }
       clearSubmitWatchdog();
       setBatchResult(result);
       setTotalScore(result.totalScore);
