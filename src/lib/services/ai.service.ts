@@ -122,6 +122,34 @@ function normalizeComparableText(value: unknown): string {
   return String(value ?? "").trim().toLocaleLowerCase("tr");
 }
 
+function coerceBooleanLike(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value !== "string") return false;
+
+  const normalized = normalizeComparableText(value);
+  if (!normalized) return false;
+
+  if (["true", "1", "yes", "y", "correct", "dogru", "doğru"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no", "n", "incorrect", "yanlis", "yanlış"].includes(normalized)) {
+    return false;
+  }
+
+  return false;
+}
+
+function resolveChoiceIsCorrect(choice: Record<string, unknown>): boolean {
+  const rawValue =
+    choice.isCorrect ??
+    choice.is_correct ??
+    choice.correct ??
+    choice.isAnswer ??
+    choice.is_answer;
+  return coerceBooleanLike(rawValue);
+}
+
 function buildQuizResponseSchema(numQuestions: number): Record<string, unknown> {
   return {
     type: "object",
@@ -397,6 +425,54 @@ function applyCorrectIndexes(question: AIQuestion, indexes: number[]): void {
   }
 }
 
+function enforceQuestionCorrectness(question: AIQuestion): void {
+  if (!Array.isArray(question.choices) || question.choices.length === 0) {
+    return;
+  }
+
+  if (question.questionType === "text_input" || question.questionType === "ordering") {
+    question.choices = question.choices.map((choice) => ({ ...choice, isCorrect: true }));
+    return;
+  }
+
+  const fallbackIndexes = resolveCorrectIndexesFromFallbackFields(
+    question as unknown as Record<string, unknown>,
+    question.choices,
+    question.questionType
+  );
+
+  if (question.questionType === "multiple_choice" || question.questionType === "true_false") {
+    const currentIndexes = question.choices
+      .map((choice, index) => (choice.isCorrect ? index : -1))
+      .filter((index) => index >= 0);
+    const selectedIndex = currentIndexes[0] ?? fallbackIndexes[0] ?? 0;
+
+    question.choices = question.choices.map((choice, index) => ({
+      ...choice,
+      isCorrect: index === selectedIndex,
+    }));
+    return;
+  }
+
+  if (question.questionType === "multi_select") {
+    const currentIndexes = question.choices
+      .map((choice, index) => (choice.isCorrect ? index : -1))
+      .filter((index) => index >= 0);
+    const selectedIndexes =
+      currentIndexes.length > 0
+        ? currentIndexes
+        : fallbackIndexes.length > 0
+        ? fallbackIndexes
+        : [0];
+    const selectedSet = new Set(selectedIndexes);
+
+    question.choices = question.choices.map((choice, index) => ({
+      ...choice,
+      isCorrect: selectedSet.has(index),
+    }));
+  }
+}
+
 function resolveCorrectIndexesFromFallbackFields(
   q: Record<string, unknown>,
   choices: { choiceText: string; isCorrect: boolean }[],
@@ -476,16 +552,25 @@ function resolveCorrectIndexesFromFallbackFields(
   };
 
   const fallbackFields: unknown[] = [
+    q.correct,
     q.correctAnswer,
     q.correctAnswers,
+    q.correct_answer,
+    q.correct_answers,
     q.correctChoice,
     q.correctChoices,
+    q.correct_choice,
+    q.correct_choices,
     q.correctOption,
     q.correctOptions,
+    q.correct_option,
+    q.correct_options,
     q.correctChoiceIndex,
     q.correctChoiceIndexes,
     q.correctIndex,
     q.correctIndexes,
+    q.answerKey,
+    q.answer_key,
     q.answer,
     q.answers,
   ];
@@ -517,11 +602,13 @@ function normalizeRawQuestions(rawQuestions: unknown[]): AIQuestion[] {
         const choiceText =
           typeof c.choiceText === "string"
             ? c.choiceText.trim()
+            : typeof c.choice_text === "string"
+            ? c.choice_text.trim()
             : typeof c.text === "string"
             ? c.text.trim()
             : "";
         if (!choiceText) return null;
-        return { choiceText, isCorrect: c.isCorrect === true };
+        return { choiceText, isCorrect: resolveChoiceIsCorrect(c) };
       })
       .filter((choice): choice is { choiceText: string; isCorrect: boolean } => choice !== null);
 
@@ -1049,6 +1136,7 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
 
   autoFixQuestions(aiQuestions, params.timeLimitSeconds);
   await resolveMissingCorrectAnswersWithLLM(apiKey, params.model, aiQuestions);
+  aiQuestions.forEach(enforceQuestionCorrectness);
 
   // DIAGNOSTIC: Log what changed after autoFix and answer repair
   logger.ai.info(`After autoFix + answer repair: ${aiQuestions.length} questions`);

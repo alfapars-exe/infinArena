@@ -42,39 +42,64 @@ interface Quiz {
   questions: Question[];
 }
 
+function normalizeEditorQuestion(question: Question): Question {
+  const normalizedChoices = question.choices.map((choice, index) => ({
+    ...choice,
+    orderIndex: index,
+    isCorrect: Boolean(choice.isCorrect),
+  }));
+
+  if (normalizedChoices.length === 0) {
+    return { ...question, choices: normalizedChoices };
+  }
+
+  if (question.questionType === "text_input" || question.questionType === "ordering") {
+    return {
+      ...question,
+      choices: normalizedChoices.map((choice) => ({ ...choice, isCorrect: true })),
+    };
+  }
+
+  if (question.questionType === "multiple_choice" || question.questionType === "true_false") {
+    const firstCorrectIndex = normalizedChoices.findIndex((choice) => choice.isCorrect);
+    const selectedIndex = firstCorrectIndex >= 0 ? firstCorrectIndex : 0;
+    return {
+      ...question,
+      choices: normalizedChoices.map((choice, index) => ({
+        ...choice,
+        isCorrect: index === selectedIndex,
+      })),
+    };
+  }
+
+  if (question.questionType === "multi_select" && !normalizedChoices.some((choice) => choice.isCorrect)) {
+    return {
+      ...question,
+      choices: normalizedChoices.map((choice, index) => ({
+        ...choice,
+        isCorrect: index === 0,
+      })),
+    };
+  }
+
+  return { ...question, choices: normalizedChoices };
+}
+
 const CHOICE_COLORS = [
-  "bg-inf-red",
-  "bg-inf-blue",
-  "bg-inf-yellow",
-  "bg-inf-green",
-  "bg-purple-700",
-  "bg-teal-700",
-  "bg-orange-700",
-  "bg-slate-600",
+  "bg-rose-600",
+  "bg-sky-600",
+  "bg-amber-500",
+  "bg-emerald-600",
+  "bg-violet-600",
+  "bg-cyan-600",
+  "bg-orange-600",
+  "bg-fuchsia-600",
 ];
 
 const CHOICE_SHAPES = ["▲", "◆", "●", "■"];
 
 function getChoiceColor(index: number): string {
   return CHOICE_COLORS[index % CHOICE_COLORS.length];
-}
-
-function getStableChoiceColor(text: string): string {
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(i);
-    hash |= 0;
-  }
-  return CHOICE_COLORS[Math.abs(hash) % CHOICE_COLORS.length];
-}
-
-function getStableChoiceShape(text: string): string {
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(i);
-    hash |= 0;
-  }
-  return CHOICE_SHAPES[Math.abs(hash) % CHOICE_SHAPES.length];
 }
 
 function getChoiceShape(index: number): string {
@@ -153,7 +178,10 @@ export default function QuizEditor() {
       const res = await fetch(`/api/quizzes/${quizId}`);
       if (res.ok) {
         const data = await res.json();
-        setQuiz(data);
+        const normalizedQuestions = Array.isArray(data.questions)
+          ? data.questions.map((question: Question) => normalizeEditorQuestion(question))
+          : [];
+        setQuiz({ ...data, questions: normalizedQuestions });
         setEditTitle(data.title);
         setEditDescription(data.description || "");
       } else {
@@ -432,7 +460,7 @@ function QuestionCard({
 }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
-  const [editQ, setEditQ] = useState(question);
+  const [editQ, setEditQ] = useState(() => normalizeEditorQuestion(question));
 
   return (
     <>
@@ -487,16 +515,16 @@ function QuestionCard({
             <div className="flex gap-2 ml-4">
               <button
                 onClick={() => {
-                  setEditQ({ ...question });
+                  setEditQ(normalizeEditorQuestion({ ...question }));
                   setEditing(true);
                 }}
-                className="text-inf-blue hover:text-blue-300 text-sm font-medium"
+                className="inline-flex items-center rounded-lg border border-sky-300/50 bg-sky-500/25 px-3 py-1.5 text-sm font-semibold text-sky-100 hover:bg-sky-500/40 transition-colors"
               >
                 {t("editor.editQuestion")}
               </button>
               <button
                 onClick={onDelete}
-                className="text-inf-red hover:text-red-300 text-sm font-medium"
+                className="inline-flex items-center rounded-lg border border-red-300/50 bg-red-500/25 px-3 py-1.5 text-sm font-semibold text-red-100 hover:bg-red-500/40 transition-colors"
               >
                 {t("editor.delete")}
               </button>
@@ -970,9 +998,9 @@ function QuestionModal({
               {question.choices.map((choice, ci) => (
                 <div
                   key={ci}
-                  className={`choice-row flex items-center gap-2 gap-md-3 ${question.questionType === "ordering" ? getStableChoiceColor(choice.choiceText || String(ci)) : getChoiceColor(ci)} rounded-lg p-2 p-md-3 flex-wrap flex-md-nowrap`}
+                  className={`choice-row flex items-center gap-2 gap-md-3 ${getChoiceColor(ci)} rounded-lg p-2 p-md-3 flex-wrap flex-md-nowrap`}
                 >
-                  <span className="text-white text-lg">{question.questionType === "ordering" ? getStableChoiceShape(choice.choiceText || String(ci)) : getChoiceShape(ci)}</span>
+                  <span className="text-white text-lg">{getChoiceShape(ci)}</span>
                   <input
                     type="text"
                     value={choice.choiceText}
@@ -1080,4 +1108,3 @@ function QuestionModal({
     </motion.div>
   );
 }
-
