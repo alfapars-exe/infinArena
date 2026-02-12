@@ -11,9 +11,19 @@ import { MusicProvider } from "@/lib/music-context";
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const { t } = useTranslation();
+  const { locale } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const buildDate = process.env.NEXT_PUBLIC_COMMIT_DATE;
+  const buildVersion = process.env.NEXT_PUBLIC_COMMIT_VERSION || "v.1.0.0";
+  const formattedBuildDate = buildDate
+    ? new Date(buildDate).toLocaleString(locale === "tr" ? "tr-TR" : "en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : "—";
   
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -41,11 +51,15 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   if (status === "loading") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black flex items-center justify-center">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full"
-        />
+        <div className="text-center px-4">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+            className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full mx-auto mb-4"
+          />
+          <p className="text-white text-xl font-bold mb-1">Lütfen bekleyiniz...</p>
+          <p className="text-white/60 text-sm">Oturum doğrulanıyor...</p>
+        </div>
       </div>
     );
   }
@@ -73,6 +87,9 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
                 >
                   {t("nav.dashboard")}
                 </Link>
+                <span className="text-white/60 text-xs">
+                  {t("nav.buildInfo", { date: formattedBuildDate, version: buildVersion })}
+                </span>
                 <LanguageToggle />
                 <span className="text-white/50 text-sm">
                   {session.user?.name}
@@ -131,5 +148,3 @@ export default function AdminLayout({
     </SessionProvider>
   );
 }
-
-

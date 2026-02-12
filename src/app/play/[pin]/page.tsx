@@ -856,7 +856,7 @@ export default function PlayPage() {
                 {isPending ? (
                   <>
                     <h1 className="text-3xl md:text-4xl font-black text-white mb-3">
-                      Lütfen bekleyin
+                      Lütfen bekleyiniz...
                     </h1>
                     <p className="text-white/70 text-lg mb-2">
                       Sayfa yükleniyor...
@@ -882,7 +882,7 @@ export default function PlayPage() {
                   </>
                 )}
                 <p className="text-white/50 text-sm mt-4">
-                  {t("play.pleaseWait" as any) || "Lütfen bekleyin"}
+                  {t("play.pleaseWait" as any) || "Lütfen bekleyiniz..."}
                 </p>
               </motion.div>
             </motion.div>

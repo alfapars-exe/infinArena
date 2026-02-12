@@ -48,6 +48,7 @@ const translations = {
     // Admin nav
     "nav.dashboard": "Dashboard",
     "nav.logout": "Logout",
+    "nav.buildInfo": "Updated: {date} | {version}",
 
     // Dashboard
     "dashboard.noQuizzes": "No quizzes yet",
@@ -221,6 +222,9 @@ const translations = {
     "live.rank1": "1st",
     "live.rank2": "2nd",
     "live.rank3": "3rd",
+    "live.maintenanceMode": "Maintenance mode activated.",
+    "live.reconnecting": "Reconnecting...",
+    "live.pleaseWait": "Please wait...",
 
     // Home
     "home.enterPinToJoin": "Enter the game PIN to join!",
@@ -268,7 +272,7 @@ const translations = {
     "play.totalPlayers": "Total",
     "play.maintenanceMode": "Maintenance mode activated.",
     "play.reconnecting": "Reconnecting...",
-    "play.pleaseWait": "Please wait",
+    "play.pleaseWait": "Please wait...",
 
     // AI Quiz Generator
     "ai.generateWithAI": "Generate with AI",
@@ -297,6 +301,7 @@ const translations = {
     // Admin nav
     "nav.dashboard": "Panel",
     "nav.logout": "Çıkış Yap",
+    "nav.buildInfo": "Güncelleme: {date} | {version}",
 
     // Dashboard
     "dashboard.noQuizzes": "Henüz quiz yok",
@@ -472,7 +477,7 @@ const translations = {
     "live.rank3": "3.",
     "live.maintenanceMode": "Bakım modu aktifleştirildi.",
     "live.reconnecting": "Tekrar bağlanılıyor...",
-    "live.pleaseWait": "Lütfen bekleyin",
+    "live.pleaseWait": "Lütfen bekleyiniz...",
 
     // Home
     "home.enterPinToJoin": "Katılmak için oyun PIN'ini gir!",
@@ -520,7 +525,7 @@ const translations = {
     "play.totalPlayers": "Toplam",
     "play.maintenanceMode": "Bakım modu aktifleştirildi.",
     "play.reconnecting": "Tekrar bağlanılıyor...",
-    "play.pleaseWait": "Lütfen bekleyin",
+    "play.pleaseWait": "Lütfen bekleyiniz...",
 
     // AI Quiz Generator
     "ai.generateWithAI": "Yapay Zeka ile Oluştur",

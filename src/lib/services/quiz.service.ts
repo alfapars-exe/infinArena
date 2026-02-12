@@ -8,6 +8,70 @@ import { db } from "@/lib/db";
 import { admins } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+type QuestionType =
+  | "multiple_choice"
+  | "true_false"
+  | "multi_select"
+  | "text_input"
+  | "ordering";
+
+function coerceBoolean(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+  return false;
+}
+
+function normalizeQuestionType(value: unknown): QuestionType {
+  switch (value) {
+    case "multiple_choice":
+    case "true_false":
+    case "multi_select":
+    case "text_input":
+    case "ordering":
+      return value;
+    default:
+      return "multiple_choice";
+  }
+}
+
+function normalizeChoiceFlags(
+  questionType: QuestionType,
+  rawChoices: Array<{ choiceText: string; isCorrect: unknown; orderIndex: number }>
+) {
+  const choices = rawChoices.map((choice, index) => ({
+    choiceText: choice.choiceText,
+    isCorrect: coerceBoolean(choice.isCorrect),
+    orderIndex: index,
+  }));
+
+  if (choices.length === 0) return choices;
+
+  if (questionType === "text_input" || questionType === "ordering") {
+    return choices.map((choice) => ({ ...choice, isCorrect: true }));
+  }
+
+  if (questionType === "multiple_choice" || questionType === "true_false") {
+    const firstCorrectIndex = choices.findIndex((choice) => choice.isCorrect);
+    const activeIndex = firstCorrectIndex >= 0 ? firstCorrectIndex : 0;
+    return choices.map((choice, index) => ({
+      ...choice,
+      isCorrect: index === activeIndex,
+    }));
+  }
+
+  // multi_select
+  const hasAtLeastOneCorrect = choices.some((choice) => choice.isCorrect);
+  if (hasAtLeastOneCorrect) return choices;
+  return choices.map((choice, index) => ({
+    ...choice,
+    isCorrect: index === 0,
+  }));
+}
+
 export async function resolveAdminId(session: { user?: { id?: string; email?: string | null } }): Promise<number | null> {
   const rawId = session.user?.id;
   if (rawId) {
@@ -42,7 +106,60 @@ export async function getQuizWithQuestions(quizId: number) {
   await ensureDbMigrations();
   const quiz = await quizRepository.findWithQuestions(quizId);
   if (!quiz) throw new NotFoundError("Quiz", quizId);
-  return quiz;
+
+  const repairedQuestions = await Promise.all(
+    (quiz.questions as any[]).map(async (question: any) => {
+      if (!question?.id || !Array.isArray(question.choices) || question.choices.length === 0) {
+        return question;
+      }
+
+      const questionType = normalizeQuestionType(question.questionType);
+      const normalized = normalizeChoiceFlags(
+        questionType,
+        question.choices.map((choice: any, index: number) => ({
+          choiceText: String(choice.choiceText ?? ""),
+          isCorrect: choice.isCorrect,
+          orderIndex: Number.isInteger(choice.orderIndex) ? choice.orderIndex : index,
+        }))
+      );
+
+      const needsRepair = normalized.some((choice, index) => {
+        const original = question.choices[index];
+        if (!original) return true;
+        return coerceBoolean(original.isCorrect) !== choice.isCorrect;
+      });
+
+      if (!needsRepair) {
+        return {
+          ...question,
+          questionType,
+          choices: question.choices.map((choice: any, index: number) => ({
+            ...choice,
+            isCorrect: coerceBoolean(choice.isCorrect),
+            orderIndex: index,
+          })),
+        };
+      }
+
+      await quizRepository.deleteChoicesByQuestion(question.id);
+      const recreatedChoices = await quizRepository.createChoices(
+        normalized.map((choice, index) => ({
+          questionId: question.id,
+          choiceText: choice.choiceText,
+          isCorrect: choice.isCorrect,
+          orderIndex: index,
+        }))
+      );
+
+      return {
+        ...question,
+        questionType,
+        choices: recreatedChoices,
+      };
+    })
+  );
+
+  return { ...quiz, questions: repairedQuestions };
 }
 
 export async function createQuiz(adminId: number, data: { title: string; description?: string; customSlug?: string }) {

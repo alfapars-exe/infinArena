@@ -35,6 +35,7 @@ interface AIQuestion {
 }
 
 type ResponseFormatMode = "json_schema" | "json_object" | "none";
+type ChatMessage = { role: "system" | "user"; content: string };
 
 const DB_SCHEMA_FOR_LLM = `
 DB SCHEMA CONTRACT (for generated payload mapping):
@@ -191,6 +192,209 @@ function buildQuizResponseSchema(numQuestions: number): Record<string, unknown> 
       },
     },
   };
+}
+
+function isSingleAnswerType(questionType: QuestionType): boolean {
+  return questionType === "multiple_choice" || questionType === "true_false";
+}
+
+function needsCorrectAnswerRetry(question: AIQuestion): boolean {
+  if (
+    question.questionType !== "multiple_choice" &&
+    question.questionType !== "true_false" &&
+    question.questionType !== "multi_select"
+  ) {
+    return false;
+  }
+
+  return question.choices.filter((choice) => choice.isCorrect).length === 0;
+}
+
+function buildQuizGenerationMessages(
+  systemPrompt: string,
+  topic: string,
+  numQuestions: number,
+  responseMode: ResponseFormatMode
+): ChatMessage[] {
+  return [
+    { role: "system", content: systemPrompt },
+    {
+      role: "user",
+      content: `Generate ${numQuestions} quiz questions about "${topic}".${
+        responseMode === "none" ? " Return ONLY valid JSON, no other text." : ""
+      }`,
+    },
+  ];
+}
+
+function buildCorrectAnswerRepairSchema(questionCount: number): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["answers"],
+    properties: {
+      answers: {
+        type: "array",
+        minItems: questionCount,
+        maxItems: questionCount,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["questionIndex", "correctIndexes"],
+          properties: {
+            questionIndex: { type: "integer", minimum: 0 },
+            correctIndexes: {
+              type: "array",
+              minItems: 1,
+              maxItems: 8,
+              items: { type: "integer", minimum: 0 },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function buildCorrectAnswerRepairMessages(
+  unresolvedQuestions: Array<{ index: number; question: AIQuestion }>
+): ChatMessage[] {
+  const questionBlocks = unresolvedQuestions
+    .map(({ index, question }) => {
+      const choices = question.choices
+        .map((choice, choiceIndex) => `  ${choiceIndex}: ${JSON.stringify(choice.choiceText)}`)
+        .join("\n");
+
+      return [
+        `questionIndex: ${index}`,
+        `questionType: ${question.questionType}`,
+        `questionText: ${JSON.stringify(question.questionText)}`,
+        "choices:",
+        choices,
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  const systemPrompt = `You are a strict quiz answer verifier.
+Return ONLY JSON with this exact shape:
+{
+  "answers": [
+    { "questionIndex": number, "correctIndexes": [number] }
+  ]
+}
+
+Rules:
+- questionIndex values MUST match the provided questionIndex values exactly once.
+- correctIndexes MUST reference the provided choices using 0-based indexing.
+- For multiple_choice and true_false: EXACTLY one index.
+- For multi_select: one or more indexes.
+- Do not add extra keys or explanatory text.`;
+
+  const userPrompt = `Determine the correct answer indexes for each question below.
+
+${questionBlocks}`;
+
+  return [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+}
+
+function parseJsonLikeContent(rawContent: string): unknown {
+  try {
+    return JSON.parse(rawContent);
+  } catch {
+    const objectMatch = rawContent.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      try {
+        return JSON.parse(objectMatch[0]);
+      } catch {
+        // fall through
+      }
+    }
+
+    const arrayMatch = rawContent.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
+      try {
+        return JSON.parse(arrayMatch[0]);
+      } catch {
+        // fall through
+      }
+    }
+  }
+
+  throw new AIServiceError("Could not parse AI response");
+}
+
+function extractExplicitNumericIndexes(value: unknown): number[] {
+  const indexes: number[] = [];
+
+  const consume = (candidate: unknown) => {
+    if (Array.isArray(candidate)) {
+      candidate.forEach(consume);
+      return;
+    }
+
+    if (typeof candidate === "number" && Number.isInteger(candidate)) {
+      indexes.push(candidate);
+      return;
+    }
+
+    if (typeof candidate === "string" && /^\d+$/.test(candidate.trim())) {
+      indexes.push(Number.parseInt(candidate.trim(), 10));
+    }
+  };
+
+  consume(value);
+  return indexes;
+}
+
+function normalizeExplicitIndexes(rawIndexes: number[], choiceCount: number): number[] {
+  const validIndexes = Array.from(
+    new Set(rawIndexes.filter((index) => index >= 0 && index < choiceCount))
+  ).sort((a, b) => a - b);
+
+  return validIndexes;
+}
+
+function extractCorrectIndexesFromRepairItem(
+  payload: Record<string, unknown>,
+  question: AIQuestion
+): number[] {
+  const explicitIndexes = extractExplicitNumericIndexes(payload.correctIndexes ?? payload.correctIndex);
+  const normalizedExplicit = normalizeExplicitIndexes(explicitIndexes, question.choices.length);
+  if (normalizedExplicit.length > 0) {
+    return normalizedExplicit;
+  }
+
+  const fallbackIndexes = resolveCorrectIndexesFromFallbackFields(
+    payload,
+    question.choices,
+    question.questionType
+  );
+
+  return Array.from(
+    new Set(fallbackIndexes.filter((index) => index >= 0 && index < question.choices.length))
+  ).sort((a, b) => a - b);
+}
+
+function applyCorrectIndexes(question: AIQuestion, indexes: number[]): void {
+  if (isSingleAnswerType(question.questionType)) {
+    const first = indexes[0];
+    question.choices = question.choices.map((choice, index) => ({
+      ...choice,
+      isCorrect: index === first,
+    }));
+    return;
+  }
+
+  if (question.questionType === "multi_select") {
+    const allowed = new Set(indexes);
+    question.choices = question.choices.map((choice, index) => ({
+      ...choice,
+      isCorrect: allowed.has(index),
+    }));
+  }
 }
 
 function resolveCorrectIndexesFromFallbackFields(
@@ -494,11 +698,10 @@ OTHER RULES:
 async function callHuggingFaceAPI(
   apiKey: string,
   model: string,
-  systemPrompt: string,
-  topic: string,
-  numQuestions: number,
+  messages: ChatMessage[],
   responseMode: ResponseFormatMode,
-  responseSchema?: Record<string, unknown>
+  responseSchema?: Record<string, unknown>,
+  schemaName = "quiz_generation_response"
 ): Promise<{ content: string | null; error: string | null; status: number }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000);
@@ -506,13 +709,7 @@ async function callHuggingFaceAPI(
   try {
     const body: Record<string, unknown> = {
       model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `Generate ${numQuestions} quiz questions about "${topic}".${responseMode === "none" ? " Return ONLY valid JSON, no other text." : ""}`,
-        },
-      ],
+      messages,
       temperature: 0.7,
       max_tokens: 20000,
     };
@@ -521,7 +718,7 @@ async function callHuggingFaceAPI(
       body.response_format = {
         type: "json_schema",
         json_schema: {
-          name: "quiz_generation_response",
+          name: schemaName,
           strict: true,
           schema: responseSchema,
         },
@@ -641,13 +838,8 @@ function autoFixQuestions(questions: AIQuestion[], timeLimitSeconds?: number): v
     // Fix multiple_choice and true_false - ensure exactly 1 correct answer
     if (q.questionType === "multiple_choice" || q.questionType === "true_false") {
       const correctCount = q.choices.filter((c) => c.isCorrect).length;
-      
-      if (correctCount === 0) {
-        // No correct answer - mark the first one as correct
-        if (q.choices.length > 0) {
-          q.choices[0].isCorrect = true;
-        }
-      } else if (correctCount > 1) {
+
+      if (correctCount > 1) {
         // Multiple correct answers - keep only the first correct one
         let foundFirst = false;
         q.choices = q.choices.map((c) => {
@@ -659,18 +851,105 @@ function autoFixQuestions(questions: AIQuestion[], timeLimitSeconds?: number): v
         });
       }
     }
+  }
+}
 
-    // Fix multi_select - ensure at least 1 correct answer
-    if (q.questionType === "multi_select") {
-      const correctCount = q.choices.filter((c) => c.isCorrect).length;
-      
-      if (correctCount === 0) {
-        // No correct answers - mark the first as correct
-        if (q.choices.length >= 1) {
-          q.choices[0].isCorrect = true;
-        }
-      }
+async function resolveMissingCorrectAnswersWithLLM(
+  apiKey: string,
+  model: string,
+  questions: AIQuestion[]
+): Promise<void> {
+  const unresolved = questions
+    .map((question, index) => ({ index, question }))
+    .filter(({ question }) => needsCorrectAnswerRetry(question));
+
+  if (unresolved.length === 0) {
+    return;
+  }
+
+  logger.ai.warn(
+    `[SAFETY RETRY] ${unresolved.length} question(s) had zero correct answers. Retrying with a second LLM call.`
+  );
+
+  const messages = buildCorrectAnswerRepairMessages(unresolved);
+  const responseSchema = buildCorrectAnswerRepairSchema(unresolved.length);
+
+  let result = await callHuggingFaceAPI(
+    apiKey,
+    model,
+    messages,
+    "json_schema",
+    responseSchema,
+    "quiz_answer_repair_response"
+  );
+
+  if (!result.content && result.status >= 400 && result.status < 500) {
+    logger.ai.info("Retrying answer repair with json_object response format...");
+    result = await callHuggingFaceAPI(apiKey, model, messages, "json_object");
+  }
+
+  if (!result.content && result.status >= 400 && result.status < 500) {
+    logger.ai.info("Retrying answer repair without response_format...");
+    result = await callHuggingFaceAPI(apiKey, model, messages, "none");
+  }
+
+  if (result.error && !result.content) {
+    throw new AIServiceError("AI answer repair failed", result.error);
+  }
+
+  if (!result.content) {
+    throw new AIServiceError("Empty answer repair response from AI");
+  }
+
+  const parsed = parseJsonLikeContent(
+    typeof result.content === "string" ? result.content : String(result.content)
+  );
+  const rawAnswers = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === "object" && Array.isArray((parsed as Record<string, unknown>).answers)
+    ? ((parsed as Record<string, unknown>).answers as unknown[])
+    : [];
+
+  if (!Array.isArray(rawAnswers) || rawAnswers.length === 0) {
+    throw new AIServiceError("Answer repair response did not include answers");
+  }
+
+  const unresolvedByIndex = new Map(unresolved.map(({ index, question }) => [index, question]));
+  const resolvedIndexesByQuestion = new Map<number, number[]>();
+
+  for (let position = 0; position < rawAnswers.length; position++) {
+    const rawAnswer = rawAnswers[position];
+    if (!rawAnswer || typeof rawAnswer !== "object") continue;
+    const payload = rawAnswer as Record<string, unknown>;
+
+    let targetIndex: number | null = null;
+    if (typeof payload.questionIndex === "number" && Number.isInteger(payload.questionIndex)) {
+      targetIndex = payload.questionIndex;
+    } else if (typeof payload.index === "number" && Number.isInteger(payload.index)) {
+      targetIndex = payload.index;
+    } else if (position < unresolved.length) {
+      targetIndex = unresolved[position].index;
     }
+
+    if (targetIndex == null) continue;
+
+    const question = unresolvedByIndex.get(targetIndex);
+    if (!question) continue;
+
+    const indexes = extractCorrectIndexesFromRepairItem(payload, question);
+    if (isSingleAnswerType(question.questionType) && indexes.length !== 1) continue;
+    if (question.questionType === "multi_select" && indexes.length < 1) continue;
+
+    resolvedIndexesByQuestion.set(targetIndex, indexes);
+  }
+
+  for (const { index, question } of unresolved) {
+    const indexes = resolvedIndexesByQuestion.get(index);
+    if (!indexes || indexes.length === 0) {
+      throw new AIServiceError(`Could not resolve a valid correct answer for question index ${index}`);
+    }
+
+    applyCorrectIndexes(question, indexes);
   }
 }
 
@@ -724,9 +1003,7 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
   let result = await callHuggingFaceAPI(
     apiKey,
     params.model,
-    systemPrompt,
-    params.topic,
-    params.numQuestions,
+    buildQuizGenerationMessages(systemPrompt, params.topic, params.numQuestions, "json_schema"),
     "json_schema",
     responseSchema
   );
@@ -736,9 +1013,7 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
     result = await callHuggingFaceAPI(
       apiKey,
       params.model,
-      systemPrompt,
-      params.topic,
-      params.numQuestions,
+      buildQuizGenerationMessages(systemPrompt, params.topic, params.numQuestions, "json_object"),
       "json_object"
     );
   }
@@ -748,9 +1023,7 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
     result = await callHuggingFaceAPI(
       apiKey,
       params.model,
-      systemPrompt,
-      params.topic,
-      params.numQuestions,
+      buildQuizGenerationMessages(systemPrompt, params.topic, params.numQuestions, "none"),
       "none"
     );
   }
@@ -775,9 +1048,10 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
   });
 
   autoFixQuestions(aiQuestions, params.timeLimitSeconds);
+  await resolveMissingCorrectAnswersWithLLM(apiKey, params.model, aiQuestions);
 
-  // DIAGNOSTIC: Log what changed after autoFix
-  logger.ai.info(`After autoFix: ${aiQuestions.length} questions`);
+  // DIAGNOSTIC: Log what changed after autoFix and answer repair
+  logger.ai.info(`After autoFix + answer repair: ${aiQuestions.length} questions`);
   aiQuestions.forEach((q, idx) => {
     const correctCount = q.choices.filter(c => c.isCorrect).length;
     logger.ai.info(`Q${idx + 1} [${q.questionType}]: has ${correctCount}/${q.choices.length} correct choices`);
@@ -817,24 +1091,20 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
       orderIndex: ci,
     }));
 
-    // FINAL SAFETY CHECK: Force correct isCorrect values before DB insert
+    // FINAL SAFETY CHECK: reject malformed correctness values before DB insert
     if (q.questionType === "multiple_choice" || q.questionType === "true_false") {
       const correctCount = choiceValues.filter(c => c.isCorrect).length;
       if (correctCount !== 1) {
-        // Force ONLY the first choice to be correct
-        logger.ai.warn(`[SAFETY FIX] ${q.questionType} had ${correctCount} correct answers, forcing first only`);
-        for (let idx = 0; idx < choiceValues.length; idx++) {
-          choiceValues[idx].isCorrect = (idx === 0);
-        }
+        throw new AIServiceError(
+          `${q.questionType} question has invalid correct answer count (${correctCount}) after answer repair`
+        );
       }
     } else if (q.questionType === "multi_select") {
       const correctCount = choiceValues.filter(c => c.isCorrect).length;
       if (correctCount < 1) {
-        // Force at least one correct choice
-        logger.ai.warn(`[SAFETY FIX] multi_select had ${correctCount} correct answers, forcing first choice as correct`);
-        for (let idx = 0; idx < choiceValues.length; idx++) {
-          choiceValues[idx].isCorrect = idx === 0;
-        }
+        throw new AIServiceError(
+          `multi_select question has invalid correct answer count (${correctCount}) after answer repair`
+        );
       }
     } else if (q.questionType === "text_input" || q.questionType === "ordering") {
       // Force ALL choices to be correct

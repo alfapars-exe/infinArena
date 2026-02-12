@@ -1,6 +1,7 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./globals.css";
+import { SystemStatusOverlay } from "@/components/system-status-overlay";
 
 export const metadata: Metadata = {
   title: "infinArena - Interactive Quiz Platform",
@@ -20,9 +21,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        <SystemStatusOverlay />
+      </body>
     </html>
   );
 }
-
-
