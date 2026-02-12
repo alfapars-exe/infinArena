@@ -899,19 +899,19 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 
   io.to(`session:${session.sessionId}`).emit("game:time-up");
 
-  const allPlayers = await db
+  const allPlayersInSession = await db
     .select()
     .from(players)
-    .where(
-      and(
-        eq(players.sessionId, session.sessionId),
-        eq(players.isConnected, true)
-      )
-    );
+    .where(eq(players.sessionId, session.sessionId));
 
   const connectedSocketByPlayerId = new Map<number, string>(
-    allPlayers
-      .filter((p) => Boolean(p.socketId))
+    allPlayersInSession
+      .filter(
+        (p) =>
+          p.isConnected &&
+          Boolean(p.socketId) &&
+          io.sockets.sockets.has(p.socketId as string)
+      )
       .map((p) => [p.id, p.socketId as string])
   );
   const roomSocketByPlayerId = getActivePlayerSocketMap(io, session.sessionId);
@@ -955,7 +955,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   }
 
   // Send empty result to unanswered players
-  for (const p of allPlayers) {
+  for (const p of allPlayersInSession) {
     const targetSocketId =
       roomSocketByPlayerId.get(p.id) ||
       (p.socketId && io.sockets.sockets.has(p.socketId) ? p.socketId : null);
@@ -986,7 +986,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     number,
     { playerId: number; nickname: string; avatar: string }
   >(
-    allPlayers.map((p) => [
+    allPlayersInSession.map((p) => [
       p.id,
       { playerId: p.id, nickname: p.nickname, avatar: p.avatar || "🎮" },
     ])
@@ -1010,17 +1010,20 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     ])
   );
 
-  const answeredPlayers = Array.from(session.pendingAnswers.entries()).flatMap(
+  const answeredPlayers = Array.from(session.pendingAnswers.entries()).map(
     ([playerId, answer]) => {
-      const player = playerById.get(playerId);
-      if (!player) return [];
+      const player = playerById.get(playerId) ?? {
+        playerId,
+        nickname: `Player ${playerId}`,
+        avatar: "🎮",
+      };
 
       const selectedChoiceIds = Array.from(
         new Set(
           [
             ...(answer.choiceId ? [Number(answer.choiceId)] : []),
-            ...answer.choiceIds.map(id => Number(id)),
-            ...answer.orderedChoiceIds.map(id => Number(id)),
+            ...answer.choiceIds.map((id) => Number(id)),
+            ...answer.orderedChoiceIds.map((id) => Number(id)),
           ].filter((id) => Number.isInteger(id))
         )
       );
@@ -1038,20 +1041,18 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
         .map((cid) => choiceTextById.get(cid))
         .filter((text): text is string => Boolean(text));
 
-      return [
-        {
-          ...player,
-          selectedChoiceIds,
-          selectedChoiceTexts,
-          orderedChoiceTexts,
-          textAnswer: answer.textAnswer || null,
-          isCorrect: answer.isCorrect,
-        },
-      ];
+      return {
+        ...player,
+        selectedChoiceIds,
+        selectedChoiceTexts,
+        orderedChoiceTexts,
+        textAnswer: answer.textAnswer || null,
+        isCorrect: answer.isCorrect,
+      };
     }
   );
 
-  const unansweredPlayers = allPlayers
+  const unansweredPlayers = allPlayersInSession
     .filter((p) => !session.pendingAnswers.has(p.id))
     .map((p) => ({
       playerId: p.id,
@@ -1075,9 +1076,9 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     choiceCounts: session.choiceCounts,
     correctChoiceId: currentQ.correctChoiceId,
     correctChoiceIds: currentQ.correctChoiceIds,
-    totalPlayers: allPlayers.length,
+    totalPlayers: allPlayersInSession.length,
     correctCount,
-    answeredCount: session.answeredPlayerIds.size,
+    answeredCount: answeredPlayers.length,
     questionNumber: session.currentQuestionIndex + 1,
     totalQuestions: session.questions.length,
     remainingQuestions:

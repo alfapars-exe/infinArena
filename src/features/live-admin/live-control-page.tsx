@@ -682,7 +682,9 @@ export default function LiveControlPage() {
                     (entry) => entry.choiceId === choice.id
                   );
                   const isCorrect = isCorrectChoice(stats, choice.id);
-                  const count = selection?.count ?? stats.choiceCounts[choice.id] ?? 0;
+                  const countFromSelections = Number(selection?.count ?? 0);
+                  const countFromRaw = Number(stats.choiceCounts[choice.id] ?? 0);
+                  const count = Math.max(countFromSelections, countFromRaw);
                   const percentage =
                     stats.answeredCount > 0 ? Math.round((count / stats.answeredCount) * 100) : 0;
 
@@ -909,8 +911,12 @@ export default function LiveControlPage() {
                 <div className="space-y-3 mb-4">
                   {stats.choiceSelections.map((selection, idx) => {
                     const isCorrect = isCorrectChoice(stats, selection.choiceId);
+                    const displayCount = Math.max(
+                      Number(selection.count ?? 0),
+                      Number(stats.choiceCounts[selection.choiceId] ?? 0)
+                    );
                     const percentage = stats.totalPlayers > 0
-                      ? Math.round((selection.count / stats.totalPlayers) * 100)
+                      ? Math.round((displayCount / stats.totalPlayers) * 100)
                       : 0;
 
                     return (
@@ -947,7 +953,7 @@ export default function LiveControlPage() {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-white/70 text-sm font-medium">
-                              {selection.count} {selection.count === 1 ? t("play.player") : t("play.players")}
+                              {displayCount} {displayCount === 1 ? t("play.player") : t("play.players")}
                             </span>
                             <span className="text-white font-bold text-lg min-w-[3rem] text-right">
                               {percentage}%
