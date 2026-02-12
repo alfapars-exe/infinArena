@@ -33,6 +33,18 @@ function getChoiceColor(index: number): string {
   return CHOICE_COLORS[index % CHOICE_COLORS.length];
 }
 
+const CHOICE_SYMBOLS = ["▲", "◆", "●", "■", "✦", "✚", "⬟", "⬢"];
+
+function getChoiceSymbol(index: number): string {
+  return CHOICE_SYMBOLS[index % CHOICE_SYMBOLS.length];
+}
+
+const ANSWER_BUTTON_BASE_CLASSES =
+  "w-full min-h-[76px] md:min-h-[96px] px-4 md:px-6 py-4 md:py-6 rounded-xl " +
+  "font-bold text-lg md:text-2xl text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)] " +
+  "border border-white/20 flex items-center justify-start gap-3 md:gap-4 " +
+  "break-words whitespace-normal text-left transition-all duration-200";
+
 function getStableChoiceColor(text: string): string {
   let hash = 0;
   for (let i = 0; i < text.length; i++) {
@@ -1074,11 +1086,14 @@ export default function PlayPage() {
                         }
                       }}
                       disabled={isDisabled}
-                      className={`answer-btn ${getChoiceColor(i)} ${
+                      className={`${ANSWER_BUTTON_BASE_CLASSES} ${getChoiceColor(i)} ${
                         isSelected ? "ring-4 ring-white scale-105" : ""
                       } ${isDisabled && !isSelected ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
-                      <span className="w-full break-words whitespace-normal leading-snug text-center">
+                      <span className="inline-flex h-8 w-8 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-lg bg-black/20 text-base md:text-lg font-black">
+                        {getChoiceSymbol(i)}
+                      </span>
+                      <span className="w-full break-words whitespace-normal leading-snug text-left">
                         {choice.choiceText}
                       </span>
                     </motion.button>
@@ -1107,11 +1122,14 @@ export default function PlayPage() {
                           }
                         }}
                         disabled={isDisabled}
-                        className={`answer-btn ${getChoiceColor(i)} ${
+                        className={`${ANSWER_BUTTON_BASE_CLASSES} ${getChoiceColor(i)} ${
                           active ? "ring-4 ring-white" : "opacity-90"
                         } ${isDisabled && !active ? "cursor-not-allowed opacity-50" : ""}`}
                       >
-                        <span className="w-full break-words whitespace-normal leading-snug text-center">
+                        <span className="inline-flex h-8 w-8 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-lg bg-black/20 text-base md:text-lg font-black">
+                          {getChoiceSymbol(i)}
+                        </span>
+                        <span className="w-full break-words whitespace-normal leading-snug text-left">
                           {choice.choiceText}
                         </span>
                       </button>
