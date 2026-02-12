@@ -39,6 +39,26 @@ function normalizeText(value: string): string {
   return value.trim().toLocaleLowerCase("tr");
 }
 
+function normalizeCorrectChoiceIds(
+  choices: Array<{ id: number; isCorrect?: boolean }>,
+  questionType: "multiple_choice" | "true_false" | "multi_select" | "text_input" | "ordering"
+): number[] {
+  const ids = choices.filter((c) => Boolean(c.isCorrect)).map((c) => c.id);
+  if (ids.length > 0) return ids;
+
+  // Safety fallback for legacy/bad data: keep UI and scoring deterministic.
+  if (
+    choices.length > 0 &&
+    (questionType === "multiple_choice" ||
+      questionType === "true_false" ||
+      questionType === "multi_select")
+  ) {
+    return [choices[0].id];
+  }
+
+  return [];
+}
+
 function getActivePlayerSocketMap(
   io: TypedServer,
   sessionId: number
@@ -400,10 +420,16 @@ export function setupSocketHandlers(io: TypedServer) {
               .where(eq(answerChoices.questionId, q.id))
               .orderBy(asc(answerChoices.orderIndex))) as any[];
 
-            const correctChoice = choices.find((c: any) => c.isCorrect);
-            const correctChoiceIds = choices
-              .filter((c: any) => c.isCorrect)
-              .map((c: any) => c.id);
+            const questionType = q.questionType as
+              | "multiple_choice"
+              | "true_false"
+              | "multi_select"
+              | "text_input"
+              | "ordering";
+            const correctChoiceIds = normalizeCorrectChoiceIds(
+              choices.map((c: any) => ({ id: c.id, isCorrect: c.isCorrect })),
+              questionType
+            );
             const correctOrderChoiceIds = [...choices]
               .sort((a, b) => a.orderIndex - b.orderIndex)
               .map((c: any) => c.id);
@@ -412,12 +438,7 @@ export function setupSocketHandlers(io: TypedServer) {
             return {
               id: q.id,
               questionText: q.questionText,
-              questionType: q.questionType as
-                | "multiple_choice"
-                | "true_false"
-                | "multi_select"
-                | "text_input"
-                | "ordering",
+              questionType,
               timeLimitSeconds: q.timeLimitSeconds,
               mediaUrl: q.mediaUrl,
               backgroundUrl: q.backgroundUrl,
@@ -426,7 +447,7 @@ export function setupSocketHandlers(io: TypedServer) {
                 choiceText: c.choiceText,
                 orderIndex: c.orderIndex,
               })),
-              correctChoiceId: correctChoice?.id || 0,
+              correctChoiceId: correctChoiceIds[0] || 0,
               correctChoiceIds,
               correctOrderChoiceIds,
               acceptedAnswers,
