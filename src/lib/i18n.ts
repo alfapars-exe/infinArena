@@ -243,6 +243,9 @@ const translations = {
     "play.players": "players",
     "play.answered": "Answered",
     "play.totalPlayers": "Total",
+    "play.maintenanceMode": "Maintenance mode activated.",
+    "play.reconnecting": "Reconnecting...",
+    "play.pleaseWait": "Please wait",
 
     // AI Quiz Generator
     "ai.generateWithAI": "Generate with AI",
@@ -444,6 +447,9 @@ const translations = {
     "live.rank1": "1.",
     "live.rank2": "2.",
     "live.rank3": "3.",
+    "live.maintenanceMode": "Bakım modu aktifleştirildi.",
+    "live.reconnecting": "Tekrar bağlanılıyor...",
+    "live.pleaseWait": "Lütfen bekleyin",
 
     // Home
     "home.enterPinToJoin": "Katılmak için oyun PIN'ini gir!",
@@ -489,6 +495,9 @@ const translations = {
     "play.players": "oyuncu",
     "play.answered": "Cevaplandı",
     "play.totalPlayers": "Toplam",
+    "play.maintenanceMode": "Bakım modu aktifleştirildi.",
+    "play.reconnecting": "Tekrar bağlanılıyor...",
+    "play.pleaseWait": "Lütfen bekleyin",
 
     // AI Quiz Generator
     "ai.generateWithAI": "Yapay Zeka ile Oluştur",

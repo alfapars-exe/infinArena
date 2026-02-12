@@ -62,6 +62,7 @@ export default function LiveControlPage() {
   const pin = params?.sessionId ?? "";
 
   const [socket, setSocket] = useState<TypedSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
   const [phase, setPhase] = useState<Phase>("lobby");
   const [lobbyPlayers, setLobbyPlayers] = useState<
     { id: number; nickname: string; avatar: string }[]
@@ -115,10 +116,15 @@ export default function LiveControlPage() {
     setSocket(s);
 
     s.on("connect", () => {
+      setIsConnected(true);
       if (sessionId) {
         s.emit("admin:join-session", { sessionId });
         s.emit("admin:start-live", { sessionId });
       }
+    });
+
+    s.on("disconnect", () => {
+      setIsConnected(false);
     });
 
     s.on("session:live", () => {
@@ -368,6 +374,41 @@ export default function LiveControlPage() {
             ))}
           </AnimatePresence>
         </div>
+
+        {/* Maintenance Mode Overlay */}
+        <AnimatePresence>
+          {!isConnected && (
+            <motion.div
+              key="maintenance"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="text-center"
+              >
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                  className="w-16 h-16 border-4 border-inf-yellow border-t-transparent rounded-full mx-auto mb-6"
+                />
+                <h1 className="text-3xl md:text-4xl font-black text-white mb-3">
+                  {t("live.maintenanceMode" as any) || "Bakım modu aktifleştirildi."}
+                </h1>
+                <p className="text-white/70 text-lg mb-2">
+                  {t("live.reconnecting" as any) || "Tekrar bağlanılıyor..."}
+                </p>
+                <p className="text-white/50 text-sm mt-4">
+                  {t("live.pleaseWait" as any) || "Lütfen bekleyin"}
+                </p>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Lobby */}
         {phase === "lobby" && (
