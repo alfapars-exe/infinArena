@@ -963,7 +963,8 @@ export default function PlayPage() {
               currentQuestion.questionType === "true_false") && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 flex-1">
                 {currentQuestion.choices.map((choice, i) => {
-                  const isSelected = selectedChoice === choice.id;
+                  const choiceId = Number(choice.id);
+                  const isSelected = selectedChoice === choiceId;
                   const isDisabled =
                     phase !== "question" ||
                     selectedChoice !== null ||
@@ -978,7 +979,9 @@ export default function PlayPage() {
                       whileHover={!isDisabled ? { scale: 1.02 } : {}}
                       whileTap={!isDisabled ? { scale: 0.95 } : {}}
                       onClick={() => {
-                        if (!isDisabled) submitAnswer(choice.id);
+                        if (!isDisabled && Number.isInteger(choiceId)) {
+                          submitAnswer(choiceId);
+                        }
                       }}
                       disabled={isDisabled}
                       className={`answer-btn ${getChoiceColor(i)} ${
@@ -999,13 +1002,16 @@ export default function PlayPage() {
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                   {currentQuestion.choices.map((choice, i) => {
-                    const active = selectedChoices.includes(choice.id);
+                    const choiceId = Number(choice.id);
+                    const active = selectedChoices.includes(choiceId);
                     const isDisabled = phase !== "question" || didSubmit;
                     return (
                       <button
                         key={choice.id}
                         onClick={() => {
-                          if (!isDisabled) selectMultiChoice(choice.id);
+                          if (!isDisabled && Number.isInteger(choiceId)) {
+                            selectMultiChoice(choiceId);
+                          }
                         }}
                         disabled={isDisabled}
                         className={`answer-btn ${getChoiceColor(i)} ${
