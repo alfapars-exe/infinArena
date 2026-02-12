@@ -29,7 +29,28 @@ async function hasColumn(table: string, column: string): Promise<boolean> {
   return Array.isArray(result) ? result.length > 0 : false;
 }
 
+async function tableExists(table: string): Promise<boolean> {
+  if (isSqlite) {
+    const result = await query(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+      [table]
+    );
+    return (result as { rows: { name?: string }[] }).rows.length > 0;
+  }
+
+  const result = (await query(
+    "SELECT to_regclass($1) as name",
+    [`public.${table}`]
+  )) as any[];
+  return Array.isArray(result) ? Boolean(result[0]?.name) : false;
+}
+
 async function runMigrations() {
+  const hasQuestions = await tableExists("questions");
+  if (!hasQuestions) {
+    return;
+  }
+
   if (isSqlite) {
     if (!(await hasColumn("questions", "background_url"))) {
       await query("ALTER TABLE questions ADD COLUMN background_url TEXT");
