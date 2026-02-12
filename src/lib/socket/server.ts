@@ -39,10 +39,34 @@ function normalizeText(value: string): string {
   return value.trim().toLocaleLowerCase("tr");
 }
 
+function getActivePlayerSocketMap(
+  io: TypedServer,
+  sessionId: number
+): Map<number, string> {
+  const room = io.sockets.adapter.rooms.get(`session:${sessionId}`);
+  const playerSocketMap = new Map<number, string>();
+  if (!room) return playerSocketMap;
+
+  for (const socketId of Array.from(room)) {
+    if (!io.sockets.sockets.has(socketId)) continue;
+    const playerInfo = getPlayerBySocket(socketId);
+    if (!playerInfo) continue;
+    if (playerInfo.sessionId !== sessionId) continue;
+    playerSocketMap.set(playerInfo.playerId, socketId);
+  }
+
+  return playerSocketMap;
+}
+
 async function getLiveConnectedPlayerCount(
   io: TypedServer,
   sessionId: number
 ): Promise<number> {
+  const roomMap = getActivePlayerSocketMap(io, sessionId);
+  if (roomMap.size > 0) {
+    return roomMap.size;
+  }
+
   const connectedPlayers = await db
     .select({
       id: players.id,
@@ -783,6 +807,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       .filter((p: any) => Boolean(p.socketId))
       .map((p: any) => [p.id, p.socketId as string])
   );
+  const roomSocketByPlayerId = getActivePlayerSocketMap(io, session.sessionId);
 
   // Send batch results to each player who answered
   for (const [, answer] of Array.from(session.pendingAnswers)) {
@@ -801,7 +826,9 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     }
 
     const targetSocketId =
-      connectedSocketByPlayerId.get(answer.playerId) || answer.socketId;
+      roomSocketByPlayerId.get(answer.playerId) ||
+      connectedSocketByPlayerId.get(answer.playerId) ||
+      answer.socketId;
     if (!targetSocketId) continue;
 
     io.to(targetSocketId).emit("game:batch-results", {
@@ -821,8 +848,11 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 
   // Send empty result to unanswered players
   for (const p of allPlayers) {
-    if (!session.answeredPlayerIds.has(p.id) && p.socketId) {
-      io.to(p.socketId).emit("game:batch-results", {
+    const targetSocketId =
+      roomSocketByPlayerId.get(p.id) ||
+      (p.socketId && io.sockets.sockets.has(p.socketId) ? p.socketId : null);
+    if (!session.answeredPlayerIds.has(p.id) && targetSocketId) {
+      io.to(targetSocketId).emit("game:batch-results", {
         isCorrect: false,
         pointsAwarded: 0,
         streakBonus: 0,

@@ -1,18 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  async rewrites() {
-    return [
-      {
-        source: "/infinarenapanel",
-        destination: "/admin",
-      },
-      {
-        source: "/infinarenapanel/:path*",
-        destination: "/admin/:path*",
-      },
-    ];
-  },
   async headers() {
     return [
       {

@@ -555,6 +555,20 @@ export default function PlayPage() {
     };
   }, [socket, phase, emitRejoinFromCache]);
 
+  // If timer reached zero but we still remain on question screen, force a re-sync.
+  useEffect(() => {
+    if (!socket || phase !== "question" || timeLeft > 0) return;
+
+    const timeout = window.setTimeout(() => {
+      if (!socket.connected) return;
+      emitRejoinFromCache(socket);
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [socket, phase, timeLeft, emitRejoinFromCache]);
+
   // Update myRank when leaderboard changes
   useEffect(() => {
     if (playerId) {
@@ -582,10 +596,39 @@ export default function PlayPage() {
   }, [playerId, nickname, avatar, saveSession]);
 
   const submitAnswer = (choiceId: number) => {
-    if (!socket || !currentQuestion || selectedChoice !== null || didSubmit || isSubmittingAnswerRef.current) return;
+    console.log("submitAnswer called", {
+      hasSocket: !!socket,
+      hasQuestion: !!currentQuestion,
+      selectedChoice,
+      didSubmit,
+      isSubmittingAnswer: isSubmittingAnswerRef.current,
+      phase,
+    });
+
+    if (!socket) {
+      console.warn("No socket connection");
+      return;
+    }
+    if (!currentQuestion) {
+      console.warn("No current question");
+      return;
+    }
+    if (selectedChoice !== null) {
+      console.warn("Already selected a choice");
+      return;
+    }
+    if (didSubmit) {
+      console.warn("Already submitted");
+      return;
+    }
+    if (isSubmittingAnswerRef.current) {
+      console.warn("Already submitting");
+      return;
+    }
 
     setSelectedChoice(choiceId);
     const responseTimeMs = Date.now() - questionStartTime.current;
+    console.log("Emitting answer", { questionId: currentQuestion.id, choiceId, responseTimeMs });
     socket.emit("player:answer", {
       questionId: currentQuestion.id,
       choiceId,
@@ -886,20 +929,33 @@ export default function PlayPage() {
             {(currentQuestion.questionType === "multiple_choice" ||
               currentQuestion.questionType === "true_false") && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 flex-1">
-                {currentQuestion.choices.map((choice, i) => (
-                  <motion.button
-                    key={choice.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => submitAnswer(choice.id)}
-                    className={`answer-btn ${getChoiceColor(i)}`}
-                  >
-                    <span>{choice.choiceText}</span>
-                  </motion.button>
-                ))}
+                {currentQuestion.choices.map((choice, i) => {
+                  const isSelected = selectedChoice === choice.id;
+                  const isDisabled = selectedChoice !== null || didSubmit || isSubmittingAnswer;
+                  
+                  return (
+                    <motion.button
+                      key={choice.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      whileHover={!isDisabled ? { scale: 1.02 } : {}}
+                      whileTap={!isDisabled ? { scale: 0.95 } : {}}
+                      onClick={() => {
+                        console.log("Button clicked", { choiceId: choice.id, isDisabled });
+                        if (!isDisabled) {
+                          submitAnswer(choice.id);
+                        }
+                      }}
+                      disabled={isDisabled}
+                      className={`answer-btn ${getChoiceColor(i)} ${
+                        isSelected ? "ring-4 ring-white scale-105" : ""
+                      } ${isDisabled && !isSelected ? "opacity-50 cursor-not-allowed" : ""}`}
+                    >
+                      <span>{choice.choiceText}</span>
+                    </motion.button>
+                  );
+                })}
               </div>
             )}
 
