@@ -300,10 +300,12 @@ export function setupSocketHandlers(io: TypedServer) {
           return;
         }
 
-        await db
-          .update(players)
-          .set({ isConnected: true, socketId: socket.id })
-          .where(eq(players.id, playerId));
+        if (!player.isConnected || player.socketId !== socket.id) {
+          await db
+            .update(players)
+            .set({ isConnected: true, socketId: socket.id })
+            .where(eq(players.id, playerId));
+        }
 
         registerPlayerSocket(socket.id, playerId, dbSession.id);
         socket.join(`session:${dbSession.id}`);
@@ -461,7 +463,7 @@ export function setupSocketHandlers(io: TypedServer) {
           }
         }
 
-        logger.socket.info(`Player "${nickname}" rejoined session ${dbSession.id}`);
+        logger.socket.debug(`Player "${nickname}" rejoined session ${dbSession.id}`);
       } catch (err) {
         logger.socket.error("player:rejoin error", err);
         socket.emit("error", { message: "Failed to rejoin" });

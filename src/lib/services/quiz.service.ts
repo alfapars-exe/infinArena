@@ -3,7 +3,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { admins } from "@/lib/db/schema";
 import type {
-  AnswerChoiceRecord,
   QuestionType,
   QuestionWithChoices,
   QuizSummary,
@@ -115,57 +114,31 @@ export async function getQuizWithQuestions(quizId: number): Promise<QuizWithQues
   const quiz = await quizRepository.findWithQuestions(quizId);
   if (!quiz) throw new NotFoundError("Quiz", quizId);
 
-  const repairedQuestions: QuestionWithChoices[] = await Promise.all(
-    quiz.questions.map(async (question) => {
-      if (!question.id || question.choices.length === 0) {
-        return question;
-      }
+  const repairedQuestions: QuestionWithChoices[] = quiz.questions.map((question) => {
+    if (!question.id || question.choices.length === 0) {
+      return question;
+    }
 
-      const questionType = normalizeQuestionType(question.questionType);
-      const normalized = normalizeChoiceFlags(
-        questionType,
-        question.choices.map((choice, index) => ({
-          choiceText: String(choice.choiceText ?? ""),
-          isCorrect: choice.isCorrect,
-          orderIndex: Number.isInteger(choice.orderIndex) ? choice.orderIndex : index,
-        }))
-      );
+    const questionType = normalizeQuestionType(question.questionType);
+    const normalized = normalizeChoiceFlags(
+      questionType,
+      question.choices.map((choice, index) => ({
+        choiceText: String(choice.choiceText ?? ""),
+        isCorrect: choice.isCorrect,
+        orderIndex: Number.isInteger(choice.orderIndex) ? choice.orderIndex : index,
+      }))
+    );
 
-      const needsRepair = normalized.some((choice, index) => {
-        const original = question.choices[index];
-        if (!original) return true;
-        return coerceBoolean(original.isCorrect) !== choice.isCorrect;
-      });
-
-      if (!needsRepair) {
-        return {
-          ...question,
-          questionType,
-          choices: question.choices.map((choice: AnswerChoiceRecord, index: number) => ({
-            ...choice,
-            isCorrect: coerceBoolean(choice.isCorrect),
-            orderIndex: index,
-          })),
-        };
-      }
-
-      await quizRepository.deleteChoicesByQuestion(question.id);
-      const recreatedChoices = await quizRepository.createChoices(
-        normalized.map((choice, index) => ({
-          questionId: question.id,
-          choiceText: choice.choiceText,
-          isCorrect: choice.isCorrect,
-          orderIndex: index,
-        }))
-      );
-
-      return {
-        ...question,
-        questionType,
-        choices: recreatedChoices,
-      };
-    })
-  );
+    return {
+      ...question,
+      questionType,
+      choices: question.choices.map((choice, index) => ({
+        ...choice,
+        isCorrect: normalized[index]?.isCorrect ?? coerceBoolean(choice.isCorrect),
+        orderIndex: index,
+      })),
+    };
+  });
 
   return { ...quiz, questions: repairedQuestions };
 }
@@ -322,4 +295,3 @@ export async function getQuizResults(quizId: number) {
     }))
   );
 }
-

@@ -18,6 +18,9 @@ RUN pnpm install --frozen-lockfile
 # Copy application files
 COPY . .
 
+# Try to expand shallow clones so commit-count based versioning can advance correctly.
+RUN if [ -d .git ]; then git fetch --prune --unshallow || true; fi
+
 # Create necessary directories
 RUN mkdir -p data public/uploads
 

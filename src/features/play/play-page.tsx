@@ -250,6 +250,8 @@ export default function PlayPage() {
   const serverEndTimeRef = useRef<number>(0);
   const timerRafRef = useRef<number>(0);
   const lastTickRef = useRef<number>(0);
+  const lastRejoinAtRef = useRef<number>(0);
+  const lastRejoinSocketIdRef = useRef<string | null>(null);
 
   const [batchResult, setBatchResult] = useState<BatchAnswerResult | null>(null);
   const [questionStats, setQuestionStats] = useState<QuestionStats | null>(null);
@@ -277,18 +279,35 @@ export default function PlayPage() {
     } catch {}
   }, [sessionCacheKey]);
 
-  const emitRejoinFromCache = useCallback((targetSocket: TypedSocket) => {
+  const emitRejoinFromCache = useCallback((targetSocket: TypedSocket, options?: { force?: boolean }) => {
     try {
+      if (!targetSocket.connected) return;
+
+      const now = Date.now();
+      const socketId = targetSocket.id ?? "";
+      const force = options?.force === true;
+      const cooldownMs = 8000;
+      if (
+        !force &&
+        lastRejoinSocketIdRef.current === socketId &&
+        now - lastRejoinAtRef.current < cooldownMs
+      ) {
+        return;
+      }
+
       const cached = localStorage.getItem(sessionCacheKey);
       if (!cached) return;
       const data = JSON.parse(cached);
-      if (Date.now() - data.timestamp >= 4 * 60 * 60 * 1000) return;
+      if (typeof data?.timestamp !== "number" || now - data.timestamp >= 4 * 60 * 60 * 1000) return;
       if (!data.playerId || !data.nickname) return;
+
       targetSocket.emit("player:rejoin", {
         pin,
         playerId: data.playerId,
         nickname: data.nickname,
       });
+      lastRejoinAtRef.current = now;
+      lastRejoinSocketIdRef.current = socketId;
     } catch {}
   }, [pin, sessionCacheKey]);
 
@@ -366,7 +385,7 @@ export default function PlayPage() {
       setIsConnected(true);
       socketConnectedAtLeastOnceRef.current = true;
       isPageInitialLoadRef.current = false;
-      emitRejoinFromCache(s);
+      emitRejoinFromCache(s, { force: true });
     });
 
     s.on("disconnect", () => {
