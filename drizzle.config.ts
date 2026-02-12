@@ -30,10 +30,15 @@ function resolveDatabaseUrl(): string {
   return `file:${path.join(resolveStorageDir(), "quiz.db")}`;
 }
 
+function resolveDialect(): "sqlite" | "postgresql" {
+  const url = resolveDatabaseUrl();
+  return url.startsWith("file:") ? "sqlite" : "postgresql";
+}
+
 export default {
   schema: "./src/lib/db/schema.ts",
   out: "./drizzle",
-  dialect: "sqlite",
+  dialect: resolveDialect(),
   dbCredentials: {
     url: resolveDatabaseUrl(),
   },

@@ -120,13 +120,21 @@ export default function ResultsPage() {
             </h2>
             <div className="space-y-2">
               {sessions.map((s: any) => (
-                <button
+                <div
                   key={s.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
                     setSelectedSession(s);
                     setSelectedPlayer(null);
                   }}
-                  className={`w-full text-left p-3 rounded-xl transition-all ${
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      setSelectedSession(s);
+                      setSelectedPlayer(null);
+                    }
+                  }}
+                  className={`w-full text-left p-3 rounded-xl transition-all cursor-pointer ${
                     selectedSession?.id === s.id
                       ? "bg-inf-red/20 border border-inf-red"
                       : "bg-white/5 border border-white/10 hover:bg-white/10"
@@ -166,7 +174,7 @@ export default function ResultsPage() {
                         : t("publish.terminateSession")}
                     </button>
                   )}
-                </button>
+                </div>
               ))}
             </div>
           </div>

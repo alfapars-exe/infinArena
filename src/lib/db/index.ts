@@ -1,11 +1,15 @@
 import { createClient } from "@libsql/client";
-import { drizzle } from "drizzle-orm/libsql";
+import { drizzle as drizzleSqlite } from "drizzle-orm/libsql";
+import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
 import { resolveDatabaseUrl } from "@/lib/storage";
 import fs from "fs";
 import path from "path";
+import postgres from "postgres";
 import * as schema from "./schema";
 
 const databaseUrl = resolveDatabaseUrl();
+
+const isSqlite = databaseUrl.startsWith("file:");
 
 function ensureDatabaseDirectory(url: string): void {
   if (!url.startsWith("file:")) {
@@ -21,11 +25,16 @@ function ensureDatabaseDirectory(url: string): void {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 }
 
-ensureDatabaseDirectory(databaseUrl);
+if (isSqlite) {
+  ensureDatabaseDirectory(databaseUrl);
+}
 
-const client = createClient({
-  url: databaseUrl,
-});
+const client = isSqlite
+  ? createClient({ url: databaseUrl })
+  : postgres(databaseUrl, { ssl: "require" });
 
-export const db = drizzle(client, { schema });
-export { client };
+export const db = isSqlite
+  ? drizzleSqlite(client as ReturnType<typeof createClient>, { schema })
+  : drizzlePostgres(client as ReturnType<typeof postgres>, { schema });
+
+export { client, isSqlite };

@@ -1,16 +1,43 @@
-﻿import { client } from "./index";
+﻿import { client, isSqlite } from "./index";
 
 let migrationPromise: Promise<void> | null = null;
 
+function isLibsqlClient(value: unknown): value is { execute: (arg: { sql: string; args?: unknown[] }) => Promise<{ rows: { name?: string }[] }> } {
+  return typeof (value as { execute?: unknown })?.execute === "function";
+}
+
+async function query(sqlText: string, args: unknown[] = []) {
+  if (isLibsqlClient(client)) {
+    return client.execute({ sql: sqlText, args });
+  }
+  return (client as { unsafe: (sql: string, args?: unknown[]) => Promise<unknown[]> }).unsafe(
+    sqlText,
+    args
+  );
+}
+
 async function hasColumn(table: string, column: string): Promise<boolean> {
-  const result = await client.execute(`PRAGMA table_info(${table})`);
-  return result.rows.some((row) => row.name === column);
+  if (isSqlite) {
+    const result = await query(`PRAGMA table_info(${table})`);
+    return (result as { rows: { name?: string }[] }).rows.some((row) => row.name === column);
+  }
+
+  const result = await query(
+    "SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = $2",
+    [table, column]
+  );
+  return Array.isArray(result) ? result.length > 0 : false;
 }
 
 async function runMigrations() {
-  if (!(await hasColumn("questions", "background_url"))) {
-    await client.execute(`ALTER TABLE questions ADD COLUMN background_url TEXT`);
+  if (isSqlite) {
+    if (!(await hasColumn("questions", "background_url"))) {
+      await query("ALTER TABLE questions ADD COLUMN background_url TEXT");
+    }
+    return;
   }
+
+  await query("ALTER TABLE questions ADD COLUMN IF NOT EXISTS background_url TEXT");
 }
 
 export function ensureDbMigrations(): Promise<void> {

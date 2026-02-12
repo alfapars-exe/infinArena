@@ -49,7 +49,8 @@ export default function PublishPage() {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [lastPin, setLastPin] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedPin, setCopiedPin] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [customSlug, setCustomSlug] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export default function PublishPage() {
   const [volume, setVolume] = useState(50);
   const [isRepeat, setIsRepeat] = useState(false);
   const [showMusicInput, setShowMusicInput] = useState(false);
+  const [terminatingSessionId, setTerminatingSessionId] = useState<number | null>(null);
   const ytPlayerRef = useRef<any>(null);
   const activeVideoIdRef = useRef<string | null>(null);
 
@@ -117,6 +119,30 @@ export default function PublishPage() {
     setPublishing(false);
   };
 
+  const terminateSession = async (sessionId: number) => {
+    if (!confirm(t("publish.terminateConfirm"))) return;
+
+    setTerminatingSessionId(sessionId);
+    try {
+      const res = await fetch(
+        `/api/quizzes/${quizId}/sessions/${sessionId}/terminate`,
+        { method: "POST" }
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(getErrorMessage(err, t("publish.terminateFailed")));
+        return;
+      }
+
+      await fetchData();
+    } catch (err) {
+      alert(getErrorMessage(err, t("publish.terminateFailed")));
+    } finally {
+      setTerminatingSessionId(null);
+    }
+  };
+
   const statusLabels: Record<string, string> = {
     draft: t("dashboard.status.draft"),
     published: t("dashboard.status.published"),
@@ -129,8 +155,8 @@ export default function PublishPage() {
   const copyPin = () => {
     if (lastPin) {
       navigator.clipboard.writeText(lastPin);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedPin(true);
+      setTimeout(() => setCopiedPin(false), 2000);
     }
   };
 
@@ -138,8 +164,8 @@ export default function PublishPage() {
     if (lastPin) {
       const url = `${window.location.origin}/play/${lastPin}`;
       navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
     }
   };
 
@@ -425,14 +451,14 @@ export default function PublishPage() {
               onClick={copyPin}
               className="bg-white/20 hover:bg-white/30 text-white font-medium py-2 px-6 rounded-lg transition-colors text-sm"
             >
-              {copied ? t("publish.copied") : t("publish.copyPin")}
+              {copiedPin ? t("publish.copied") : t("publish.copyPin")}
             </motion.button>
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={copyUrl}
               className="bg-white/20 hover:bg-white/30 text-white font-medium py-2 px-6 rounded-lg transition-colors text-sm"
             >
-              {t("publish.copyLink")}
+              {copiedLink ? t("publish.copied") : t("publish.copyLink")}
             </motion.button>
             <Link
               href={`/infinarenapanel/live/${lastPin}`}
@@ -477,9 +503,23 @@ export default function PublishPage() {
                     {statusLabels[s.status] || s.status}
                   </span>
                 </div>
-                <span className="text-gray-500 text-sm">
-                  {t("publish.playersCount", { count: s.players?.length || 0 })}
-                </span>
+                <div className="d-flex align-items-center gap-3">
+                  <span className="text-gray-500 text-sm">
+                    {t("publish.playersCount", { count: s.players?.length || 0 })}
+                  </span>
+                  {s.status !== "completed" && (
+                    <button
+                      type="button"
+                      onClick={() => void terminateSession(s.id)}
+                      disabled={terminatingSessionId === s.id}
+                      className="text-xs text-red-300 hover:text-red-200 disabled:opacity-60 transition-colors"
+                    >
+                      {terminatingSessionId === s.id
+                        ? t("publish.terminating")
+                        : t("publish.terminateSession")}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
