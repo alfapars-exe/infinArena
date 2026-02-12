@@ -469,16 +469,16 @@ function QuestionCard({
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: 20 }}
         transition={{ delay: index * 0.05 }}
-        className="bg-white/5 rounded-xl border border-white/10 overflow-hidden"
+        className="bg-gradient-to-br from-slate-800/95 to-slate-700/90 rounded-xl border border-slate-200/20 shadow-xl overflow-hidden"
       >
         <div className="p-5">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="flex items-start gap-3 flex-1">
-              <span className="bg-inf-red text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
+              <span className="bg-inf-red text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5 shadow-lg">
                 {index + 1}
               </span>
               <div className="flex-1">
-                <h3 className="text-white font-semibold text-lg">
+                <h3 className="text-white font-bold text-lg leading-snug break-words whitespace-normal bg-black/25 border border-white/10 rounded-xl px-3 py-2">
                   {question.questionText}
                 </h3>
                 {question.mediaUrl && (
@@ -489,9 +489,11 @@ function QuestionCard({
                   />
                 )}
                 {question.backgroundUrl && (
-                  <div className="mt-2 text-xs text-white/60">{t("editor.backgroundSet")}</div>
+                  <div className="mt-2 inline-flex items-center rounded-full bg-violet-500/25 border border-violet-300/40 px-2.5 py-1 text-xs text-violet-100">
+                    {t("editor.backgroundSet")}
+                  </div>
                 )}
-                <div className="flex items-center gap-3 mt-2 text-sm text-gray-400">
+                <div className="flex flex-wrap items-center gap-2 mt-3 text-xs md:text-sm text-white/90">
                   <span>{question.timeLimitSeconds}{t("editor.secondsShort")}</span>
                   <span>|</span>
                   <span>{question.basePoints} {t("editor.pointsShort")}</span>
@@ -512,19 +514,19 @@ function QuestionCard({
                 </div>
               </div>
             </div>
-            <div className="flex gap-2 ml-4">
+            <div className="flex gap-2 md:ml-4">
               <button
                 onClick={() => {
                   setEditQ(normalizeEditorQuestion({ ...question }));
                   setEditing(true);
                 }}
-                className="inline-flex items-center rounded-lg border border-sky-300/50 bg-sky-500/25 px-3 py-1.5 text-sm font-semibold text-sky-100 hover:bg-sky-500/40 transition-colors"
+                className="inline-flex items-center rounded-lg border border-sky-400/80 bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700 transition-colors shadow-md"
               >
                 {t("editor.editQuestion")}
               </button>
               <button
                 onClick={onDelete}
-                className="inline-flex items-center rounded-lg border border-red-300/50 bg-red-500/25 px-3 py-1.5 text-sm font-semibold text-red-100 hover:bg-red-500/40 transition-colors"
+                className="inline-flex items-center rounded-lg border border-red-400/80 bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 transition-colors shadow-md"
               >
                 {t("editor.delete")}
               </button>
@@ -532,24 +534,26 @@ function QuestionCard({
           </div>
 
           
-          <div className="grid grid-cols-2 gap-2 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-4">
             {question.choices.map((c, ci) => (
               <div
                 key={ci}
                 className={`${getChoiceColor(ci)} ${
                   question.questionType === "ordering" || question.questionType === "text_input"
-                    ? ""
+                    ? "border-white/25"
                     : c.isCorrect
-                    ? "ring-2 ring-white"
-                    : "opacity-70"
-                } rounded-lg px-3 py-2 text-white text-sm flex items-center gap-2`}
+                    ? "ring-2 ring-white border-white/80"
+                    : "border-white/25"
+                } rounded-lg border px-3 py-2.5 text-white text-sm font-medium flex items-center gap-2 shadow-sm`}
               >
-                <span className="text-xs">{getChoiceShape(ci)}</span>
-                <span className="truncate">{c.choiceText || t("editor.empty")}</span>
+                <span className="text-xs shrink-0">{getChoiceShape(ci)}</span>
+                <span className="break-words whitespace-normal leading-snug flex-1">
+                  {c.choiceText || t("editor.empty")}
+                </span>
                 {question.questionType === "ordering" ? (
                   <span className="ml-auto text-xs font-bold bg-white/20 rounded-full w-5 h-5 flex items-center justify-center">{ci + 1}</span>
                 ) : question.questionType === "text_input" ? null : (
-                  c.isCorrect && <span className="ml-auto text-xs">✓</span>
+                  c.isCorrect && (<span className="ml-auto text-[10px] font-bold bg-black/25 px-2 py-1 rounded-full">{t("editor.correct")}</span>)
                 )}
               </div>
             ))}
@@ -998,7 +1002,7 @@ function QuestionModal({
               {question.choices.map((choice, ci) => (
                 <div
                   key={ci}
-                  className={`choice-row flex items-center gap-2 gap-md-3 ${getChoiceColor(ci)} rounded-lg p-2 p-md-3 flex-wrap flex-md-nowrap`}
+                  className={`choice-row flex items-center gap-2 gap-md-3 ${getChoiceColor(ci)} rounded-lg border border-white/25 p-2 p-md-3 flex-wrap flex-md-nowrap shadow-sm`}
                 >
                   <span className="text-white text-lg">{getChoiceShape(ci)}</span>
                   <input
@@ -1007,7 +1011,7 @@ function QuestionModal({
                     onChange={(e) =>
                       updateChoice(ci, "choiceText", e.target.value)
                     }
-                    className="flex-1 bg-white/20 border border-white/30 rounded-lg px-3 py-2 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 text-sm"
+                    className="flex-1 bg-black/20 border border-white/35 rounded-lg px-3 py-2 text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white/60 text-sm"
                     placeholder={
                       question.questionType === "text_input"
                         ? `${t("editor.acceptedAnswer")} ${ci + 1}`
@@ -1017,7 +1021,7 @@ function QuestionModal({
                   />
                   {(question.questionType === "multiple_choice" ||
                     question.questionType === "true_false") && (
-                    <label className="flex items-center gap-1 cursor-pointer">
+                    <label className="flex items-center gap-1 cursor-pointer bg-black/20 px-2 py-1 rounded-md">
                       <input
                         type="radio"
                         name="correct"
@@ -1029,7 +1033,7 @@ function QuestionModal({
                     </label>
                   )}
                   {question.questionType === "multi_select" && (
-                    <label className="flex items-center gap-1 cursor-pointer">
+                    <label className="flex items-center gap-1 cursor-pointer bg-black/20 px-2 py-1 rounded-md">
                       <input
                         type="checkbox"
                         checked={choice.isCorrect}
@@ -1044,7 +1048,7 @@ function QuestionModal({
                       <button
                         type="button"
                         onClick={() => moveChoice(ci, -1)}
-                        className="px-2 py-1 text-xs rounded bg-black/25 text-white"
+                        className="px-2 py-1 text-xs rounded bg-black/35 text-white border border-white/20"
                         disabled={ci === 0}
                       >
                         {t("editor.moveUp")}
@@ -1052,7 +1056,7 @@ function QuestionModal({
                       <button
                         type="button"
                         onClick={() => moveChoice(ci, 1)}
-                        className="px-2 py-1 text-xs rounded bg-black/25 text-white"
+                        className="px-2 py-1 text-xs rounded bg-black/35 text-white border border-white/20"
                         disabled={ci === question.choices.length - 1}
                       >
                         {t("editor.moveDown")}
@@ -1063,7 +1067,7 @@ function QuestionModal({
                     <button
                       type="button"
                       onClick={() => removeChoice(ci)}
-                      className="text-xs px-2 py-1 rounded bg-black/30 text-white/80 hover:text-white"
+                      className="text-xs px-2 py-1 rounded bg-red-700/60 border border-red-300/40 text-white hover:bg-red-700"
                     >
                       {t("editor.remove")}
                     </button>
@@ -1075,7 +1079,7 @@ function QuestionModal({
               <button
                 type="button"
                 onClick={addChoice}
-                className="mt-2 text-xs px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white hover:bg-white/15"
+                className="mt-2 text-xs px-3 py-2 rounded-lg bg-slate-600/70 border border-slate-200/30 text-white hover:bg-slate-600"
               >
                 {t("editor.addChoice")}
               </button>
