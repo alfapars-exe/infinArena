@@ -145,7 +145,9 @@ export default function QuizEditor() {
   const [editDescription, setEditDescription] = useState("");
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [newQuestion, setNewQuestion] = useState<Question>(getDefaultQuestion());
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
 
   function getDefaultQuestion(): Question {
     return {
@@ -168,6 +170,21 @@ export default function QuizEditor() {
   useEffect(() => {
     fetchQuiz();
   }, [quizId]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!exportMenuRef.current) return;
+      const target = event.target as Node | null;
+      if (target && !exportMenuRef.current.contains(target)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
 
   const fetchQuiz = async () => {
     if (!quizId) {
@@ -326,21 +343,33 @@ export default function QuizEditor() {
             >
               {t("editor.results")}
             </Link>
-            <div className="relative group">
+            <div ref={exportMenuRef} className="relative">
               <button
+                type="button"
+                onClick={() => setIsExportMenuOpen((prev) => !prev)}
+                aria-haspopup="menu"
+                aria-expanded={isExportMenuOpen}
                 className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold py-2 px-4 rounded-lg transition-colors"
               >
                 Export ▾
               </button>
-              <div className="absolute right-0 mt-1 bg-gray-800 border border-white/10 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 min-w-[140px]">
+              <div
+                className={`absolute right-0 mt-1 bg-gray-800 border border-white/10 rounded-lg shadow-lg transition-all z-50 min-w-[140px] ${
+                  isExportMenuOpen
+                    ? "opacity-100 visible translate-y-0"
+                    : "opacity-0 invisible -translate-y-1 pointer-events-none"
+                }`}
+              >
                 <a
                   href={`/api/quizzes/${quizId}/export?format=excel`}
+                  onClick={() => setIsExportMenuOpen(false)}
                   className="block px-4 py-2 text-sm text-white hover:bg-white/10 rounded-t-lg"
                 >
                   Excel (.xlsx)
                 </a>
                 <a
                   href={`/api/quizzes/${quizId}/export?format=word`}
+                  onClick={() => setIsExportMenuOpen(false)}
                   className="block px-4 py-2 text-sm text-white hover:bg-white/10 rounded-b-lg"
                 >
                   Word (.docx)
