@@ -68,6 +68,57 @@ function normalizeCorrectChoiceIds(
   return [];
 }
 
+function buildPlayerAnswerDisplay(
+  question: {
+    questionType: "multiple_choice" | "true_false" | "multi_select" | "text_input" | "ordering";
+    choices: Array<{ id: number; choiceText: string }>;
+  },
+  answer: {
+    choiceId: number | null;
+    choiceIds: number[];
+    orderedChoiceIds: number[];
+    textAnswer: string;
+  }
+): PlayerAnswerDisplay {
+  if (question.questionType === "text_input") {
+    return answer.textAnswer?.trim() ? answer.textAnswer : null;
+  }
+
+  if (question.questionType === "ordering") {
+    const orderedTexts = answer.orderedChoiceIds
+      .map((choiceId) => {
+        const choice = question.choices.find((c) => Number(c.id) === Number(choiceId));
+        return choice?.choiceText || `Choice ${choiceId}`;
+      })
+      .filter((text) => text);
+    return orderedTexts.length > 0 ? orderedTexts : null;
+  }
+
+  const selectedIds =
+    question.questionType === "multi_select"
+      ? Array.from(
+          new Set(
+            [
+              ...answer.choiceIds.map((id) => Number(id)),
+              ...(Number.isInteger(answer.choiceId) ? [Number(answer.choiceId)] : []),
+            ].filter((id) => Number.isInteger(id))
+          )
+        )
+      : [
+          Number.isInteger(answer.choiceId)
+            ? Number(answer.choiceId)
+            : Number(answer.choiceIds[0]),
+        ].filter((id) => Number.isInteger(id));
+
+  const selectedTexts = selectedIds
+    .map((choiceId) => question.choices.find((c) => Number(c.id) === choiceId)?.choiceText)
+    .filter((text): text is string => Boolean(text));
+
+  if (selectedTexts.length === 0) return null;
+  if (question.questionType === "multi_select") return selectedTexts;
+  return selectedTexts[0] || null;
+}
+
 function getActivePlayerSocketMap(
   io: TypedServer,
   sessionId: number
@@ -378,19 +429,7 @@ export function setupSocketHandlers(io: TypedServer) {
             // First send batch results for this player if they answered
             const playerAnswer = session.pendingAnswers.get(player.id);
             if (playerAnswer && currentQ) {
-              let playerAnswerDisplay: PlayerAnswerDisplay = null;
-
-              if (currentQ.questionType === "ordering") {
-                const choiceTexts = playerAnswer.orderedChoiceIds
-                  .map((choiceId) => {
-                    const choice = currentQ.choices.find((c) => c.id === choiceId);
-                    return choice?.choiceText || `Choice ${choiceId}`;
-                  })
-                  .filter((text) => text);
-                playerAnswerDisplay = choiceTexts.length > 0 ? choiceTexts : null;
-              } else if (currentQ.questionType === "text_input") {
-                playerAnswerDisplay = playerAnswer.textAnswer || null;
-              }
+              const playerAnswerDisplay = buildPlayerAnswerDisplay(currentQ, playerAnswer);
 
               socket.emit("game:batch-results", {
                 questionId: currentQ.id,
@@ -885,19 +924,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 
   // Send batch results to each player who answered
   for (const [, answer] of Array.from(session.pendingAnswers)) {
-    let playerAnswerDisplay: PlayerAnswerDisplay = null;
-
-    if (currentQ.questionType === "ordering") {
-      const choiceTexts = answer.orderedChoiceIds
-        .map((choiceId) => {
-          const choice = currentQ.choices.find((c) => c.id === choiceId);
-          return choice?.choiceText || `Choice ${choiceId}`;
-        })
-        .filter((text) => text);
-      playerAnswerDisplay = choiceTexts.length > 0 ? choiceTexts : null;
-    } else if (currentQ.questionType === "text_input") {
-      playerAnswerDisplay = answer.textAnswer || null;
-    }
+    const playerAnswerDisplay = buildPlayerAnswerDisplay(currentQ, answer);
 
     const targetSocketId =
       roomSocketByPlayerId.get(answer.playerId) ||
@@ -936,6 +963,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
         correctChoiceId: currentQ.correctChoiceId,
         correctChoiceIds: currentQ.correctChoiceIds,
         streak: 0,
+        playerAnswer: null,
         correctAnswerText: currentQ.choices
           .filter((c) => currentQ.correctChoiceIds.includes(c.id))
           .map((c) => c.choiceText),

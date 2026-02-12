@@ -679,6 +679,37 @@ export default function PlayPage() {
     }
   }, [playerId, nickname, avatar, saveSession]);
 
+  const renderPlayerAnswerContent = (playerAnswer: BatchAnswerResult["playerAnswer"]) => {
+    if (Array.isArray(playerAnswer)) {
+      if (playerAnswer.length === 0) {
+        return <p className="text-white/60 text-sm">{t("play.noAnswerGiven")}</p>;
+      }
+
+      return (
+        <div className="space-y-1">
+          {playerAnswer.map((item, idx: number) => (
+            <div
+              key={idx}
+              className={`text-sm p-2 rounded ${getStableChoiceColor(String(item))}`}
+            >
+              <span className="font-bold">{idx + 1}.</span> {item}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (typeof playerAnswer === "string" && playerAnswer.trim().length > 0) {
+      return (
+        <p className="text-white text-sm bg-black/30 rounded p-2 italic">
+          &quot;{playerAnswer}&quot;
+        </p>
+      );
+    }
+
+    return <p className="text-white/60 text-sm">{t("play.noAnswerGiven")}</p>;
+  };
+
   useEffect(() => {
     if (!currentQuestion) return;
     if (lastQuestionIdRef.current === currentQuestion.id) return;
@@ -1354,35 +1385,13 @@ export default function PlayPage() {
               )}
 
               
-              {currentQuestion && batchResult && (
-                <>
-                  {currentQuestion.questionType === "ordering" && batchResult.playerAnswer && Array.isArray(batchResult.playerAnswer) ? (
-                    <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
-                      <p className="text-white/80 text-sm font-semibold mb-2">
-                        {t("play.yourAnswer")}:
-                      </p>
-                      <div className="space-y-1">
-                        {batchResult.playerAnswer.map((item, idx: number) => (
-                          <div
-                            key={idx}
-                            className={`text-sm p-2 rounded ${getStableChoiceColor(String(item))}`}
-                          >
-                            <span className="font-bold">{idx + 1}.</span> {item}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : currentQuestion.questionType === "text_input" && batchResult.playerAnswer && typeof batchResult.playerAnswer === "string" ? (
-                    <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
-                      <p className="text-white/80 text-sm font-semibold mb-2">
-                        {t("play.yourAnswer")}:
-                      </p>
-                      <p className="text-white text-sm bg-black/30 rounded p-2 italic">
-                        &quot;{batchResult.playerAnswer}&quot;
-                      </p>
-                    </div>
-                  ) : null}
-                </>
+              {batchResult && (
+                <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
+                  <p className="text-white/80 text-sm font-semibold mb-2">
+                    {t("play.yourAnswer")}:
+                  </p>
+                  {renderPlayerAnswerContent(batchResult.playerAnswer ?? null)}
+                </div>
               )}
 
               
@@ -1601,6 +1610,18 @@ export default function PlayPage() {
               </div>
 
               
+              {batchResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="mt-4 bg-white/10 border border-white/20 rounded-xl p-3 text-left"
+                >
+                  <p className="text-white/70 text-xs font-medium mb-2">{t("play.yourAnswer")}</p>
+                  {renderPlayerAnswerContent(batchResult.playerAnswer ?? null)}
+                </motion.div>
+              )}
+
               {batchResult?.correctAnswerText && batchResult.correctAnswerText.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
