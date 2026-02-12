@@ -1,7 +1,7 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useState, useEffect, useRef, useCallback, useTransition } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { io, Socket } from "socket.io-client";
 import { useTranslation } from "@/lib/i18n";
@@ -60,6 +60,10 @@ export default function LiveControlPage() {
   const { t } = useTranslation();
   const params = useParams<{ sessionId: string }>();
   const pin = params?.sessionId ?? "";
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const isPageInitialLoadRef = useRef(true);
+  const socketConnectedAtLeastOnceRef = useRef(false);
 
   const [socket, setSocket] = useState<TypedSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -117,6 +121,8 @@ export default function LiveControlPage() {
 
     s.on("connect", () => {
       setIsConnected(true);
+      socketConnectedAtLeastOnceRef.current = true;
+      isPageInitialLoadRef.current = false;
       if (sessionId) {
         s.emit("admin:join-session", { sessionId });
         s.emit("admin:start-live", { sessionId });
@@ -375,11 +381,11 @@ export default function LiveControlPage() {
           </AnimatePresence>
         </div>
 
-        {/* Maintenance Mode Overlay */}
+        {/* Connection Status Overlay */}
         <AnimatePresence>
-          {!isConnected && (
+          {(!isConnected || isPending) && (
             <motion.div
-              key="maintenance"
+              key="status"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -396,12 +402,34 @@ export default function LiveControlPage() {
                   transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
                   className="w-16 h-16 border-4 border-inf-yellow border-t-transparent rounded-full mx-auto mb-6"
                 />
-                <h1 className="text-3xl md:text-4xl font-black text-white mb-3">
-                  {t("live.maintenanceMode" as any) || "Bakım modu aktifleştirildi."}
-                </h1>
-                <p className="text-white/70 text-lg mb-2">
-                  {t("live.reconnecting" as any) || "Tekrar bağlanılıyor..."}
-                </p>
+                {isPending ? (
+                  <>
+                    <h1 className="text-3xl md:text-4xl font-black text-white mb-3">
+                      Lütfen bekleyin
+                    </h1>
+                    <p className="text-white/70 text-lg mb-2">
+                      Sayfa yükleniyor...
+                    </p>
+                  </>
+                ) : isPageInitialLoadRef.current || !socketConnectedAtLeastOnceRef.current ? (
+                  <>
+                    <h1 className="text-3xl md:text-4xl font-black text-white mb-3">
+                      Yeniden bağlanılıyor
+                    </h1>
+                    <p className="text-white/70 text-lg mb-2">
+                      Bağlanılıyor...
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h1 className="text-3xl md:text-4xl font-black text-white mb-3">
+                      Bakım modu aktifleştirildi.
+                    </h1>
+                    <p className="text-white/70 text-lg mb-2">
+                      Tekrar bağlanılıyor...
+                    </p>
+                  </>
+                )}
                 <p className="text-white/50 text-sm mt-4">
                   {t("live.pleaseWait" as any) || "Lütfen bekleyin"}
                 </p>

@@ -1,4 +1,5 @@
-﻿import { create } from "zustand";
+import { useEffect } from "react";
+import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type Locale = "en" | "tr";
@@ -9,16 +10,38 @@ interface I18nState {
   toggleLocale: () => void;
 }
 
-export const useI18n = create<I18nState>()(
+const useI18nStore = create<I18nState>()(
   persist(
     (set, get) => ({
       locale: "en",
       setLocale: (locale) => set({ locale }),
       toggleLocale: () => set({ locale: get().locale === "en" ? "tr" : "en" }),
     }),
-    { name: "infinarena-locale" }
+    {
+      name: "infinarena-locale",
+      skipHydration: true,
+    }
   )
 );
+
+let i18nHydrationRequested = false;
+
+function requestI18nHydration() {
+  if (typeof window === "undefined") return;
+  if (i18nHydrationRequested) return;
+  i18nHydrationRequested = true;
+  void useI18nStore.persist.rehydrate();
+}
+
+export function useI18n() {
+  const state = useI18nStore();
+
+  useEffect(() => {
+    requestI18nHydration();
+  }, []);
+
+  return state;
+}
 
 const translations = {
   en: {

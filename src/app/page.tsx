@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useTranslation } from "@/lib/i18n";
@@ -57,20 +57,50 @@ export default function HomePage() {
     setError("");
   };
 
+  const backgroundBubbles = useMemo(
+    () =>
+      Array.from({ length: 8 }, (_, i) => {
+        const width = 60 + ((i * 37) % 170);
+        const height = 70 + ((i * 41) % 160);
+        const left = (i * 13 + 7) % 100;
+        const top = (i * 17 + 11) % 100;
+        const colors = [
+          "#BA2031",
+          "#0C4D99",
+          "#FBB615",
+          "#20AE4C",
+          "#3EBEB4",
+          "#863B96",
+          "#F15C35",
+          "#C5D931",
+        ];
+
+        return {
+          key: i,
+          width,
+          height,
+          left,
+          top,
+          color: colors[i % colors.length],
+        };
+      }),
+    []
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black d-flex flex-column align-items-center justify-content-center p-3 p-md-4">
       {/* Animated background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        {[...Array(8)].map((_, i) => (
+        {backgroundBubbles.map((bubble, i) => (
           <motion.div
-            key={i}
+            key={bubble.key}
             className="absolute rounded-full opacity-10"
             style={{
-              width: Math.random() * 200 + 50,
-              height: Math.random() * 200 + 50,
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              background: ["#BA2031", "#0C4D99", "#FBB615", "#20AE4C", "#3EBEB4", "#863B96", "#F15C35", "#C5D931"][i % 8],
+              width: bubble.width,
+              height: bubble.height,
+              left: `${bubble.left}%`,
+              top: `${bubble.top}%`,
+              background: bubble.color,
             }}
             animate={{
               y: [0, -30, 0],
@@ -171,5 +201,3 @@ export default function HomePage() {
     </div>
   );
 }
-
-
