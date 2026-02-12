@@ -1367,28 +1367,11 @@ export default function PlayPage() {
                 </>
               )}
 
-              {/* Correct Answer Display */}
-              {batchResult && batchResult.correctAnswerText && batchResult.correctAnswerText.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="mt-4 bg-green-500/20 border border-green-500/40 rounded-xl p-4"
-                >
-                  <p className="text-green-300 text-sm font-semibold mb-1">
-                    {t("play.correctAnswer")}:
-                  </p>
-                  <p className="text-white font-bold text-lg">
-                    {batchResult.correctAnswerText.join(", ")}
-                  </p>
-                </motion.div>
-              )}
-
-              {/* Show answer details for non-multiple choice questions */}
+              {/* Show answer details for non-multiple choice questions only */}
               {currentQuestion && batchResult && (
-                <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
+                <>
                   {currentQuestion.questionType === "ordering" && batchResult.playerAnswer && Array.isArray(batchResult.playerAnswer) ? (
-                    <div>
+                    <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
                       <p className="text-white/80 text-sm font-semibold mb-2">
                         {t("play.yourAnswer")}:
                       </p>
@@ -1404,7 +1387,7 @@ export default function PlayPage() {
                       </div>
                     </div>
                   ) : currentQuestion.questionType === "text_input" && batchResult.playerAnswer && typeof batchResult.playerAnswer === "string" ? (
-                    <div>
+                    <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
                       <p className="text-white/80 text-sm font-semibold mb-2">
                         {t("play.yourAnswer")}:
                       </p>
@@ -1413,7 +1396,7 @@ export default function PlayPage() {
                       </p>
                     </div>
                   ) : null}
-                </div>
+                </>
               )}
 
               {/* Motivational message */}
