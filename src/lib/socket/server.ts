@@ -790,6 +790,12 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   const currentQ = getCurrentQuestion(session);
   if (!currentQ) return;
 
+  // Mark question timer as finished so rejoin phase resolves to leaderboard/stats flow.
+  if (session.timer) {
+    clearTimeout(session.timer);
+    session.timer = null;
+  }
+
   io.to(`session:${session.sessionId}`).emit("game:time-up");
 
   const allPlayers = await db

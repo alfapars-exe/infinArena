@@ -43,6 +43,17 @@ function getChoiceShape(index: number): string {
   return CHOICE_SHAPES[index % CHOICE_SHAPES.length];
 }
 
+function isCorrectChoice(
+  stats: Pick<QuestionStats, "correctChoiceId" | "correctChoiceIds">,
+  choiceId: number
+): boolean {
+  const normalizedChoiceId = Number(choiceId);
+  if (Number(stats.correctChoiceId) === normalizedChoiceId) return true;
+  return (stats.correctChoiceIds || []).some(
+    (id) => Number(id) === normalizedChoiceId
+  );
+}
+
 type Phase = "lobby" | "countdown" | "question" | "stats" | "leaderboard" | "ended";
 
 export default function LiveControlPage() {
@@ -510,6 +521,7 @@ export default function LiveControlPage() {
                   const selection = (stats.choiceSelections || []).find(
                     (entry) => entry.choiceId === c.id
                   );
+                  const isCorrect = isCorrectChoice(stats, c.id);
                   const count = selection?.count ?? stats.choiceCounts[c.id] ?? 0;
                   const maxCount = Math.max(
                     ...currentQuestion.choices.map((choice) => {
@@ -530,15 +542,15 @@ export default function LiveControlPage() {
                         animate={{ height: `${Math.max(height, 5)}%` }}
                         transition={{ duration: 0.8, ease: "easeOut" }}
                         className={`${getChoiceColor(i)} w-full rounded-t-lg ${
-                          c.id === stats.correctChoiceId ? "ring-4 ring-white" : ""
+                          isCorrect ? "ring-4 ring-white" : ""
                         }`}
                       />
                       <span className={`text-sm font-medium truncate max-w-full ${
-                        (stats.correctChoiceIds || []).includes(c.id) || c.id === stats.correctChoiceId
+                        isCorrect
                           ? "text-green-400 font-bold"
                           : "text-white/60"
                       }`}>
-                        {((stats.correctChoiceIds || []).includes(c.id) || c.id === stats.correctChoiceId) && "✓ "}
+                        {isCorrect && "✓ "}
                         {c.choiceText}
                       </span>
                     </div>
@@ -567,14 +579,24 @@ export default function LiveControlPage() {
                       (entry) => entry.choiceId === choice.id
                     );
                     const selectedPlayers = selection?.players || [];
+                    const isCorrect = isCorrectChoice(stats, choice.id);
                     return (
                       <div
                         key={choice.id}
-                        className="bg-white/5 border border-white/10 rounded-xl p-3"
+                        className={`rounded-xl p-3 border ${
+                          isCorrect
+                            ? "bg-green-500/20 border-green-400/50"
+                            : "bg-white/5 border-white/10"
+                        }`}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <p className="text-white font-semibold text-sm">{choice.choiceText}</p>
-                          <span className="text-inf-yellow font-bold">{selectedPlayers.length}</span>
+                          <p className={`font-semibold text-sm ${isCorrect ? "text-green-200" : "text-white"}`}>
+                            {isCorrect ? "✓ " : ""}
+                            {choice.choiceText}
+                          </p>
+                          <span className={`font-bold ${isCorrect ? "text-green-300" : "text-inf-yellow"}`}>
+                            {selectedPlayers.length}
+                          </span>
                         </div>
                         {selectedPlayers.length === 0 ? (
                           <p className="text-white/40 text-xs">{t("live.noSelectionYet")}</p>
@@ -688,9 +710,7 @@ export default function LiveControlPage() {
                 {/* Answer distribution bars */}
                 <div className="space-y-3 mb-4">
                   {stats.choiceSelections.map((selection, idx) => {
-                    const isCorrect = 
-                      selection.choiceId === stats.correctChoiceId ||
-                      (stats.correctChoiceIds && stats.correctChoiceIds.includes(selection.choiceId));
+                    const isCorrect = isCorrectChoice(stats, selection.choiceId);
                     const percentage = stats.totalPlayers > 0
                       ? Math.round((selection.count / stats.totalPlayers) * 100)
                       : 0;

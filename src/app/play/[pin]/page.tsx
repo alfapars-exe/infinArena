@@ -237,6 +237,10 @@ export default function PlayPage() {
   const [didSubmit, setDidSubmit] = useState(false);
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const isSubmittingAnswerRef = useRef(false);
+  const currentQuestionMetaRef = useRef<{ id: number | null; serverStartTime: number }>({
+    id: null,
+    serverStartTime: 0,
+  });
   const questionStartTime = useRef<number>(0);
   const serverEndTimeRef = useRef<number>(0);
   const timerRafRef = useRef<number>(0);
@@ -372,6 +376,7 @@ export default function PlayPage() {
       } else if (serverPhase === "answered") {
         setPhase("answered");
       } else if (serverPhase === "question") {
+        // Keep local selection/input; game:question-start will reset only for truly new questions.
         setPhase("question");
       } else {
         setPhase("lobby");
@@ -410,6 +415,23 @@ export default function PlayPage() {
     s.on(
       "game:question-start",
       ({ question, questionNumber: qn, totalQuestions: tq, serverStartTime }) => {
+        const isDuplicateQuestionStart =
+          currentQuestionMetaRef.current.id === question.id &&
+          currentQuestionMetaRef.current.serverStartTime === serverStartTime;
+
+        // Re-sync can replay current question event; do not wipe input/selection for same question.
+        if (isDuplicateQuestionStart) {
+          setCurrentQuestion(question);
+          setQuestionNumber(qn);
+          setTotalQuestions(tq);
+          startSyncedTimer(serverStartTime, question.timeLimitSeconds);
+          return;
+        }
+
+        currentQuestionMetaRef.current = {
+          id: question.id,
+          serverStartTime,
+        };
         setCurrentQuestion(question);
         setQuestionNumber(qn);
         setTotalQuestions(tq);
@@ -596,7 +618,16 @@ export default function PlayPage() {
   }, [playerId, nickname, avatar, saveSession]);
 
   const submitAnswer = (choiceId: number) => {
-    if (!socket || !currentQuestion || selectedChoice !== null || didSubmit || isSubmittingAnswerRef.current) return;
+    if (
+      !socket ||
+      !currentQuestion ||
+      timeLeft <= 0 ||
+      selectedChoice !== null ||
+      didSubmit ||
+      isSubmittingAnswerRef.current
+    ) {
+      return;
+    }
 
     setSelectedChoice(choiceId);
     const responseTimeMs = Date.now() - questionStartTime.current;
@@ -609,13 +640,27 @@ export default function PlayPage() {
     isSubmittingAnswerRef.current = true;
   };
 
-  const toggleMultiChoice = (choiceId: number) => {
-    if (!currentQuestion || phase !== "question") return;
-    setSelectedChoices((prev) =>
-      prev.includes(choiceId)
-        ? prev.filter((id) => id !== choiceId)
-        : [...prev, choiceId]
-    );
+  const selectMultiChoice = (choiceId: number) => {
+    if (
+      !socket ||
+      !currentQuestion ||
+      phase !== "question" ||
+      timeLeft <= 0 ||
+      didSubmit ||
+      isSubmittingAnswerRef.current
+    ) {
+      return;
+    }
+
+    const responseTimeMs = Date.now() - questionStartTime.current;
+    setSelectedChoices([choiceId]);
+    socket.emit("player:answer", {
+      questionId: currentQuestion.id,
+      choiceIds: [choiceId],
+      responseTimeMs,
+    });
+    setIsSubmittingAnswer(true);
+    isSubmittingAnswerRef.current = true;
   };
 
   const moveOrderedChoice = (index: number, direction: -1 | 1) => {
@@ -641,7 +686,16 @@ export default function PlayPage() {
   }, [timeLeft, phase, currentQuestion, orderedChoices, didSubmit]);
 
   const submitAdvancedAnswer = () => {
-    if (!socket || !currentQuestion || phase !== "question" || didSubmit || isSubmittingAnswerRef.current) return;
+    if (
+      !socket ||
+      !currentQuestion ||
+      phase !== "question" ||
+      timeLeft <= 0 ||
+      didSubmit ||
+      isSubmittingAnswerRef.current
+    ) {
+      return;
+    }
     const responseTimeMs = Date.now() - questionStartTime.current;
 
     if (currentQuestion.questionType === "multi_select") {
@@ -902,7 +956,11 @@ export default function PlayPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 flex-1">
                 {currentQuestion.choices.map((choice, i) => {
                   const isSelected = selectedChoice === choice.id;
-                  const isDisabled = selectedChoice !== null || didSubmit || isSubmittingAnswer;
+                  const isDisabled =
+                    timeLeft <= 0 ||
+                    selectedChoice !== null ||
+                    didSubmit ||
+                    isSubmittingAnswer;
                   
                   return (
                     <motion.button
@@ -935,26 +993,23 @@ export default function PlayPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                   {currentQuestion.choices.map((choice, i) => {
                     const active = selectedChoices.includes(choice.id);
+                    const isDisabled = timeLeft <= 0 || didSubmit || isSubmittingAnswer;
                     return (
                       <button
                         key={choice.id}
-                        onClick={() => toggleMultiChoice(choice.id)}
+                        onClick={() => {
+                          if (!isDisabled) selectMultiChoice(choice.id);
+                        }}
+                        disabled={isDisabled}
                         className={`answer-btn ${getChoiceColor(i)} ${
                           active ? "ring-4 ring-white" : "opacity-90"
-                        }`}
+                        } ${isDisabled && !active ? "cursor-not-allowed opacity-50" : ""}`}
                       >
                         <span>{choice.choiceText}</span>
                       </button>
                     );
                   })}
                 </div>
-                <button
-                  onClick={submitAdvancedAnswer}
-                  disabled={selectedChoices.length === 0}
-                  className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
-                >
-                  {t("play.submit")}
-                </button>
               </div>
             )}
 
