@@ -28,7 +28,7 @@ jobs:
 
       - name: Generate build metadata for Space
         run: |
-          node scripts/write-build-meta.mjs
+          node scripts/write-build-meta.mjs --next
           if ! git diff --quiet -- build-meta.json; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -12,8 +12,10 @@ function getGitValue(command) {
 }
 
 const rawCommitCount = Number.parseInt(getGitValue("git rev-list --count HEAD"), 10);
-const commitCount = Number.isFinite(rawCommitCount) && rawCommitCount >= 0 ? rawCommitCount : 0;
-const commitDate = getGitValue("git log -1 --format=%cI");
+const currentCommitCount = Number.isFinite(rawCommitCount) && rawCommitCount >= 0 ? rawCommitCount : 0;
+const useNextCommit = process.argv.includes("--next");
+const commitCount = currentCommitCount + (useNextCommit ? 1 : 0);
+const commitDate = useNextCommit ? new Date().toISOString() : getGitValue("git log -1 --format=%cI");
 const commitSha = getGitValue("git rev-parse HEAD");
 
 const payload = {
@@ -25,4 +27,3 @@ const payload = {
 
 writeFileSync("build-meta.json", `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 console.log("build-meta.json updated", payload);
-

@@ -25,18 +25,23 @@ const readBuildMeta = () => {
 
 const SLOT_SIZE = 101;
 const buildMeta = readBuildMeta();
-const commitCountSource =
-  process.env.BUILD_COMMIT_COUNT ??
-  (buildMeta && typeof buildMeta.commitCount === "number"
-    ? String(buildMeta.commitCount)
-    : getGitValue("git rev-list --count HEAD"));
-const rawCommitCount = Number.parseInt(commitCountSource, 10);
-const commitCount = Number.isFinite(rawCommitCount) && rawCommitCount >= 0 ? rawCommitCount : 0;
-const commitDate =
-  process.env.BUILD_COMMIT_DATE ??
-  (buildMeta && typeof buildMeta.commitDate === "string" && buildMeta.commitDate
-    ? buildMeta.commitDate
-    : getGitValue("git log -1 --format=%cI"));
+const envCommitCount = Number.parseInt(process.env.BUILD_COMMIT_COUNT ?? "", 10);
+const gitCommitCount = Number.parseInt(getGitValue("git rev-list --count HEAD"), 10);
+const metaCommitCount =
+  buildMeta && typeof buildMeta.commitCount === "number" ? buildMeta.commitCount : Number.NaN;
+const commitCount =
+  Number.isFinite(envCommitCount) && envCommitCount >= 0
+    ? envCommitCount
+    : Number.isFinite(gitCommitCount) && gitCommitCount > 1
+    ? gitCommitCount
+    : Number.isFinite(metaCommitCount) && metaCommitCount >= 0
+    ? metaCommitCount
+    : Number.isFinite(gitCommitCount) && gitCommitCount >= 0
+    ? gitCommitCount
+    : 0;
+const commitDate = getGitValue("git log -1 --format=%cI")
+  || process.env.BUILD_COMMIT_DATE
+  || (buildMeta && typeof buildMeta.commitDate === "string" ? buildMeta.commitDate : "");
 const slotsPerMajor = SLOT_SIZE * SLOT_SIZE;
 const versionMajor = 1 + Math.floor(commitCount / slotsPerMajor);
 const remainder = commitCount % slotsPerMajor;
