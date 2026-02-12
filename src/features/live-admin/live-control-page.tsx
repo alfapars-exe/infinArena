@@ -256,19 +256,6 @@ export default function LiveControlPage() {
     }
   };
 
-  const getAnswerLabel = (
-    player: QuestionStats["answeredPlayers"][number]
-  ): string => {
-    if (player.textAnswer) return player.textAnswer;
-    if (player.orderedChoiceTexts.length > 0) {
-      return player.orderedChoiceTexts.join(" > ");
-    }
-    if (player.selectedChoiceTexts.length > 0) {
-      return player.selectedChoiceTexts.join(", ");
-    }
-    return "-";
-  };
-
   const questionBackgroundStyle =
     phase === "question" && currentQuestion?.backgroundUrl
       ? {
@@ -277,6 +264,9 @@ export default function LiveControlPage() {
           backgroundPosition: "center",
         }
       : undefined;
+
+  const correctPlayers = stats?.answeredPlayers?.filter((player) => player.isCorrect) ?? [];
+  const wrongPlayers = stats?.answeredPlayers?.filter((player) => !player.isCorrect) ?? [];
 
   return (
     <div
@@ -529,64 +519,131 @@ export default function LiveControlPage() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
             <h2 className="text-2xl font-bold text-white mb-6">{t("live.answerDistribution")}</h2>
 
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-6">
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 p-md-6 mb-6">
               <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-5 text-left">
                 <p className="text-white/60 text-xs mb-1">
                   {t("live.questionOf", { current: stats.questionNumber, total: stats.totalQuestions })}
                 </p>
-                <p className="text-white font-semibold text-lg">
+                <p className="text-white font-semibold text-base md:text-lg">
                   {currentQuestion.questionText}
                 </p>
               </div>
 
-              <div className="flex items-end justify-center gap-4 h-64">
-                {currentQuestion.choices.map((c, i) => {
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                {currentQuestion.choices.map((choice, index) => {
                   const selection = (stats.choiceSelections || []).find(
-                    (entry) => entry.choiceId === c.id
+                    (entry) => entry.choiceId === choice.id
                   );
-                  const isCorrect = isCorrectChoice(stats, c.id);
-                  const count = selection?.count ?? stats.choiceCounts[c.id] ?? 0;
-                  const maxCount = Math.max(
-                    ...currentQuestion.choices.map((choice) => {
-                      const item = (stats.choiceSelections || []).find(
-                        (entry) => entry.choiceId === choice.id
-                      );
-                      return item?.count ?? stats.choiceCounts[choice.id] ?? 0;
-                    }),
-                    1
-                  );
-                  const height = (count / maxCount) * 100;
+                  const isCorrect = isCorrectChoice(stats, choice.id);
+                  const count = selection?.count ?? stats.choiceCounts[choice.id] ?? 0;
+                  const percentage =
+                    stats.answeredCount > 0 ? Math.round((count / stats.answeredCount) * 100) : 0;
 
                   return (
-                    <div key={c.id} className="flex flex-col items-center gap-2 flex-1">
-                      <span className="text-white font-bold text-lg">{count}</span>
-                      <motion.div
-                        initial={{ height: 0 }}
-                        animate={{ height: `${Math.max(height, 5)}%` }}
-                        transition={{ duration: 0.8, ease: "easeOut" }}
-                        className={`${getChoiceColor(i)} w-full rounded-t-lg ${
-                          isCorrect ? "ring-4 ring-white" : ""
-                        }`}
-                      />
-                      <span className={`text-sm font-medium truncate max-w-full ${
+                    <motion.div
+                      key={choice.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.08 }}
+                      className={`rounded-xl border p-3 ${
                         isCorrect
-                          ? "text-green-400 font-bold"
-                          : "text-white/60"
-                      }`}>
-                        {isCorrect && "✓ "}
-                        {c.choiceText}
-                      </span>
-                    </div>
+                          ? "bg-green-500/20 border-green-400/50"
+                          : "bg-white/5 border-white/10"
+                      }`}
+                    >
+                      <p className={`text-3xl font-black ${isCorrect ? "text-green-300" : "text-white"}`}>
+                        {count}
+                      </p>
+                      <p className="text-[11px] text-white/60 uppercase tracking-wide">
+                        {count === 1 ? t("play.player") : t("play.players")}
+                      </p>
+                      <div
+                        className={`${getChoiceColor(index)} rounded-lg px-3 py-2 mt-2 flex items-center gap-2 justify-center text-white`}
+                      >
+                        <span className="font-black">{getChoiceShape(index)}</span>
+                        <span className="truncate text-sm font-semibold">{choice.choiceText}</span>
+                        {isCorrect && <span className="font-black">✓</span>}
+                      </div>
+                      <p className="text-[11px] text-white/60 mt-2">{percentage}%</p>
+                    </motion.div>
                   );
                 })}
               </div>
 
-              <div className="mt-4 text-white/60">
-                {stats.correctCount} / {stats.totalPlayers} {t("live.correct")}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                  <p className="text-white/60 text-xs mb-1">{t("play.answered")}</p>
+                  <p className="text-white font-bold text-xl">
+                    {stats.answeredCount}/{stats.totalPlayers}
+                  </p>
+                </div>
+                <div className="bg-green-500/20 border border-green-400/50 rounded-xl p-3">
+                  <p className="text-green-200 text-xs mb-1">{t("live.correct")}</p>
+                  <p className="text-green-300 font-black text-xl">
+                    {stats.correctCount}/{stats.totalPlayers}
+                  </p>
+                </div>
+                <div className="bg-red-500/10 border border-red-400/30 rounded-xl p-3">
+                  <p className="text-red-200 text-xs mb-1">{t("live.noAnswer")}</p>
+                  <p className="text-red-300 font-bold text-xl">
+                    {Math.max(stats.totalPlayers - stats.answeredCount, 0)}
+                  </p>
+                </div>
               </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5 text-left">
+                <div className="bg-green-500/10 border border-green-400/30 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-green-200 font-semibold text-sm">
+                      {t("live.correctPlayers")}
+                    </p>
+                    <span className="text-green-300 font-bold">{correctPlayers.length}</span>
+                  </div>
+                  {correctPlayers.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {correctPlayers.map((player) => (
+                        <span
+                          key={`correct-${player.playerId}`}
+                          className="bg-green-500/20 text-green-100 text-xs px-2 py-1 rounded-full"
+                        >
+                          {player.avatar} {player.nickname}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-white/40 text-xs">{t("live.noSelectionYet")}</p>
+                  )}
+                </div>
+                <div className="bg-red-500/10 border border-red-400/30 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-red-200 font-semibold text-sm">{t("live.wrongPlayers")}</p>
+                    <span className="text-red-300 font-bold">{wrongPlayers.length}</span>
+                  </div>
+                  {wrongPlayers.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {wrongPlayers.map((player) => (
+                        <span
+                          key={`wrong-${player.playerId}`}
+                          className="bg-red-500/20 text-red-100 text-xs px-2 py-1 rounded-full"
+                        >
+                          {player.avatar} {player.nickname}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-white/40 text-xs">{t("live.noSelectionYet")}</p>
+                  )}
+                </div>
+              </div>
+
               <div className="mt-1 text-white/60 text-sm">
-                {t("live.answeredStatus", {
+                {t("live.responseSummary", {
                   answered: stats.answeredCount,
+                  total: stats.totalPlayers,
+                })}{" "}
+                |{" "}
+                {t("live.correctSummary", {
+                  correct: stats.correctCount,
                   total: stats.totalPlayers,
                 })}
               </div>
@@ -660,38 +717,6 @@ export default function LiveControlPage() {
                       <p className="text-white/40 text-xs">{t("live.noSelectionYet")}</p>
                     )}
                   </div>
-                </div>
-              </div>
-
-              <div className="mt-6 text-left">
-                <h3 className="text-white font-semibold mb-3">{t("live.playerResponses")}</h3>
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {(stats.answeredPlayers || []).length === 0 ? (
-                    <p className="text-white/40 text-xs">{t("live.noSelectionYet")}</p>
-                  ) : (
-                    (stats.answeredPlayers || []).map((player) => (
-                      <div
-                        key={`answer-${player.playerId}`}
-                        className="bg-white/5 border border-white/10 rounded-lg p-2 flex items-center justify-between gap-3"
-                      >
-                        <div className="text-white/90 text-sm truncate">
-                          {player.avatar} {player.nickname}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-white/80 text-xs md:text-sm">
-                            {getAnswerLabel(player)}
-                          </p>
-                          <p
-                            className={`text-[11px] font-semibold ${
-                              player.isCorrect ? "text-green-300" : "text-red-300"
-                            }`}
-                          >
-                            {player.isCorrect ? "Correct" : "Wrong"}
-                          </p>
-                        </div>
-                      </div>
-                    ))
-                  )}
                 </div>
               </div>
             </div>
