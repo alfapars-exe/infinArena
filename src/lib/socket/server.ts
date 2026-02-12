@@ -1,4 +1,4 @@
-﻿import { Server as SocketIOServer } from "socket.io";
+import { Server as SocketIOServer } from "socket.io";
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -17,6 +17,7 @@ import { eq, and, asc, desc } from "drizzle-orm";
 import { calculateScore } from "@/lib/scoring";
 import { getRandomAvatar, resetAvatars } from "@/lib/avatars";
 import { ensureDbMigrations } from "@/lib/db/migrations";
+import { logger } from "@/lib/logger";
 import {
   createActiveSession,
   getActiveSession,
@@ -38,21 +39,11 @@ function normalizeText(value: string): string {
   return value.trim().toLocaleLowerCase("tr");
 }
 
-function sameIdSet(a: number[], b: number[]): boolean {
-  if (a.length !== b.length) return false;
-  const setA = new Set(a);
-  if (setA.size !== b.length) return false;
-  for (const id of b) {
-    if (!setA.has(id)) return false;
-  }
-  return true;
-}
-
 export function setupSocketHandlers(io: TypedServer) {
   void ensureDbMigrations();
 
   io.on("connection", (socket) => {
-    console.log(`Socket connected: ${socket.id}`);
+    logger.socket.debug(`Connected: ${socket.id}`);
 
     socket.on("admin:join-session", ({ sessionId }) => {
       const session = getActiveSession(sessionId);
@@ -60,10 +51,9 @@ export function setupSocketHandlers(io: TypedServer) {
         session.adminSocketId = socket.id;
       }
       socket.join(`session:${sessionId}`);
-      console.log(`Admin joined session ${sessionId}`);
+      logger.socket.info(`Admin joined session ${sessionId}`);
     });
 
-    // Admin makes session live (players can now join)
     socket.on("admin:start-live", async ({ sessionId }) => {
       try {
         await db
@@ -72,9 +62,9 @@ export function setupSocketHandlers(io: TypedServer) {
           .where(eq(quizSessions.id, sessionId));
 
         io.to(`session:${sessionId}`).emit("session:live");
-        console.log(`Session ${sessionId} is now live`);
+        logger.socket.info(`Session ${sessionId} is now live`);
       } catch (err) {
-        console.error("admin:start-live error", err);
+        logger.socket.error("admin:start-live error", err);
         socket.emit("error", { message: "Failed to start live" });
       }
     });
@@ -92,10 +82,8 @@ export function setupSocketHandlers(io: TypedServer) {
         }
 
         if (!dbSession.isLive) {
-          await db
-            .update(quizSessions)
-            .set({ isLive: true })
-            .where(eq(quizSessions.id, dbSession.id));
+          socket.emit("error", { message: "Session not live yet. Wait for the host." });
+          return;
         }
 
         const [existingPlayer] = await db
@@ -152,13 +140,14 @@ export function setupSocketHandlers(io: TypedServer) {
           avatar,
           playerCount: allPlayers.length,
         });
+
+        logger.socket.info(`Player "${nickname}" joined session ${dbSession.id}`);
       } catch (err) {
-        console.error("player:join error", err);
+        logger.socket.error("player:join error", err);
         socket.emit("error", { message: "Failed to join" });
       }
     });
 
-    // Player rejoin after disconnect/refresh
     socket.on("player:rejoin", async ({ pin, playerId, nickname }) => {
       try {
         const [dbSession] = await db
@@ -168,6 +157,11 @@ export function setupSocketHandlers(io: TypedServer) {
 
         if (!dbSession) {
           socket.emit("error", { message: "Session not found" });
+          return;
+        }
+
+        if (dbSession.status === "lobby" && !dbSession.isLive) {
+          socket.emit("error", { message: "Session not live yet. Wait for the host." });
           return;
         }
 
@@ -187,7 +181,6 @@ export function setupSocketHandlers(io: TypedServer) {
           return;
         }
 
-        // Update player connection
         await db
           .update(players)
           .set({ isConnected: true, socketId: socket.id })
@@ -201,16 +194,22 @@ export function setupSocketHandlers(io: TypedServer) {
           .from(quizzes)
           .where(eq(quizzes.id, dbSession.quizId));
 
-        // Determine current phase
-        let phase = "lobby";
-        if (dbSession.status === "in_progress") {
-          phase = "question";
-        } else if (dbSession.status === "completed") {
+        const session = getActiveSession(dbSession.id);
+        let phase: "lobby" | "question" | "answered" | "leaderboard" | "ended" = "lobby";
+        if (dbSession.status === "completed") {
           phase = "ended";
+        } else if (dbSession.status === "in_progress") {
+          if (session && getCurrentQuestion(session)) {
+            phase = session.timer
+              ? session.answeredPlayerIds.has(player.id)
+                ? "answered"
+                : "question"
+              : "leaderboard";
+          } else {
+            phase = "question";
+          }
         }
 
-        // Update connected count
-        const session = getActiveSession(dbSession.id);
         if (session) {
           const connected = await db
             .select()
@@ -232,8 +231,59 @@ export function setupSocketHandlers(io: TypedServer) {
           totalScore: player.totalScore,
           phase,
         });
+
+        if (session) {
+          const currentQ = getCurrentQuestion(session);
+          if (currentQ && (phase === "question" || phase === "answered")) {
+            const publicChoices =
+              currentQ.questionType === "text_input" ? [] : currentQ.choices;
+
+            socket.emit("game:question-start", {
+              question: {
+                id: currentQ.id,
+                questionText: currentQ.questionText,
+                questionType: currentQ.questionType,
+                timeLimitSeconds: currentQ.timeLimitSeconds,
+                basePoints: currentQ.basePoints,
+                deductionPoints: currentQ.deductionPoints,
+                deductionInterval: currentQ.deductionInterval,
+                mediaUrl: currentQ.mediaUrl,
+                backgroundUrl: currentQ.backgroundUrl,
+                choices: publicChoices,
+              },
+              questionNumber: session.currentQuestionIndex + 1,
+              totalQuestions: session.questions.length,
+              serverStartTime: session.questionStartTime,
+            });
+
+            if (phase === "answered") {
+              socket.emit("game:answer-ack", { received: true });
+            }
+          } else if (phase === "leaderboard") {
+            const allPlayers = (await db
+              .select()
+              .from(players)
+              .where(eq(players.sessionId, session.sessionId))
+              .orderBy(desc(players.totalScore))) as any[];
+
+            const rankings: PlayerRanking[] = allPlayers.map(
+              (p: any, i: number) => ({
+                playerId: p.id,
+                nickname: p.nickname,
+                avatar: p.avatar || "🎮",
+                totalScore: p.totalScore,
+                rank: i + 1,
+                streak: session.playerStreaks.get(p.id) || 0,
+              })
+            );
+
+            socket.emit("game:leaderboard", { rankings });
+          }
+        }
+
+        logger.socket.info(`Player "${nickname}" rejoined session ${dbSession.id}`);
       } catch (err) {
-        console.error("player:rejoin error", err);
+        logger.socket.error("player:rejoin error", err);
         socket.emit("error", { message: "Failed to rejoin" });
       }
     });
@@ -331,7 +381,8 @@ export function setupSocketHandlers(io: TypedServer) {
           .set({ status: "in_progress", startedAt: nowSql })
           .where(eq(quizSessions.id, sessionId));
 
-        // 3-2-1 countdown
+        logger.socket.info(`Quiz started for session ${sessionId} with ${questionsWithChoices.length} questions`);
+
         for (let i = 3; i >= 1; i--) {
           io.to(`session:${sessionId}`).emit("game:countdown", { count: i });
           await sleep(1000);
@@ -339,7 +390,7 @@ export function setupSocketHandlers(io: TypedServer) {
 
         await sendNextQuestion(io, activeSession);
       } catch (err) {
-        console.error("admin:start-quiz error", err);
+        logger.socket.error("admin:start-quiz error", err);
         socket.emit("error", { message: "Failed to start quiz" });
       }
     });
@@ -397,7 +448,7 @@ export function setupSocketHandlers(io: TypedServer) {
 
         let isCorrect = false;
         let persistedChoiceId: number | null = null;
-        let partialRatio = 1; // 1 = full credit, <1 = partial credit
+        let partialRatio = 1;
 
         if (
           currentQ.questionType === "multiple_choice" ||
@@ -416,7 +467,6 @@ export function setupSocketHandlers(io: TypedServer) {
             return;
           }
           persistedChoiceId = safeChoiceIds[0] || null;
-          // Partial credit: correct if at least one correct answer and no wrong answers
           const correctSet = new Set(currentQ.correctChoiceIds);
           const selectedCorrect = safeChoiceIds.filter((id) => correctSet.has(id)).length;
           const selectedWrong = safeChoiceIds.filter((id) => !correctSet.has(id)).length;
@@ -447,7 +497,6 @@ export function setupSocketHandlers(io: TypedServer) {
           persistedChoiceId = matchedChoice?.id || null;
         }
 
-        // Update streak
         let currentStreak = session.playerStreaks.get(playerInfo.playerId) || 0;
         if (isCorrect) {
           currentStreak++;
@@ -456,7 +505,6 @@ export function setupSocketHandlers(io: TypedServer) {
         }
         session.playerStreaks.set(playerInfo.playerId, currentStreak);
 
-        // Calculate base points (with partial credit for multi_select)
         let points = calculateScore(
           {
             basePoints: currentQ.basePoints,
@@ -471,7 +519,6 @@ export function setupSocketHandlers(io: TypedServer) {
           points = Math.round(points * partialRatio);
         }
 
-        // Streak bonus
         let streakBonus = 0;
         if (isCorrect && currentStreak >= 5) {
           streakBonus = Math.round(points * 0.2);
@@ -480,7 +527,6 @@ export function setupSocketHandlers(io: TypedServer) {
         }
         points += streakBonus;
 
-        // Save to DB
         await db.insert(playerAnswers).values({
           playerId: playerInfo.playerId,
           questionId,
@@ -503,7 +549,6 @@ export function setupSocketHandlers(io: TypedServer) {
           .set({ totalScore: newTotal })
           .where(eq(players.id, playerInfo.playerId));
 
-        // Store pending answer - don't send result yet
         session.pendingAnswers.set(playerInfo.playerId, {
           playerId: playerInfo.playerId,
           socketId: socket.id,
@@ -519,10 +564,8 @@ export function setupSocketHandlers(io: TypedServer) {
           responseTimeMs: actualResponseTime,
         });
 
-        // Send acknowledgment only (not the result)
         socket.emit("game:answer-ack", { received: true });
 
-        // Check if all connected players have answered -> skip timer
         if (session.answeredPlayerIds.size >= session.totalConnectedPlayers) {
           if (session.timer) {
             clearTimeout(session.timer);
@@ -531,7 +574,7 @@ export function setupSocketHandlers(io: TypedServer) {
           await handleTimeUp(io, session);
         }
       } catch (err) {
-        console.error("player:answer error", err);
+        logger.socket.error("player:answer error", err);
         socket.emit("error", { message: "Failed to process answer" });
       }
       }
@@ -565,10 +608,18 @@ export function setupSocketHandlers(io: TypedServer) {
               )
             );
 
-          // Update connected count in active session
           const session = getActiveSession(playerInfo.sessionId);
           if (session) {
             session.totalConnectedPlayers = connected.length;
+            if (
+              session.timer &&
+              session.answeredPlayerIds.size > 0 &&
+              session.answeredPlayerIds.size >= session.totalConnectedPlayers
+            ) {
+              clearTimeout(session.timer);
+              session.timer = null;
+              await handleTimeUp(io, session);
+            }
           }
 
           if (player) {
@@ -583,11 +634,11 @@ export function setupSocketHandlers(io: TypedServer) {
           }
 
           removePlayerSocket(socket.id);
+          logger.socket.debug(`Player disconnected: ${socket.id}`);
         }
       } catch (err) {
-        console.error("disconnect error", err);
+        logger.socket.error("disconnect error", err);
       }
-      console.log(`Socket disconnected: ${socket.id}`);
     });
   });
 }
@@ -610,7 +661,6 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
   const question = session.questions[session.currentQuestionIndex];
   session.questionStartTime = Date.now();
 
-  // Update connected player count
   const connected = await db
     .select()
     .from(players)
@@ -648,6 +698,8 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
     serverStartTime: session.questionStartTime,
   });
 
+  logger.socket.info(`Question ${session.currentQuestionIndex + 1}/${session.questions.length} sent for session ${session.sessionId}`);
+
   session.timer = setTimeout(() => {
     handleTimeUp(io, session);
   }, question.timeLimitSeconds * 1000);
@@ -659,16 +711,13 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   const currentQ = getCurrentQuestion(session);
   if (!currentQ) return;
 
-  // Send time-up signal
   io.to(`session:${session.sessionId}`).emit("game:time-up");
 
-  // Now send batch results to each player
+  // Send batch results to each player who answered
   for (const [, answer] of Array.from(session.pendingAnswers)) {
     let playerAnswerDisplay: any = null;
 
-    // Prepare player answer for display based on question type
     if (currentQ.questionType === "ordering") {
-      // Get choice text for ordered choices
       const choiceTexts = answer.orderedChoiceIds
         .map((choiceId) => {
           const choice = currentQ.choices.find((c) => c.id === choiceId);
@@ -695,7 +744,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     });
   }
 
-  // For players who didn't answer, send empty result
+  // Send empty result to unanswered players
   const allPlayers = await db
     .select()
     .from(players)
@@ -720,11 +769,11 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
           .filter((c) => currentQ.correctChoiceIds.includes(c.id))
           .map((c) => c.choiceText),
       });
-      // Reset streak for non-answerers
       session.playerStreaks.set(p.id, 0);
     }
   }
 
+  // Build stats for admin
   const correctCount = Array.from(session.pendingAnswers.values()).filter(
     (answer) => answer.isCorrect
   ).length;
@@ -735,11 +784,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   >(
     allPlayers.map((p: any) => [
       p.id,
-      {
-        playerId: p.id,
-        nickname: p.nickname,
-        avatar: p.avatar || "🎮",
-      },
+      { playerId: p.id, nickname: p.nickname, avatar: p.avatar || "🎮" },
     ])
   );
 
@@ -757,11 +802,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   >(
     currentQ.choices.map((c) => [
       c.id,
-      {
-        choiceId: c.id,
-        choiceText: c.choiceText,
-        players: [] as { playerId: number; nickname: string; avatar: string }[],
-      },
+      { choiceId: c.id, choiceText: c.choiceText, players: [] },
     ])
   );
 
@@ -780,19 +821,17 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
         )
       );
 
-      for (const choiceId of selectedChoiceIds) {
-        const bucket = choiceSelectionBuckets.get(choiceId);
-        if (bucket) {
-          bucket.players.push(player);
-        }
+      for (const cid of selectedChoiceIds) {
+        const bucket = choiceSelectionBuckets.get(cid);
+        if (bucket) bucket.players.push(player);
       }
 
       const selectedChoiceTexts = selectedChoiceIds
-        .map((choiceId) => choiceTextById.get(choiceId))
+        .map((cid) => choiceTextById.get(cid))
         .filter((text): text is string => Boolean(text));
 
       const orderedChoiceTexts = answer.orderedChoiceIds
-        .map((choiceId) => choiceTextById.get(choiceId))
+        .map((cid) => choiceTextById.get(cid))
         .filter((text): text is string => Boolean(text));
 
       return [
@@ -825,7 +864,6 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     })
   );
 
-  // Send stats to admin
   io.to(session.adminSocketId).emit("game:question-stats", {
     choiceSelections,
     unansweredPlayers,
@@ -883,7 +921,7 @@ async function endQuiz(io: TypedServer, sessionId: number) {
       .where(eq(players.sessionId, sessionId))
       .orderBy(desc(players.totalScore));
 
-      const finalRankings: PlayerRanking[] = allPlayers.map((p: any, i: number) => ({
+    const finalRankings: PlayerRanking[] = allPlayers.map((p: any, i: number) => ({
       playerId: p.id,
       nickname: p.nickname,
       avatar: p.avatar || "🎮",
@@ -898,5 +936,7 @@ async function endQuiz(io: TypedServer, sessionId: number) {
     if (session.timer) clearTimeout(session.timer);
     removeActiveSession(sessionId);
     resetAvatars();
+
+    logger.socket.info(`Quiz ended for session ${sessionId}, ${finalRankings.length} players`);
   }
 }

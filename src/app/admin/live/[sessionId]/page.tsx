@@ -26,7 +26,6 @@ const CHOICE_COLORS = [
   "bg-slate-600",
 ];
 const CHOICE_SHAPES = ["A", "B", "C", "D"];
-
 const MUSIC_STORAGE_KEY = "infinarena:music";
 
 type StoredMusic = {
@@ -44,7 +43,7 @@ function getChoiceShape(index: number): string {
   return CHOICE_SHAPES[index % CHOICE_SHAPES.length];
 }
 
-type Phase = "pre-live" | "lobby" | "countdown" | "question" | "stats" | "leaderboard" | "ended";
+type Phase = "lobby" | "countdown" | "question" | "stats" | "leaderboard" | "ended";
 
 export default function LiveControlPage() {
   const { t } = useTranslation();
@@ -52,7 +51,7 @@ export default function LiveControlPage() {
   const pin = params?.sessionId ?? "";
 
   const [socket, setSocket] = useState<TypedSocket | null>(null);
-  const [phase, setPhase] = useState<Phase>("pre-live");
+  const [phase, setPhase] = useState<Phase>("lobby");
   const [lobbyPlayers, setLobbyPlayers] = useState<
     { id: number; nickname: string; avatar: string }[]
   >([]);
@@ -75,6 +74,8 @@ export default function LiveControlPage() {
   const [musicIsRepeat, setMusicIsRepeat] = useState(false);
   const [musicIsPlaying, setMusicIsPlaying] = useState(false);
   const musicPlayerRef = useRef<any>(null);
+  const shouldAutoGoLiveRef = useRef(false);
+  const hasTriggeredLiveRef = useRef(false);
 
 
   const pushNotification = (message: string) => {
@@ -93,36 +94,12 @@ export default function LiveControlPage() {
         if (data.sessionId) {
           setSessionId(data.sessionId);
           setQuizTitle(data.quizTitle);
-          if (data.isLive) {
-            setPhase("lobby");
-          }
+          setPhase("lobby");
+          shouldAutoGoLiveRef.current = !data.isLive;
+          hasTriggeredLiveRef.current = false;
         }
       });
   }, [pin]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if ((window as any).YT) return;
-
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.head.appendChild(tag);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(MUSIC_STORAGE_KEY);
-      if (!raw) return;
-      const stored = JSON.parse(raw) as StoredMusic;
-      if (typeof stored.volume === "number") setMusicVolume(stored.volume);
-      if (typeof stored.isRepeat === "boolean") setMusicIsRepeat(stored.isRepeat);
-      if (typeof stored.isPlaying === "boolean") setMusicIsPlaying(stored.isPlaying);
-      if (stored.youtubeVideoId) setMusicVideoId(stored.youtubeVideoId);
-    } catch {
-      // Ignore storage parse errors.
-    }
-  }, []);
 
   // Socket connection
   useEffect(() => {
@@ -132,6 +109,10 @@ export default function LiveControlPage() {
     s.on("connect", () => {
       if (sessionId) {
         s.emit("admin:join-session", { sessionId });
+        if (shouldAutoGoLiveRef.current && !hasTriggeredLiveRef.current) {
+          hasTriggeredLiveRef.current = true;
+          s.emit("admin:start-live", { sessionId });
+        }
       }
     });
 
@@ -209,82 +190,12 @@ export default function LiveControlPage() {
   useEffect(() => {
     if (socket && sessionId) {
       socket.emit("admin:join-session", { sessionId });
+      if (shouldAutoGoLiveRef.current && !hasTriggeredLiveRef.current) {
+        hasTriggeredLiveRef.current = true;
+        socket.emit("admin:start-live", { sessionId });
+      }
     }
   }, [socket, sessionId]);
-
-  const initializeMusicPlayer = (vid: string) => {
-    if (!(window as any).YT?.Player) return false;
-    const mountNode = document.getElementById("yt-player-live");
-    if (!mountNode) return false;
-
-    if (musicPlayerRef.current && typeof musicPlayerRef.current.destroy === "function") {
-      musicPlayerRef.current.destroy();
-    }
-
-    musicPlayerRef.current = new (window as any).YT.Player("yt-player-live", {
-      videoId: vid,
-      playerVars: {
-        autoplay: 0,
-        loop: musicIsRepeat ? 1 : 0,
-        playlist: musicIsRepeat ? vid : undefined,
-      },
-      events: {
-        onReady: (e: any) => {
-          if (typeof e?.target?.setVolume === "function") {
-            e.target.setVolume(musicVolume);
-          }
-          if (musicIsPlaying && typeof e?.target?.playVideo === "function") {
-            e.target.playVideo();
-          }
-        },
-        onStateChange: (e: any) => {
-          if (e.data === 0 && musicIsRepeat && typeof e?.target?.playVideo === "function") {
-            e.target.playVideo();
-          }
-        },
-      },
-    });
-    return true;
-  };
-
-  useEffect(() => {
-    if (!musicVideoId) return;
-    let attempts = 0;
-    const maxAttempts = 30;
-
-    const tryInit = () => {
-      if (initializeMusicPlayer(musicVideoId)) return;
-      attempts += 1;
-      if (attempts < maxAttempts) {
-        setTimeout(tryInit, 100);
-      }
-    };
-
-    setTimeout(tryInit, 0);
-  }, [musicVideoId, musicIsRepeat]);
-
-  useEffect(() => {
-    return () => {
-      if (musicPlayerRef.current && typeof musicPlayerRef.current.destroy === "function") {
-        musicPlayerRef.current.destroy();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const payload: StoredMusic = {
-      youtubeVideoId: musicVideoId,
-      volume: musicVolume,
-      isRepeat: musicIsRepeat,
-      isPlaying: musicIsPlaying,
-    };
-    try {
-      window.localStorage.setItem(MUSIC_STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-      // Ignore storage write errors.
-    }
-  }, [musicVideoId, musicVolume, musicIsRepeat, musicIsPlaying]);
 
   // Server-synced timer refs
   const serverEndTimeRef = useRef<number>(0);
@@ -304,40 +215,20 @@ export default function LiveControlPage() {
     timerRafRef.current = requestAnimationFrame(tick);
   }, []);
 
-  const toggleMusicPlay = () => {
-    if (!musicPlayerRef.current) return;
-    const canPause = typeof musicPlayerRef.current.pauseVideo === "function";
-    const canPlay = typeof musicPlayerRef.current.playVideo === "function";
-    if (!canPause || !canPlay) return;
-
-    if (musicIsPlaying) {
-      musicPlayerRef.current.pauseVideo();
-      setMusicIsPlaying(false);
-    } else {
-      musicPlayerRef.current.playVideo();
-      setMusicIsPlaying(true);
-    }
-  };
-
-  const changeMusicVolume = (v: number) => {
-    setMusicVolume(v);
-    if (musicPlayerRef.current && typeof musicPlayerRef.current.setVolume === "function") {
-      musicPlayerRef.current.setVolume(v);
-    }
-  };
-
   useEffect(() => {
     return () => {
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
     };
   }, []);
 
-
-  const startLive = () => {
-    if (socket && sessionId) {
-      socket.emit("admin:start-live", { sessionId });
-    }
+  const toggleMusicPlay = () => {
+    setMusicIsPlaying((prev) => !prev);
   };
+
+  const changeMusicVolume = (volume: number) => {
+    setMusicVolume(volume);
+  };
+
 
   const startQuiz = () => {
     if (socket && sessionId) {
@@ -475,32 +366,6 @@ export default function LiveControlPage() {
             ))}
           </AnimatePresence>
         </div>
-
-        {/* Pre-live: admin must click Start Live first */}
-        {phase === "pre-live" && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 p-md-5 mb-4 mb-md-6">
-              <h2 className="text-2xl font-bold text-white mb-4">
-                {t("live.readyToGoLive")}
-              </h2>
-              <p className="text-white/60 mb-2">
-                {t("live.pinCode")}: <span className="text-4xl font-black text-white">{pin}</span>
-              </p>
-              <p className="text-white/40 text-sm mb-8">
-                {t("live.playersCannotJoin")}
-              </p>
-
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={startLive}
-                className="bg-inf-green hover:bg-green-700 text-white font-bold py-4 px-12 rounded-xl text-xl transition-colors shadow-xl"
-              >
-                {t("live.startLive")}
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
 
         {/* Lobby */}
         {phase === "lobby" && (
@@ -640,6 +505,15 @@ export default function LiveControlPage() {
             <h2 className="text-2xl font-bold text-white mb-6">{t("live.answerDistribution")}</h2>
 
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-6">
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-5 text-left">
+                <p className="text-white/60 text-xs mb-1">
+                  {t("live.questionOf", { current: stats.questionNumber, total: stats.totalQuestions })}
+                </p>
+                <p className="text-white font-semibold text-lg">
+                  {currentQuestion.questionText}
+                </p>
+              </div>
+
               <div className="flex items-end justify-center gap-4 h-64">
                 {currentQuestion.choices.map((c, i) => {
                   const selection = (stats.choiceSelections || []).find(
@@ -958,4 +832,3 @@ export default function LiveControlPage() {
     </div>
   );
 }
-

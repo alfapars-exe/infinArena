@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useI18n, useTranslation } from "@/lib/i18n";
+import { MusicProvider } from "@/lib/music-context";
 
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -43,54 +44,56 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   if (!session) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      {/* Top Navigation */}
-      <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
-        <div className="container-fluid app-container px-3 px-md-4 relative">
-          <div className="d-flex flex-wrap flex-md-nowrap align-items-center justify-content-between gap-2 py-2 py-md-0 min-h-[64px]">
-            <Link href="/infinarenapanel" className="flex items-center gap-3">
-              <span className="text-2xl font-black text-white">infinArena</span>
-              <span className="bg-white/20 text-white/80 text-xs font-medium px-2 py-1 rounded">
-                ADMIN
-              </span>
-            </Link>
-
-            <div className="d-flex align-items-center flex-wrap gap-2 gap-md-4 justify-content-end">
-              <Link
-                href="/infinarenapanel"
-                className="text-white/70 hover:text-white transition-colors text-sm font-medium"
-              >
-                {t("nav.dashboard")}
+    <MusicProvider>
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+        {/* Top Navigation */}
+        <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
+          <div className="container-fluid app-container px-3 px-md-4 relative">
+            <div className="d-flex flex-wrap flex-md-nowrap align-items-center justify-content-between gap-2 py-2 py-md-0 min-h-[64px]">
+              <Link href="/infinarenapanel" className="flex items-center gap-3">
+                <span className="text-2xl font-black text-white">infinArena</span>
+                <span className="bg-white/20 text-white/80 text-xs font-medium px-2 py-1 rounded">
+                  ADMIN
+                </span>
               </Link>
-              <LanguageToggle />
-              <span className="text-white/50 text-sm">
-                {session.user?.name}
-              </span>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="text-white/50 hover:text-white transition-colors text-sm bg-transparent border-0 p-0"
-              >
-                {t("nav.logout")}
-              </button>
+
+              <div className="d-flex align-items-center flex-wrap gap-2 gap-md-4 justify-content-end">
+                <Link
+                  href="/infinarenapanel"
+                  className="text-white/70 hover:text-white transition-colors text-sm font-medium"
+                >
+                  {t("nav.dashboard")}
+                </Link>
+                <LanguageToggle />
+                <span className="text-white/50 text-sm">
+                  {session.user?.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="text-white/50 hover:text-white transition-colors text-sm bg-transparent border-0 p-0"
+                >
+                  {t("nav.logout")}
+                </button>
+              </div>
+            </div>
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+              <img
+                src="/logo.png"
+                alt="infinArena"
+                className="h-8 md:h-9 w-auto"
+              />
             </div>
           </div>
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-            <img
-              src="/logo.png"
-              alt="infinArena"
-              className="h-8 md:h-9 w-auto"
-            />
-          </div>
-        </div>
-      </nav>
+        </nav>
 
-      <main className="container-fluid app-container px-3 px-md-4 py-3 py-md-4 py-lg-5">
-        <div className="row">
-          <div className="col-12">{children}</div>
-        </div>
-      </main>
-    </div>
+        <main className="container-fluid app-container px-3 px-md-4 py-3 py-md-4 py-lg-5">
+          <div className="row">
+            <div className="col-12">{children}</div>
+          </div>
+        </main>
+      </div>
+    </MusicProvider>
   );
 }
 

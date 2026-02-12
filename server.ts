@@ -9,11 +9,11 @@ const app = next({ dev });
 const handle = app.getRequestHandler();
 
 process.on("unhandledRejection", (err) => {
-  console.error("[fatal] Unhandled rejection:", err);
+  console.error("[Startup] FATAL: Unhandled rejection:", err);
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("[fatal] Uncaught exception:", err);
+  console.error("[Startup] FATAL: Uncaught exception:", err);
   process.exit(1);
 });
 
@@ -21,22 +21,28 @@ app
   .prepare()
   .then(async () => {
     try {
+      // Dynamic import to avoid circular dependency issues
+      const { createLogger } = await import("./src/lib/logger");
+      const log = {
+        startup: createLogger("Startup"),
+        storage: createLogger("Storage"),
+        db: createLogger("DB"),
+      };
+
       const { ensureStorageReady } = await import("./src/lib/storage");
       const storageStatus = ensureStorageReady();
-      console.log(`[storage] Root: ${storageStatus.storageRoot}`);
-      console.log(
-        `[storage] Persistent storage required: ${storageStatus.requirePersistentStorage}`
-      );
+      log.storage.info(`Root: ${storageStatus.storageRoot}`);
+      log.storage.info(`Persistent storage required: ${storageStatus.requirePersistentStorage}`);
 
       const { ensureDbMigrations } = await import("./src/lib/db/migrations");
       await ensureDbMigrations();
-      console.log("[db] Migrations completed");
+      log.db.info("Migrations completed");
 
       try {
         await import("./src/lib/db/seed");
-        console.log("[db] Seed initialization completed");
+        log.db.info("Seed initialization completed");
       } catch (err) {
-        console.warn("[db] Seed initialization warning:", err);
+        log.db.warn("Seed initialization warning", err);
       }
 
       const { setupSocketHandlers } = await import("./src/lib/socket/server");
@@ -53,16 +59,16 @@ app
       setupSocketHandlers(io as any);
 
       httpServer.listen(port, "0.0.0.0", () => {
-        console.log(`> Ready on http://0.0.0.0:${port}`);
-        console.log("> Admin panel: /infinarenapanel/login");
-        console.log("> Player entry: /");
+        log.startup.info(`Ready on http://0.0.0.0:${port}`);
+        log.startup.info("Admin panel: /infinarenapanel/login");
+        log.startup.info("Player entry: /");
       });
     } catch (err) {
-      console.error("[startup] Failed to initialize:", err);
+      console.error("[Startup] ERROR: Failed to initialize:", err);
       process.exit(1);
     }
   })
   .catch((err) => {
-    console.error("[startup] Next.js prepare failed:", err);
+    console.error("[Startup] ERROR: Next.js prepare failed:", err);
     process.exit(1);
   });

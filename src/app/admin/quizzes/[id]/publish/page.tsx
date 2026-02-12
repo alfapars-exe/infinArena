@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
+import { useMusicPlayer } from "@/lib/music-context";
 
 interface SessionInfo {
   id: number;
@@ -53,6 +54,20 @@ export default function PublishPage() {
   const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const quizId = params?.id ?? "";
+  
+  // Use music context instead of local state
+  const music = useMusicPlayer();
+  const youtubeVideoId = music.youtubeVideoId;
+  const isPlaying = music.isPlaying;
+  const volume = music.volume;
+  const isRepeat = music.isRepeat;
+  const togglePlay = music.togglePlay;
+  const changeVolume = music.changeVolume;
+  const setIsRepeat = (next: boolean) => {
+    if (next !== music.isRepeat) {
+      music.toggleRepeat();
+    }
+  };
 
   const [quiz, setQuiz] = useState<any>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -63,67 +78,12 @@ export default function PublishPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [customSlug, setCustomSlug] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(50);
-  const [isRepeat, setIsRepeat] = useState(false);
   const [showMusicInput, setShowMusicInput] = useState(false);
   const [terminatingSessionId, setTerminatingSessionId] = useState<number | null>(null);
-  const ytPlayerRef = useRef<any>(null);
-  const activeVideoIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     fetchData();
   }, [quizId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(MUSIC_STORAGE_KEY);
-      if (!raw) return;
-      const stored = JSON.parse(raw) as StoredMusic;
-      if (stored.youtubeUrl) setYoutubeUrl(stored.youtubeUrl);
-      if (typeof stored.volume === "number") setVolume(stored.volume);
-      if (typeof stored.isRepeat === "boolean") setIsRepeat(stored.isRepeat);
-      if (typeof stored.isPlaying === "boolean") setIsPlaying(stored.isPlaying);
-      if (stored.youtubeVideoId) setYoutubeVideoId(stored.youtubeVideoId);
-    } catch {
-      // Ignore storage parse errors.
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if ((window as any).YT) return;
-
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    document.head.appendChild(tag);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.destroy === "function") {
-        ytPlayerRef.current.destroy();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const payload: StoredMusic = {
-      youtubeUrl,
-      youtubeVideoId,
-      volume,
-      isRepeat,
-      isPlaying,
-    };
-    try {
-      window.localStorage.setItem(MUSIC_STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-      // Ignore storage write errors.
-    }
-  }, [youtubeUrl, youtubeVideoId, volume, isRepeat, isPlaying]);
 
   const fetchData = async () => {
     const [quizRes, resultsRes] = await Promise.all([
@@ -211,106 +171,11 @@ export default function PublishPage() {
     }
   };
 
-  const extractVideoId = (url: string): string | null => {
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-      /^([a-zA-Z0-9_-]{11})$/,
-    ];
-    for (const p of patterns) {
-      const m = url.match(p);
-      if (m) return m[1];
-    }
-    return null;
-  };
-
-  const initializePlayer = (vid: string) => {
-    if (!(window as any).YT?.Player) return false;
-    const mountNode = document.getElementById("yt-player-publish");
-    if (!mountNode) return false;
-
-    if (ytPlayerRef.current && typeof ytPlayerRef.current.destroy === "function") {
-      ytPlayerRef.current.destroy();
-    }
-
-    ytPlayerRef.current = new (window as any).YT.Player("yt-player-publish", {
-      videoId: vid,
-      playerVars: {
-        autoplay: 1,
-        loop: isRepeat ? 1 : 0,
-        playlist: isRepeat ? vid : undefined,
-      },
-      events: {
-        onReady: (e: any) => {
-          if (typeof e?.target?.setVolume === "function") {
-            e.target.setVolume(volume);
-          }
-          if (typeof e?.target?.playVideo === "function") {
-            e.target.playVideo();
-          }
-          setIsPlaying(true);
-        },
-        onStateChange: (e: any) => {
-          if (e.data === 0 && isRepeat && typeof e?.target?.playVideo === "function") {
-            e.target.playVideo();
-          }
-        },
-      },
-    });
-    activeVideoIdRef.current = vid;
-    return true;
-  };
-
-  useEffect(() => {
-    if (!youtubeVideoId) return;
-    let attempts = 0;
-    const maxAttempts = 30;
-
-    const tryInit = () => {
-      if (initializePlayer(youtubeVideoId)) return;
-      attempts += 1;
-      if (attempts < maxAttempts) {
-        setTimeout(tryInit, 100);
-      }
-    };
-
-    setTimeout(tryInit, 0);
-  }, [youtubeVideoId, isRepeat]);
-
   const loadYouTube = () => {
-    const vid = extractVideoId(youtubeUrl);
+    const vid = music.extractVideoId(youtubeUrl);
     if (!vid) return;
-
-    if (activeVideoIdRef.current === vid && ytPlayerRef.current) {
-      if (typeof ytPlayerRef.current.playVideo === "function") {
-        ytPlayerRef.current.playVideo();
-      }
-      setIsPlaying(true);
-      return;
-    }
-
-    setYoutubeVideoId(vid);
+    music.changeVideo(vid);
     setShowMusicInput(false);
-  };
-
-  const togglePlay = () => {
-    if (!ytPlayerRef.current) return;
-    const canPause = typeof ytPlayerRef.current.pauseVideo === "function";
-    const canPlay = typeof ytPlayerRef.current.playVideo === "function";
-    if (!canPause || !canPlay) return;
-
-    if (isPlaying) {
-      ytPlayerRef.current.pauseVideo();
-    } else {
-      ytPlayerRef.current.playVideo();
-    }
-    setIsPlaying(!isPlaying);
-  };
-
-  const changeVolume = (v: number) => {
-    setVolume(v);
-    if (ytPlayerRef.current && typeof ytPlayerRef.current.setVolume === "function") {
-      ytPlayerRef.current.setVolume(v);
-    }
   };
 
   if (loading) {
@@ -384,7 +249,7 @@ export default function PublishPage() {
                 </button>
               </div>
             </div>
-          ) : !youtubeVideoId ? (
+          ) : !music.youtubeVideoId ? (
             <motion.button
               whileHover={{ scale: 1.03 }}
               onClick={() => setShowMusicInput(true)}
@@ -397,22 +262,19 @@ export default function PublishPage() {
             </motion.button>
           ) : null}
 
-          {youtubeVideoId && (
+          {music.youtubeVideoId && (
             <div className="flex flex-wrap items-center gap-3 text-white/80 mt-3">
-              <div className="hidden">
-                <div id="yt-player-publish" />
-              </div>
               <button
-                onClick={togglePlay}
+                onClick={music.togglePlay}
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
-                  isPlaying
+                  music.isPlaying
                     ? "bg-gradient-to-br from-inf-red to-rose-600 hover:from-red-700 hover:to-rose-700 text-white"
                     : "bg-gradient-to-br from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white"
                 }`}
-                aria-label={isPlaying ? t("live.pause") : t("live.play")}
-                title={isPlaying ? t("live.pause") : t("live.play")}
+                aria-label={music.isPlaying ? t("live.pause") : t("live.play")}
+                title={music.isPlaying ? t("live.pause") : t("live.play")}
               >
-                {isPlaying ? (
+                {music.isPlaying ? (
                   <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
                     <rect x="6" y="4" width="4" height="16" />
                     <rect x="14" y="4" width="4" height="16" />
@@ -424,9 +286,9 @@ export default function PublishPage() {
                 )}
               </button>
               <button
-                onClick={() => setIsRepeat(!isRepeat)}
+                onClick={music.toggleRepeat}
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
-                  isRepeat
+                  music.isRepeat
                     ? "bg-gradient-to-br from-inf-yellow to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white"
                     : "bg-white/20 hover:bg-white/30 text-white/60 hover:text-white"
                 }`}
@@ -448,19 +310,19 @@ export default function PublishPage() {
                   type="range"
                   min="0"
                   max="100"
-                  value={volume}
-                  onChange={(e) => changeVolume(Number(e.target.value))}
+                  value={music.volume}
+                  onChange={(e) => music.changeVolume(Number(e.target.value))}
                   className="h-2 w-20 accent-inf-turquoise cursor-pointer"
                   aria-label={t("live.volume")}
-                  title={`${t("live.volume")}: ${volume}%`}
+                  title={`${t("live.volume")}: ${music.volume}%`}
                 />
-                <span className="text-white/70 text-xs font-medium min-w-6">{volume}%</span>
+                <span className="text-white/70 text-xs font-medium min-w-6">{music.volume}%</span>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  if (!youtubeUrl && youtubeVideoId) {
-                    setYoutubeUrl(`https://youtu.be/${youtubeVideoId}`);
+                  if (!youtubeUrl && music.youtubeVideoId) {
+                    setYoutubeUrl(`https://youtu.be/${music.youtubeVideoId}`);
                   }
                   setShowMusicInput(true);
                 }}
@@ -562,6 +424,12 @@ export default function PublishPage() {
                   <span className="text-gray-500 text-sm">
                     {t("publish.playersCount", { count: s.players?.length || 0 })}
                   </span>
+                  <a
+                    href={`/api/quizzes/${quizId}/results/export`}
+                    className="text-xs text-green-300 hover:text-green-200 transition-colors"
+                  >
+                    Excel
+                  </a>
                   {s.status !== "completed" && (
                     <button
                       type="button"

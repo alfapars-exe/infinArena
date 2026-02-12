@@ -225,6 +225,7 @@ export default function PlayPage() {
   const [questionNumber, setQuestionNumber] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [timeProgress, setTimeProgress] = useState(100);
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null);
   const [selectedChoices, setSelectedChoices] = useState<number[]>([]);
   const [orderedChoices, setOrderedChoices] = useState<
@@ -266,15 +267,35 @@ export default function PlayPage() {
     } catch {}
   }, [sessionCacheKey]);
 
+  const emitRejoinFromCache = useCallback((targetSocket: TypedSocket) => {
+    try {
+      const cached = localStorage.getItem(sessionCacheKey);
+      if (!cached) return;
+      const data = JSON.parse(cached);
+      // Only rejoin if cache is less than 4 hours old
+      if (Date.now() - data.timestamp >= 4 * 60 * 60 * 1000) return;
+      if (!data.playerId || !data.nickname) return;
+      targetSocket.emit("player:rejoin", {
+        pin,
+        playerId: data.playerId,
+        nickname: data.nickname,
+      });
+    } catch {}
+  }, [pin, sessionCacheKey]);
+
   // Server-synced timer using requestAnimationFrame
   const startSyncedTimer = useCallback((serverStart: number, timeLimitSeconds: number) => {
     if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
     serverEndTimeRef.current = serverStart + timeLimitSeconds * 1000;
     lastTickRef.current = -1;
+    setTimeProgress(100);
 
     const tick = () => {
       const now = Date.now();
-      const remaining = Math.max(0, Math.ceil((serverEndTimeRef.current - now) / 1000));
+      const totalMs = timeLimitSeconds * 1000;
+      const remainingMs = Math.max(0, serverEndTimeRef.current - now);
+      const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+      setTimeProgress(totalMs > 0 ? (remainingMs / totalMs) * 100 : 0);
       if (remaining !== lastTickRef.current) {
         lastTickRef.current = remaining;
         setTimeLeft(remaining);
@@ -307,20 +328,7 @@ export default function PlayPage() {
 
     // Try rejoin from cache
     s.on("connect", () => {
-      try {
-        const cached = localStorage.getItem(sessionCacheKey);
-        if (cached) {
-          const data = JSON.parse(cached);
-          // Only rejoin if cache is less than 4 hours old
-          if (Date.now() - data.timestamp < 4 * 60 * 60 * 1000) {
-            s.emit("player:rejoin", {
-              pin,
-              playerId: data.playerId,
-              nickname: data.nickname,
-            });
-          }
-        }
-      } catch {}
+      emitRejoinFromCache(s);
     });
 
     s.on(
@@ -350,8 +358,12 @@ export default function PlayPage() {
       } catch {}
       if (serverPhase === "ended") {
         setPhase("ended");
+      } else if (serverPhase === "leaderboard") {
+        setPhase("leaderboard");
+      } else if (serverPhase === "answered") {
+        setPhase("answered");
       } else if (serverPhase === "question") {
-        setPhase("answered"); // They missed the current question, wait for results
+        setPhase("question");
       } else {
         setPhase("lobby");
       }
@@ -406,12 +418,14 @@ export default function PlayPage() {
 
     // Answer acknowledged - stay in "answered" phase waiting for batch results
     s.on("game:answer-ack", () => {
-      // Already set phase to "answered" in submitAnswer
+      setDidSubmit(true);
+      setPhase("answered");
     });
 
     // Time is up
     s.on("game:time-up", () => {
       setTimeLeft(0);
+      setTimeProgress(0);
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
     });
 
@@ -469,6 +483,31 @@ export default function PlayPage() {
       s.disconnect();
     };
   }, []);
+
+  // Re-sync state when tab becomes active again.
+  useEffect(() => {
+    if (!socket) return;
+
+    const syncState = () => {
+      if (!socket.connected) return;
+      emitRejoinFromCache(socket);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        syncState();
+      }
+    };
+
+    window.addEventListener("focus", syncState);
+    window.addEventListener("pageshow", syncState);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", syncState);
+      window.removeEventListener("pageshow", syncState);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [socket, emitRejoinFromCache]);
 
   // Update myRank when leaderboard changes
   useEffect(() => {
@@ -775,14 +814,9 @@ export default function PlayPage() {
 
             {/* Progress bar */}
             <div className="w-full bg-white/10 rounded-full h-2 mb-4 mb-md-6">
-              <motion.div
-                className="bg-inf-yellow h-2 rounded-full"
-                initial={{ width: "100%" }}
-                animate={{ width: "0%" }}
-                transition={{
-                  duration: currentQuestion.timeLimitSeconds,
-                  ease: "linear",
-                }}
+              <div
+                className="bg-inf-yellow h-2 rounded-full transition-none"
+                style={{ width: `${Math.max(0, Math.min(100, timeProgress))}%` }}
               />
             </div>
 

@@ -299,6 +299,27 @@ export default function QuizEditor() {
             >
               {t("editor.results")}
             </Link>
+            <div className="relative group">
+              <button
+                className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold py-2 px-4 rounded-lg transition-colors"
+              >
+                Export ▾
+              </button>
+              <div className="absolute right-0 mt-1 bg-gray-800 border border-white/10 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 min-w-[140px]">
+                <a
+                  href={`/api/quizzes/${quizId}/export?format=excel`}
+                  className="block px-4 py-2 text-sm text-white hover:bg-white/10 rounded-t-lg"
+                >
+                  Excel (.xlsx)
+                </a>
+                <a
+                  href={`/api/quizzes/${quizId}/export?format=word`}
+                  className="block px-4 py-2 text-sm text-white hover:bg-white/10 rounded-b-lg"
+                >
+                  Word (.docx)
+                </a>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -147,9 +147,8 @@ export interface ServerToClientEvents {
     quizTitle: string;
     avatar: string;
     totalScore: number;
-    phase: string;
+    phase: "lobby" | "question" | "answered" | "leaderboard" | "ended";
   }) => void;
   "session:live": () => void;
   error: (data: { message: string }) => void;
 }
-
