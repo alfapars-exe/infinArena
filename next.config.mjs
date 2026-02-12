@@ -1,4 +1,6 @@
 import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 const getGitValue = (command) => {
   try {
@@ -8,10 +10,33 @@ const getGitValue = (command) => {
   }
 };
 
+const readBuildMeta = () => {
+  try {
+    const metaPath = path.join(process.cwd(), "build-meta.json");
+    if (!existsSync(metaPath)) return null;
+    const content = readFileSync(metaPath, "utf8");
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
 const SLOT_SIZE = 101;
-const rawCommitCount = Number.parseInt(getGitValue("git rev-list --count HEAD"), 10);
+const buildMeta = readBuildMeta();
+const commitCountSource =
+  process.env.BUILD_COMMIT_COUNT ??
+  (buildMeta && typeof buildMeta.commitCount === "number"
+    ? String(buildMeta.commitCount)
+    : getGitValue("git rev-list --count HEAD"));
+const rawCommitCount = Number.parseInt(commitCountSource, 10);
 const commitCount = Number.isFinite(rawCommitCount) && rawCommitCount >= 0 ? rawCommitCount : 0;
-const commitDate = getGitValue("git log -1 --format=%cI");
+const commitDate =
+  process.env.BUILD_COMMIT_DATE ??
+  (buildMeta && typeof buildMeta.commitDate === "string" && buildMeta.commitDate
+    ? buildMeta.commitDate
+    : getGitValue("git log -1 --format=%cI"));
 const slotsPerMajor = SLOT_SIZE * SLOT_SIZE;
 const versionMajor = 1 + Math.floor(commitCount / slotsPerMajor);
 const remainder = commitCount % slotsPerMajor;
