@@ -71,7 +71,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
       <div className="min-h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         
         <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
-          <div className="container-fluid app-container px-3 px-md-4 relative">
+          <div className="container-fluid app-container px-3 px-md-4">
             <div className="d-flex flex-wrap flex-md-nowrap align-items-center justify-content-between gap-2 py-2 py-md-0 min-h-[64px]">
               <Link href="/infinarenapanel" className="flex items-center gap-3">
                 <span className="text-2xl font-black text-white">infinArena</span>
@@ -87,7 +87,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
                 >
                   {t("nav.dashboard")}
                 </Link>
-                <span className="text-white/60 text-xs">
+                <span className="text-white/60 text-xs whitespace-nowrap">
                   {t("nav.buildInfo", { date: formattedBuildDate, version: buildVersion })}
                 </span>
                 <LanguageToggle />
@@ -103,13 +103,6 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
                   {t("nav.logout")}
                 </button>
               </div>
-            </div>
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none hidden md:block">
-              <img
-                src="/logo.png"
-                alt="infinArena"
-                className="h-8 md:h-9 w-auto"
-              />
             </div>
           </div>
         </nav>
