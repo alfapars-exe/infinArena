@@ -24,8 +24,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=7860
 ENV HOSTNAME="0.0.0.0"
 ENV NEXTAUTH_SECRET="infinarena-secret-key-2026-production-hf"
-ENV APP_STORAGE_DIR=/data/infinarena
-ENV REQUIRE_PERSISTENT_STORAGE=true
+ENV APP_STORAGE_DIR=/app/data
+ENV REQUIRE_PERSISTENT_STORAGE=false
 
 # Build the application
 RUN pnpm build
