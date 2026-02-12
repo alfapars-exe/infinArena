@@ -74,12 +74,18 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
           <div className="container-fluid app-container px-3 px-md-4">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 min-h-[64px]">
               <div className="flex items-center gap-3 min-w-0">
-                <span className="bg-white/20 text-white/90 text-xs font-medium px-2 py-1 rounded shrink-0">
+                <Link
+                  href="/infinarenapanel"
+                  className="text-2xl font-black text-white tracking-tight leading-none shrink-0"
+                >
+                  infin<span className="text-inf-yellow">Arena</span>
+                </Link>
+                <span className="bg-white/20 text-white/90 text-xs font-medium px-2 py-1 rounded shrink-0 hidden sm:inline-flex">
                   ADMIN
                 </span>
                 <Link
                   href="/infinarenapanel"
-                  className="text-white/70 hover:text-white transition-colors text-sm font-medium"
+                  className="text-white/70 hover:text-white transition-colors text-sm font-medium hidden md:inline"
                 >
                   {t("nav.dashboard")}
                 </Link>
