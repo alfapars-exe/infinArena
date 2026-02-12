@@ -717,20 +717,23 @@ export default function LiveControlPage() {
                 })}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-                <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+              <div
+                className="grid grid-cols-3 gap-3 mb-5"
+                style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+              >
+                <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
                   <p className="text-white/60 text-xs mb-1">{t("play.answered")}</p>
                   <p className="text-white font-bold text-xl">
                     {stats.answeredCount}/{stats.totalPlayers}
                   </p>
                 </div>
-                <div className="bg-green-500/20 border border-green-400/50 rounded-xl p-3">
+                <div className="bg-green-500/20 border border-green-400/50 rounded-xl p-3 text-center">
                   <p className="text-green-200 text-xs mb-1">{t("live.correct")}</p>
                   <p className="text-green-300 font-black text-xl">
                     {stats.correctCount}/{stats.totalPlayers}
                   </p>
                 </div>
-                <div className="bg-red-500/10 border border-red-400/30 rounded-xl p-3">
+                <div className="bg-red-500/10 border border-red-400/30 rounded-xl p-3 text-center">
                   <p className="text-red-200 text-xs mb-1">{t("live.noAnswer")}</p>
                   <p className="text-red-300 font-bold text-xl">
                     {Math.max(stats.totalPlayers - stats.answeredCount, 0)}
@@ -957,7 +960,10 @@ export default function LiveControlPage() {
                 </div>
 
                 
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div
+                  className="grid grid-cols-3 gap-3 mb-4"
+                  style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+                >
                   <div className="bg-white/5 rounded-lg p-3">
                     <div className="text-2xl font-bold text-white">
                       {stats.answeredCount}
