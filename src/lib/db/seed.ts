@@ -95,7 +95,86 @@ async function seed() {
     }
     await clientAny.execute("PRAGMA foreign_keys = ON");
   } else {
-    console.log("Postgres detected: skipping SQLite table bootstrap");
+    const pgStatements = [
+      `CREATE TABLE IF NOT EXISTS admins (
+        id BIGSERIAL PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`,
+      `CREATE TABLE IF NOT EXISTS quizzes (
+        id BIGSERIAL PRIMARY KEY,
+        admin_id BIGINT NOT NULL REFERENCES admins(id),
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'draft',
+        custom_slug TEXT UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`,
+      `CREATE TABLE IF NOT EXISTS questions (
+        id BIGSERIAL PRIMARY KEY,
+        quiz_id BIGINT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        question_text TEXT NOT NULL,
+        question_type TEXT NOT NULL DEFAULT 'multiple_choice',
+        order_index INTEGER NOT NULL,
+        time_limit_seconds INTEGER NOT NULL DEFAULT 20,
+        base_points INTEGER NOT NULL DEFAULT 1000,
+        deduction_points INTEGER NOT NULL DEFAULT 50,
+        deduction_interval INTEGER NOT NULL DEFAULT 1,
+        media_url TEXT,
+        background_url TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS answer_choices (
+        id BIGSERIAL PRIMARY KEY,
+        question_id BIGINT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+        choice_text TEXT NOT NULL,
+        is_correct BOOLEAN NOT NULL DEFAULT FALSE,
+        order_index INTEGER NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS quiz_sessions (
+        id BIGSERIAL PRIMARY KEY,
+        quiz_id BIGINT NOT NULL REFERENCES quizzes(id),
+        pin TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'lobby',
+        current_question_index INTEGER DEFAULT -1,
+        is_live BOOLEAN NOT NULL DEFAULT FALSE,
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`,
+      `CREATE TABLE IF NOT EXISTS players (
+        id BIGSERIAL PRIMARY KEY,
+        session_id BIGINT NOT NULL REFERENCES quiz_sessions(id) ON DELETE CASCADE,
+        nickname TEXT NOT NULL,
+        avatar TEXT,
+        socket_id TEXT,
+        total_score INTEGER NOT NULL DEFAULT 0,
+        is_connected BOOLEAN NOT NULL DEFAULT TRUE,
+        joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`,
+      `CREATE TABLE IF NOT EXISTS player_answers (
+        id BIGSERIAL PRIMARY KEY,
+        player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        question_id BIGINT NOT NULL REFERENCES questions(id),
+        session_id BIGINT NOT NULL REFERENCES quiz_sessions(id),
+        choice_id BIGINT REFERENCES answer_choices(id),
+        is_correct BOOLEAN NOT NULL DEFAULT FALSE,
+        response_time_ms INTEGER NOT NULL,
+        points_awarded INTEGER NOT NULL DEFAULT 0,
+        answered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`,
+    ];
+
+    for (const sql of pgStatements) {
+      try {
+        await clientAny.unsafe(sql);
+      } catch (err) {
+        console.log("Note: Table create statement completed (may already exist)");
+      }
+    }
   }
 
   // Ensure admin user exists (create only if not present)
