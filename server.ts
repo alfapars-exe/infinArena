@@ -8,41 +8,61 @@ const port = parseInt(process.env.PORT || "7860", 10);
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
-app.prepare().then(async () => {
-  const { ensureStorageReady } = await import("./src/lib/storage");
-  const storageStatus = ensureStorageReady();
-  console.log(`[storage] Root: ${storageStatus.storageRoot}`);
-  console.log(
-    `[storage] Persistent storage required: ${storageStatus.requirePersistentStorage}`
-  );
-
-  const { ensureDbMigrations } = await import("./src/lib/db/migrations");
-  await ensureDbMigrations();
-  console.log("[db] Migrations completed");
-
-  try {
-    await import("./src/lib/db/seed");
-    console.log("[db] Seed initialization completed");
-  } catch (err) {
-    console.warn("[db] Seed initialization warning:", err);
-  }
-
-  const { setupSocketHandlers } = await import("./src/lib/socket/server");
-
-  const httpServer = createServer((req, res) => {
-    handle(req, res);
-  });
-
-  const io = new SocketIOServer(httpServer, {
-    cors: { origin: "*" },
-    path: "/api/socketio",
-  });
-
-  setupSocketHandlers(io as any);
-
-  httpServer.listen(port, "0.0.0.0", () => {
-    console.log(`> Ready on http://0.0.0.0:${port}`);
-    console.log("> Admin panel: /infinarenapanel/login");
-    console.log("> Player entry: /");
-  });
+process.on("unhandledRejection", (err) => {
+  console.error("[fatal] Unhandled rejection:", err);
 });
+
+process.on("uncaughtException", (err) => {
+  console.error("[fatal] Uncaught exception:", err);
+  process.exit(1);
+});
+
+app
+  .prepare()
+  .then(async () => {
+    try {
+      const { ensureStorageReady } = await import("./src/lib/storage");
+      const storageStatus = ensureStorageReady();
+      console.log(`[storage] Root: ${storageStatus.storageRoot}`);
+      console.log(
+        `[storage] Persistent storage required: ${storageStatus.requirePersistentStorage}`
+      );
+
+      const { ensureDbMigrations } = await import("./src/lib/db/migrations");
+      await ensureDbMigrations();
+      console.log("[db] Migrations completed");
+
+      try {
+        await import("./src/lib/db/seed");
+        console.log("[db] Seed initialization completed");
+      } catch (err) {
+        console.warn("[db] Seed initialization warning:", err);
+      }
+
+      const { setupSocketHandlers } = await import("./src/lib/socket/server");
+
+      const httpServer = createServer((req, res) => {
+        handle(req, res);
+      });
+
+      const io = new SocketIOServer(httpServer, {
+        cors: { origin: "*" },
+        path: "/api/socketio",
+      });
+
+      setupSocketHandlers(io as any);
+
+      httpServer.listen(port, "0.0.0.0", () => {
+        console.log(`> Ready on http://0.0.0.0:${port}`);
+        console.log("> Admin panel: /infinarenapanel/login");
+        console.log("> Player entry: /");
+      });
+    } catch (err) {
+      console.error("[startup] Failed to initialize:", err);
+      process.exit(1);
+    }
+  })
+  .catch((err) => {
+    console.error("[startup] Next.js prepare failed:", err);
+    process.exit(1);
+  });
