@@ -716,17 +716,15 @@ export default function PlayPage() {
       return;
     }
 
-    const responseTimeMs = Date.now() - questionStartTime.current;
-    setSelectedChoices([choiceId]);
-    socket.emit("player:answer", {
-      questionId: currentQuestion.id,
-      choiceIds: [choiceId],
-      responseTimeMs,
+    // Toggle choice in multi-select (add or remove)
+    setSelectedChoices((prev) => {
+      const isSelected = prev.includes(choiceId);
+      if (isSelected) {
+        return prev.filter((id) => id !== choiceId);
+      } else {
+        return [...prev, choiceId];
+      }
     });
-    setError("");
-    setIsSubmittingAnswer(true);
-    isSubmittingAnswerRef.current = true;
-    armSubmitWatchdog(socket);
   };
 
   const moveOrderedChoice = (index: number, direction: -1 | 1) => {
@@ -1129,7 +1127,7 @@ export default function PlayPage() {
                 <p className="text-center text-white/70 text-sm mb-3">
                   {t("play.multiSelectInstruction")}
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 mb-4">
                   {currentQuestion.choices.map((choice, i) => {
                     const choiceId = Number(choice.id);
                     const active = selectedChoices.includes(choiceId);
@@ -1153,6 +1151,28 @@ export default function PlayPage() {
                     );
                   })}
                 </div>
+                {/* Submit button for multi-select */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedChoices.length > 0 && !isSubmittingAnswer && !didSubmit) {
+                      const responseTimeMs = Date.now() - questionStartTime.current;
+                      socket?.emit("player:answer", {
+                        questionId: currentQuestion.id,
+                        choiceIds: selectedChoices,
+                        responseTimeMs,
+                      });
+                      setError("");
+                      setIsSubmittingAnswer(true);
+                      isSubmittingAnswerRef.current = true;
+                      armSubmitWatchdog(socket);
+                    }
+                  }}
+                  disabled={selectedChoices.length === 0 || isSubmittingAnswer || didSubmit}
+                  className="w-full bg-inf-green hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors"
+                >
+                  {isSubmittingAnswer ? t("play.submit") + "..." : t("play.submit")}
+                </button>
               </div>
             )}
 
