@@ -237,6 +237,7 @@ export default function PlayPage() {
   const [didSubmit, setDidSubmit] = useState(false);
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
   const isSubmittingAnswerRef = useRef(false);
+  const lastQuestionIdRef = useRef<number | null>(null);
   const currentQuestionMetaRef = useRef<{ id: number | null; serverStartTime: number }>({
     id: null,
     serverStartTime: 0,
@@ -617,14 +618,25 @@ export default function PlayPage() {
     }
   }, [playerId, nickname, avatar, saveSession]);
 
+  useEffect(() => {
+    if (!currentQuestion) return;
+    if (lastQuestionIdRef.current === currentQuestion.id) return;
+    lastQuestionIdRef.current = currentQuestion.id;
+    setSelectedChoice(null);
+    setSelectedChoices([]);
+    setTextAnswer("");
+    setDidSubmit(false);
+    setIsSubmittingAnswer(false);
+    isSubmittingAnswerRef.current = false;
+  }, [currentQuestion]);
+
   const submitAnswer = (choiceId: number) => {
     if (
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
       selectedChoice !== null ||
-      didSubmit ||
-      isSubmittingAnswerRef.current
+      didSubmit
     ) {
       return;
     }
@@ -645,8 +657,7 @@ export default function PlayPage() {
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
-      didSubmit ||
-      isSubmittingAnswerRef.current
+      didSubmit
     ) {
       return;
     }
@@ -689,8 +700,7 @@ export default function PlayPage() {
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
-      didSubmit ||
-      isSubmittingAnswerRef.current
+      didSubmit
     ) {
       return;
     }
@@ -957,8 +967,7 @@ export default function PlayPage() {
                   const isDisabled =
                     phase !== "question" ||
                     selectedChoice !== null ||
-                    didSubmit ||
-                    isSubmittingAnswer;
+                    didSubmit;
                   
                   return (
                     <motion.button
@@ -991,7 +1000,7 @@ export default function PlayPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                   {currentQuestion.choices.map((choice, i) => {
                     const active = selectedChoices.includes(choice.id);
-                    const isDisabled = phase !== "question" || didSubmit || isSubmittingAnswer;
+                    const isDisabled = phase !== "question" || didSubmit;
                     return (
                       <button
                         key={choice.id}
