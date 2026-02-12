@@ -453,7 +453,22 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
   const rawContent = typeof result.content === "string" ? result.content : String(result.content);
   const aiQuestions = parseAIResponse(rawContent);
 
+  // DIAGNOSTIC: Log what LLM returned before fixing
+  logger.ai.info(`LLM returned ${aiQuestions.length} questions BEFORE autoFix`);
+  aiQuestions.forEach((q, idx) => {
+    const correctCount = q.choices.filter(c => c.isCorrect).length;
+    logger.ai.info(`Q${idx + 1} [${q.questionType}]: "${q.questionText.substring(0, 50)}..." has ${correctCount}/${q.choices.length} correct choices`);
+  });
+
   autoFixQuestions(aiQuestions, params.timeLimitSeconds);
+
+  // DIAGNOSTIC: Log what changed after autoFix
+  logger.ai.info(`After autoFix: ${aiQuestions.length} questions`);
+  aiQuestions.forEach((q, idx) => {
+    const correctCount = q.choices.filter(c => c.isCorrect).length;
+    logger.ai.info(`Q${idx + 1} [${q.questionType}]: has ${correctCount}/${q.choices.length} correct choices`);
+  });
+
   const validQuestions = aiQuestions.filter(validateQuestion);
 
   if (validQuestions.length === 0) {
@@ -487,6 +502,35 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
       isCorrect: c.isCorrect,
       orderIndex: ci,
     }));
+
+    // FINAL SAFETY CHECK: Force correct isCorrect values before DB insert
+    if (q.questionType === "multiple_choice" || q.questionType === "true_false") {
+      const correctCount = choiceValues.filter(c => c.isCorrect).length;
+      if (correctCount !== 1) {
+        // Force ONLY the first choice to be correct
+        logger.ai.warn(`[SAFETY FIX] ${q.questionType} had ${correctCount} correct answers, forcing first only`);
+        for (let idx = 0; idx < choiceValues.length; idx++) {
+          choiceValues[idx].isCorrect = (idx === 0);
+        }
+      }
+    } else if (q.questionType === "multi_select") {
+      const correctCount = choiceValues.filter(c => c.isCorrect).length;
+      if (correctCount < 2) {
+        // Force first 2 choices to be correct
+        logger.ai.warn(`[SAFETY FIX] multi_select had ${correctCount} correct answers, forcing first 2`);
+        for (let idx = 0; idx < Math.min(2, choiceValues.length); idx++) {
+          choiceValues[idx].isCorrect = true;
+        }
+        for (let idx = 2; idx < choiceValues.length; idx++) {
+          choiceValues[idx].isCorrect = false;
+        }
+      }
+    } else if (q.questionType === "text_input" || q.questionType === "ordering") {
+      // Force ALL choices to be correct
+      for (let idx = 0; idx < choiceValues.length; idx++) {
+        choiceValues[idx].isCorrect = true;
+      }
+    }
 
     if (choiceValues.length > 0) {
       await quizRepository.createChoices(choiceValues);
