@@ -18,6 +18,8 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const quizId = parseInt(params.id);
   const body = await request.json();
   const parsed = questionSchema.safeParse(body);
@@ -29,7 +31,7 @@ export async function POST(
     );
   }
 
-  const existing = await db
+  const existing = await dbAny
     .select()
     .from(questions)
     .where(eq(questions.quizId, quizId));
@@ -47,7 +49,7 @@ export async function POST(
     );
   }
 
-  const [question] = await db
+  const [question] = await dbAny
     .insert(questions)
     .values({
       quizId,
@@ -65,7 +67,7 @@ export async function POST(
 
   const choices = await Promise.all(
     parsed.data.choices.map(async (c, i) => {
-      const [choice] = await db
+      const [choice] = await dbAny
         .insert(answerChoices)
         .values({
           questionId: question.id,
@@ -92,6 +94,8 @@ export async function PUT(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const body = await request.json();
   const { questionId, ...data } = body;
   const parsed = questionSchema.safeParse(data);
@@ -103,7 +107,7 @@ export async function PUT(
     );
   }
 
-  await db
+  await dbAny
     .update(questions)
     .set({
       questionText: parsed.data.questionText,
@@ -117,11 +121,11 @@ export async function PUT(
     })
     .where(eq(questions.id, questionId));
 
-  await db.delete(answerChoices).where(eq(answerChoices.questionId, questionId));
+  await dbAny.delete(answerChoices).where(eq(answerChoices.questionId, questionId));
 
   const choices = await Promise.all(
     parsed.data.choices.map(async (c, i) => {
-      const [choice] = await db
+      const [choice] = await dbAny
         .insert(answerChoices)
         .values({
           questionId,
@@ -134,7 +138,7 @@ export async function PUT(
     })
   );
 
-  const [updated] = await db
+  const [updated] = await dbAny
     .select()
     .from(questions)
     .where(eq(questions.id, questionId));
@@ -150,6 +154,8 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const { searchParams } = new URL(request.url);
   const questionId = parseInt(searchParams.get("questionId") || "0");
 
@@ -160,7 +166,7 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  await db.delete(questions).where(eq(questions.id, questionId));
+  await dbAny.delete(questions).where(eq(questions.id, questionId));
 
   return NextResponse.json({ success: true });
 }

@@ -33,8 +33,9 @@ const client = isSqlite
   ? createClient({ url: databaseUrl })
   : postgres(databaseUrl, { ssl: "require" });
 
-export const db = isSqlite
+const dbInstance = isSqlite
   ? drizzleSqlite(client as ReturnType<typeof createClient>, { schema })
   : drizzlePostgres(client as ReturnType<typeof postgres>, { schema });
 
+export const db: any = dbInstance;
 export { client, isSqlite };

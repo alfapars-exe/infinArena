@@ -17,7 +17,9 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.username || !credentials?.password) return null;
 
-        const [admin] = await db
+        const dbAny: any = db;
+
+        const [admin] = await dbAny
           .select()
           .from(admins)
           .where(eq(admins.username, credentials.username));

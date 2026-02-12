@@ -15,16 +15,18 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const adminId = parseInt(session.user?.id as string);
-  const allQuizzes = await db
+  const allQuizzes = await dbAny
     .select()
     .from(quizzes)
     .where(eq(quizzes.adminId, adminId))
     .orderBy(desc(quizzes.updatedAt));
 
   const result = await Promise.all(
-    allQuizzes.map(async (quiz) => {
-      const qs = await db
+    (allQuizzes as any[]).map(async (quiz: any) => {
+      const qs = await dbAny
         .select()
         .from(questions)
         .where(eq(questions.quizId, quiz.id));
@@ -41,6 +43,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const body = await request.json();
   const parsed = quizSchema.safeParse(body);
 
@@ -52,7 +56,7 @@ export async function POST(request: NextRequest) {
   }
 
   const adminId = parseInt(session.user?.id as string);
-  const [quiz] = await db
+  const [quiz] = await dbAny
     .insert(quizzes)
     .values({
       adminId,

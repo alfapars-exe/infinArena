@@ -25,22 +25,27 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const quizId = parseInt(params.id);
-  const [quiz] = await db.select().from(quizzes).where(eq(quizzes.id, quizId));
+  const [quiz] = await dbAny
+    .select()
+    .from(quizzes)
+    .where(eq(quizzes.id, quizId));
 
   if (!quiz) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 
-  const quizQuestions = await db
+  const quizQuestions = await dbAny
     .select()
     .from(questions)
     .where(eq(questions.quizId, quizId))
     .orderBy(asc(questions.orderIndex));
 
   const questionsWithChoices = await Promise.all(
-    quizQuestions.map(async (q) => {
-      const choices = await db
+    (quizQuestions as any[]).map(async (q: any) => {
+      const choices = await dbAny
         .select()
         .from(answerChoices)
         .where(eq(answerChoices.questionId, q.id))
@@ -61,6 +66,8 @@ export async function PUT(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const quizId = parseInt(params.id);
   const body = await request.json();
   const parsed = quizSchema.safeParse(body);
@@ -72,7 +79,7 @@ export async function PUT(
     );
   }
 
-  const [updated] = await db
+  const [updated] = await dbAny
     .update(quizzes)
     .set({
       title: parsed.data.title,
@@ -97,19 +104,21 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const quizId = parseInt(params.id);
-  await db.transaction(async (tx) => {
-    const sessionRows = await tx
+  await dbAny.transaction(async (tx: any) => {
+    const sessionRows = (await tx
       .select({ id: quizSessions.id })
       .from(quizSessions)
-      .where(eq(quizSessions.quizId, quizId));
-    const sessionIds = sessionRows.map((s) => s.id);
+      .where(eq(quizSessions.quizId, quizId))) as any[];
+    const sessionIds = sessionRows.map((s: any) => s.id);
 
-    const questionRows = await tx
+    const questionRows = (await tx
       .select({ id: questions.id })
       .from(questions)
-      .where(eq(questions.quizId, quizId));
-    const questionIds = questionRows.map((q) => q.id);
+      .where(eq(questions.quizId, quizId))) as any[];
+    const questionIds = questionRows.map((q: any) => q.id);
 
     if (questionIds.length > 0) {
       await tx

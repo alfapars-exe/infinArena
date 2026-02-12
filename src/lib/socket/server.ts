@@ -249,28 +249,28 @@ export function setupSocketHandlers(io: TypedServer) {
           return;
         }
 
-        const dbQuestions = await db
+        const dbQuestions = (await db
           .select()
           .from(questions)
           .where(eq(questions.quizId, dbSession.quizId))
-          .orderBy(asc(questions.orderIndex));
+          .orderBy(asc(questions.orderIndex))) as any[];
 
         const questionsWithChoices = await Promise.all(
-          dbQuestions.map(async (q) => {
-            const choices = await db
+          dbQuestions.map(async (q: any) => {
+            const choices = (await db
               .select()
               .from(answerChoices)
               .where(eq(answerChoices.questionId, q.id))
-              .orderBy(asc(answerChoices.orderIndex));
+              .orderBy(asc(answerChoices.orderIndex))) as any[];
 
-            const correctChoice = choices.find((c) => c.isCorrect);
+            const correctChoice = choices.find((c: any) => c.isCorrect);
             const correctChoiceIds = choices
-              .filter((c) => c.isCorrect)
-              .map((c) => c.id);
+              .filter((c: any) => c.isCorrect)
+              .map((c: any) => c.id);
             const correctOrderChoiceIds = [...choices]
               .sort((a, b) => a.orderIndex - b.orderIndex)
-              .map((c) => c.id);
-            const acceptedAnswers = choices.map((c) => normalizeText(c.choiceText));
+              .map((c: any) => c.id);
+            const acceptedAnswers = choices.map((c: any) => normalizeText(c.choiceText));
 
             return {
               id: q.id,
@@ -284,7 +284,7 @@ export function setupSocketHandlers(io: TypedServer) {
               timeLimitSeconds: q.timeLimitSeconds,
               mediaUrl: q.mediaUrl,
               backgroundUrl: q.backgroundUrl,
-              choices: choices.map((c) => ({
+              choices: choices.map((c: any) => ({
                 id: c.id,
                 choiceText: c.choiceText,
                 orderIndex: c.orderIndex,
@@ -745,13 +745,13 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 async function sendLeaderboard(io: TypedServer, session: ActiveSession) {
   if (!session) return;
 
-  const allPlayers = await db
+  const allPlayers = (await db
     .select()
     .from(players)
     .where(eq(players.sessionId, session.sessionId))
-    .orderBy(desc(players.totalScore));
+    .orderBy(desc(players.totalScore))) as any[];
 
-  const rankings: PlayerRanking[] = allPlayers.map((p, i) => ({
+  const rankings: PlayerRanking[] = allPlayers.map((p: any, i: number) => ({
     playerId: p.id,
     nickname: p.nickname,
     avatar: p.avatar || "🎮",
@@ -780,7 +780,7 @@ async function endQuiz(io: TypedServer, sessionId: number) {
       .where(eq(players.sessionId, sessionId))
       .orderBy(desc(players.totalScore));
 
-    const finalRankings: PlayerRanking[] = allPlayers.map((p, i) => ({
+      const finalRankings: PlayerRanking[] = allPlayers.map((p: any, i: number) => ({
       playerId: p.id,
       nickname: p.nickname,
       avatar: p.avatar || "🎮",

@@ -19,13 +19,17 @@ export async function POST(
   }
 
   const quizId = parseInt(params.id);
-  const [quiz] = await db.select().from(quizzes).where(eq(quizzes.id, quizId));
+  const dbAny: any = db;
+  const [quiz] = await dbAny
+    .select()
+    .from(quizzes)
+    .where(eq(quizzes.id, quizId));
 
   if (!quiz) {
     return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
   }
 
-  const qs = await db
+  const qs = await dbAny
     .select()
     .from(questions)
     .where(eq(questions.quizId, quizId));
@@ -37,13 +41,13 @@ export async function POST(
     );
   }
 
-  await db
+  await dbAny
     .update(quizzes)
     .set({ status: "published", updatedAt: new Date() })
     .where(eq(quizzes.id, quizId));
 
   const pin = await generateUniquePin();
-  const [quizSession] = await db
+  const [quizSession] = await dbAny
     .insert(quizSessions)
     .values({
       quizId,

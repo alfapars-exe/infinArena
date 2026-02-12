@@ -10,9 +10,10 @@ export function generatePin(): string {
 export async function generateUniquePin(): Promise<string> {
   let pin: string;
   let attempts = 0;
+  const dbAny: any = db;
   do {
     pin = generatePin();
-    const existing = await db
+    const existing = await dbAny
       .select()
       .from(quizSessions)
       .where(eq(quizSessions.pin, pin));

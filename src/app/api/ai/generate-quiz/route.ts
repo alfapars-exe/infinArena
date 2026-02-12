@@ -392,7 +392,8 @@ export async function POST(request: NextRequest) {
     const userId = parseInt((session.user as { id?: string }).id || "1");
     const quizTitle = topic;
 
-    const [newQuiz] = await db
+    const dbAny = db as typeof db & { insert: (table: unknown) => any };
+    const [newQuiz] = await dbAny
       .insert(quizzes)
       .values({
         adminId: userId,
@@ -405,7 +406,7 @@ export async function POST(request: NextRequest) {
     // Insert questions and choices
     for (let i = 0; i < validQuestions.length; i++) {
       const q = validQuestions[i];
-      const [newQuestion] = await db
+      const [newQuestion] = await dbAny
         .insert(questions)
         .values({
           quizId: newQuiz.id,
@@ -428,7 +429,7 @@ export async function POST(request: NextRequest) {
       }));
 
       if (choiceValues.length > 0) {
-        await db.insert(answerChoices).values(choiceValues);
+        await dbAny.insert(answerChoices).values(choiceValues);
       }
     }
 

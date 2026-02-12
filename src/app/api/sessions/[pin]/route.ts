@@ -8,8 +8,9 @@ export async function GET(
   { params }: { params: { pin: string } }
 ) {
   const { pin } = params;
+  const dbAny: any = db;
 
-  const [session] = await db
+  const [session] = await dbAny
     .select()
     .from(quizSessions)
     .where(eq(quizSessions.pin, pin));
@@ -28,7 +29,7 @@ export async function GET(
     );
   }
 
-  const [quiz] = await db
+  const [quiz] = await dbAny
     .select()
     .from(quizzes)
     .where(eq(quizzes.id, session.quizId));

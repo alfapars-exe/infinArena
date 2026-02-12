@@ -1,4 +1,4 @@
-﻿import { db, client } from "./index";
+﻿import { db, client, isSqlite } from "./index";
 import { admins } from "./schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -80,28 +80,34 @@ async function seed() {
     )`,
   ];
 
-  // Create tables only if they don't exist - PRESERVE ALL EXISTING DATA
-  await client.execute("PRAGMA foreign_keys = OFF");
-  for (const sql of statements) {
-    try {
-      await client.execute(sql);
-    } catch (err) {
-      // Ignore table already exists errors
-      console.log("Note: Table create statement completed (may already exist)");
+  const dbAny: any = db;
+  const clientAny: any = client;
+
+  if (isSqlite) {
+    await clientAny.execute("PRAGMA foreign_keys = OFF");
+    for (const sql of statements) {
+      try {
+        await clientAny.execute(sql);
+      } catch {
+        // Ignore table already exists errors
+        console.log("Note: Table create statement completed (may already exist)");
+      }
     }
+    await clientAny.execute("PRAGMA foreign_keys = ON");
+  } else {
+    console.log("Postgres detected: skipping SQLite table bootstrap");
   }
-  await client.execute("PRAGMA foreign_keys = ON");
 
   // Ensure admin user exists (create only if not present)
   try {
-    const existing = await db
+    const existing = await dbAny
       .select()
       .from(admins)
       .where(eq(admins.username, "admin"));
 
     if (existing.length === 0) {
       const hash = bcrypt.hashSync("inFina2026!!**", 10);
-      await db.insert(admins).values({
+      await dbAny.insert(admins).values({
         username: "admin",
         email: "admin@infinarena.com",
         passwordHash: hash,

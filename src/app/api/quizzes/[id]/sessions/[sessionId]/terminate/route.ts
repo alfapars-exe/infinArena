@@ -17,6 +17,8 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const dbAny: any = db;
+
   const quizId = Number.parseInt(params.id, 10);
   const sessionId = Number.parseInt(params.sessionId, 10);
 
@@ -24,7 +26,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid identifiers" }, { status: 400 });
   }
 
-  const [existingSession] = await db
+  const [existingSession] = await dbAny
     .select()
     .from(quizSessions)
     .where(and(eq(quizSessions.id, sessionId), eq(quizSessions.quizId, quizId)));
@@ -40,7 +42,7 @@ export async function POST(
     });
   }
 
-  await db
+  await dbAny
     .update(quizSessions)
     .set({
       status: "completed",
@@ -49,7 +51,7 @@ export async function POST(
     })
     .where(eq(quizSessions.id, sessionId));
 
-  await db
+  await dbAny
     .update(players)
     .set({
       isConnected: false,
@@ -57,7 +59,7 @@ export async function POST(
     })
     .where(eq(players.sessionId, sessionId));
 
-  const [updatedSession] = await db
+  const [updatedSession] = await dbAny
     .select()
     .from(quizSessions)
     .where(eq(quizSessions.id, sessionId));
