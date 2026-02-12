@@ -561,21 +561,24 @@ export function setupSocketHandlers(io: TypedServer) {
             rejectAnswer("Choice is required");
             return;
           }
-          persistedChoiceId = choiceId;
-          isCorrect = choiceId === currentQ.correctChoiceId;
-          session.choiceCounts[choiceId] = (session.choiceCounts[choiceId] || 0) + 1;
+          const normalizedChoiceId = Number(choiceId);
+          const normalizedCorrectId = Number(currentQ.correctChoiceId);
+          persistedChoiceId = normalizedChoiceId;
+          isCorrect = normalizedChoiceId === normalizedCorrectId;
+          session.choiceCounts[normalizedChoiceId] = (session.choiceCounts[normalizedChoiceId] || 0) + 1;
         } else if (currentQ.questionType === "multi_select") {
           if (safeChoiceIds.length === 0) {
             rejectAnswer("At least one choice is required");
             return;
           }
           persistedChoiceId = safeChoiceIds[0] || null;
-          const correctSet = new Set(currentQ.correctChoiceIds);
-          const selectedCorrect = safeChoiceIds.filter((id) => correctSet.has(id)).length;
-          const selectedWrong = safeChoiceIds.filter((id) => !correctSet.has(id)).length;
+          const correctSet = new Set(currentQ.correctChoiceIds.map(id => Number(id)));
+          const selectedIds = safeChoiceIds.map(id => Number(id));
+          const selectedCorrect = selectedIds.filter((id) => correctSet.has(id)).length;
+          const selectedWrong = selectedIds.filter((id) => !correctSet.has(id)).length;
           isCorrect = selectedCorrect > 0 && selectedWrong === 0;
           partialRatio = isCorrect ? selectedCorrect / correctSet.size : 0;
-          for (const id of safeChoiceIds) {
+          for (const id of selectedIds) {
             session.choiceCounts[id] = (session.choiceCounts[id] || 0) + 1;
           }
         } else if (currentQ.questionType === "ordering") {
@@ -584,8 +587,10 @@ export function setupSocketHandlers(io: TypedServer) {
             return;
           }
           persistedChoiceId = safeOrderedChoiceIds[0] || null;
-          isCorrect = safeOrderedChoiceIds.every(
-            (id, idx) => id === currentQ.correctOrderChoiceIds[idx]
+          const normalizedOrdered = safeOrderedChoiceIds.map(id => Number(id));
+          const normalizedCorrectOrder = currentQ.correctOrderChoiceIds.map(id => Number(id));
+          isCorrect = normalizedOrdered.every(
+            (id, idx) => id === normalizedCorrectOrder[idx]
           );
         } else {
           if (!safeTextAnswer) {
@@ -911,7 +916,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   );
 
   const choiceTextById = new Map(
-    currentQ.choices.map((c) => [c.id, c.choiceText] as const)
+    currentQ.choices.map((c) => [Number(c.id), c.choiceText] as const)
   );
 
   const choiceSelectionBuckets = new Map<
@@ -923,8 +928,8 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     }
   >(
     currentQ.choices.map((c) => [
-      c.id,
-      { choiceId: c.id, choiceText: c.choiceText, players: [] },
+      Number(c.id),
+      { choiceId: Number(c.id), choiceText: c.choiceText, players: [] },
     ])
   );
 
@@ -936,9 +941,9 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       const selectedChoiceIds = Array.from(
         new Set(
           [
-            ...(answer.choiceId ? [answer.choiceId] : []),
-            ...answer.choiceIds,
-            ...answer.orderedChoiceIds,
+            ...(answer.choiceId ? [Number(answer.choiceId)] : []),
+            ...answer.choiceIds.map(id => Number(id)),
+            ...answer.orderedChoiceIds.map(id => Number(id)),
           ].filter((id) => Number.isInteger(id))
         )
       );
