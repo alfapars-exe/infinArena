@@ -2,7 +2,7 @@
 
 import { SessionProvider, signOut, useSession } from "next-auth/react";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useI18n, useTranslation } from "@/lib/i18n";
@@ -13,10 +13,19 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   const handleLogout = async () => {
-    await signOut({ redirect: false });
-    router.replace("/infinarenapanel/login");
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      // Keep signOut non-redirected to avoid NextAuth callback URL mismatches in proxied envs.
+      await signOut({ redirect: false });
+    } catch {
+      // Ignore and force navigation below.
+    } finally {
+      window.location.replace("/infinarenapanel/login");
+    }
   };
 
   useEffect(() => {
@@ -71,6 +80,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={handleLogout}
+                  disabled={isLoggingOut}
                   className="text-white/50 hover:text-white transition-colors text-sm bg-transparent border-0 p-0"
                 >
                   {t("nav.logout")}
@@ -121,6 +131,5 @@ export default function AdminLayout({
     </SessionProvider>
   );
 }
-
 
 

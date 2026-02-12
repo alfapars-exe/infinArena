@@ -621,7 +621,7 @@ export default function PlayPage() {
     if (
       !socket ||
       !currentQuestion ||
-      timeLeft <= 0 ||
+      phase !== "question" ||
       selectedChoice !== null ||
       didSubmit ||
       isSubmittingAnswerRef.current
@@ -645,7 +645,6 @@ export default function PlayPage() {
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
-      timeLeft <= 0 ||
       didSubmit ||
       isSubmittingAnswerRef.current
     ) {
@@ -690,7 +689,6 @@ export default function PlayPage() {
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
-      timeLeft <= 0 ||
       didSubmit ||
       isSubmittingAnswerRef.current
     ) {
@@ -957,7 +955,7 @@ export default function PlayPage() {
                 {currentQuestion.choices.map((choice, i) => {
                   const isSelected = selectedChoice === choice.id;
                   const isDisabled =
-                    timeLeft <= 0 ||
+                    phase !== "question" ||
                     selectedChoice !== null ||
                     didSubmit ||
                     isSubmittingAnswer;
@@ -993,7 +991,7 @@ export default function PlayPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
                   {currentQuestion.choices.map((choice, i) => {
                     const active = selectedChoices.includes(choice.id);
-                    const isDisabled = timeLeft <= 0 || didSubmit || isSubmittingAnswer;
+                    const isDisabled = phase !== "question" || didSubmit || isSubmittingAnswer;
                     return (
                       <button
                         key={choice.id}
