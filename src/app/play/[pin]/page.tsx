@@ -245,6 +245,8 @@ export default function PlayPage() {
   const [finalRankings, setFinalRankings] = useState<PlayerRanking[]>([]);
   const [myRank, setMyRank] = useState(0);
   const [motivationalMsg, setMotivationalMsg] = useState("");
+  const [availablePoints, setAvailablePoints] = useState(0);
+  const scoringRef = useRef({ basePoints: 1000, deductionPoints: 50, deductionInterval: 1 });
 
   // Podium animation
   const [podiumStep, setPodiumStep] = useState(0);
@@ -271,10 +273,20 @@ export default function PlayPage() {
     lastTickRef.current = -1;
 
     const tick = () => {
-      const remaining = Math.max(0, Math.ceil((serverEndTimeRef.current - Date.now()) / 1000));
+      const now = Date.now();
+      const remaining = Math.max(0, Math.ceil((serverEndTimeRef.current - now) / 1000));
       if (remaining !== lastTickRef.current) {
         lastTickRef.current = remaining;
         setTimeLeft(remaining);
+
+        // Calculate available points based on elapsed time
+        const { basePoints, deductionPoints, deductionInterval } = scoringRef.current;
+        const elapsedMs = now - serverStart;
+        const elapsedSec = Math.max(0, elapsedMs / 1000);
+        const intervals = Math.floor(elapsedSec / deductionInterval);
+        const pts = Math.max(100, basePoints - intervals * deductionPoints);
+        setAvailablePoints(pts);
+
         // Tick-tock sound in last 5 seconds
         if (remaining > 0 && remaining <= 5) {
           if (remaining % 2 === 1) playTick();
@@ -380,6 +392,12 @@ export default function PlayPage() {
         setDidSubmit(false);
         setBatchResult(null);
         questionStartTime.current = serverStartTime;
+        scoringRef.current = {
+          basePoints: question.basePoints || 1000,
+          deductionPoints: question.deductionPoints || 50,
+          deductionInterval: question.deductionInterval || 1,
+        };
+        setAvailablePoints(question.basePoints || 1000);
         setPhase("question");
         // Start synced timer
         startSyncedTimer(serverStartTime, question.timeLimitSeconds);
@@ -736,9 +754,14 @@ export default function PlayPage() {
                 {timeLeft}
               </motion.div>
               <div className="text-right">
-                <span className="text-white/60 text-sm">
-                  {totalScore.toLocaleString()} {t("play.pts")}
-                </span>
+                <motion.span
+                  key={availablePoints}
+                  initial={{ scale: 1.2, color: "#facc15" }}
+                  animate={{ scale: 1, color: availablePoints > scoringRef.current.basePoints * 0.5 ? "#4ade80" : availablePoints > scoringRef.current.basePoints * 0.25 ? "#facc15" : "#f87171" }}
+                  className="text-sm font-bold block"
+                >
+                  {availablePoints} {t("play.pts")}
+                </motion.span>
                 {currentStreak >= 3 && (
                   <div className="text-xs text-orange-400 font-bold">
                     🔥 {currentStreak} {t("play.streak")}
@@ -1156,6 +1179,21 @@ export default function PlayPage() {
                   </div>
                 )}
               </div>
+
+              {/* Correct answer display */}
+              {batchResult?.correctAnswerText && batchResult.correctAnswerText.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="mt-4 bg-green-500/20 border border-green-500/40 rounded-xl p-3"
+                >
+                  <p className="text-green-400 text-xs font-medium mb-1">{t("play.correctAnswer")}</p>
+                  <p className="text-white font-bold text-sm">
+                    {batchResult.correctAnswerText.join(", ")}
+                  </p>
+                </motion.div>
+              )}
             </motion.div>
           </motion.div>
         )}

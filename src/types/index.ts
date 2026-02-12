@@ -8,6 +8,9 @@
     | "text_input"
     | "ordering";
   timeLimitSeconds: number;
+  basePoints: number;
+  deductionPoints: number;
+  deductionInterval: number;
   mediaUrl?: string | null;
   backgroundUrl?: string | null;
   choices: {

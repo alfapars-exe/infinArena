@@ -394,6 +394,7 @@ export function setupSocketHandlers(io: TypedServer) {
 
         let isCorrect = false;
         let persistedChoiceId: number | null = null;
+        let partialRatio = 1; // 1 = full credit, <1 = partial credit
 
         if (
           currentQ.questionType === "multiple_choice" ||
@@ -412,7 +413,15 @@ export function setupSocketHandlers(io: TypedServer) {
             return;
           }
           persistedChoiceId = safeChoiceIds[0] || null;
-          isCorrect = sameIdSet(safeChoiceIds, currentQ.correctChoiceIds);
+          // Partial credit: correct if at least one correct answer and no wrong answers
+          const correctSet = new Set(currentQ.correctChoiceIds);
+          const selectedCorrect = safeChoiceIds.filter((id) => correctSet.has(id)).length;
+          const selectedWrong = safeChoiceIds.filter((id) => !correctSet.has(id)).length;
+          isCorrect = selectedCorrect > 0 && selectedWrong === 0;
+          partialRatio = isCorrect ? selectedCorrect / correctSet.size : 0;
+          for (const id of safeChoiceIds) {
+            session.choiceCounts[id] = (session.choiceCounts[id] || 0) + 1;
+          }
         } else if (currentQ.questionType === "ordering") {
           if (safeOrderedChoiceIds.length !== currentQ.correctOrderChoiceIds.length) {
             socket.emit("error", { message: "Ordering answer is incomplete" });
@@ -444,7 +453,7 @@ export function setupSocketHandlers(io: TypedServer) {
         }
         session.playerStreaks.set(playerInfo.playerId, currentStreak);
 
-        // Calculate base points
+        // Calculate base points (with partial credit for multi_select)
         let points = calculateScore(
           {
             basePoints: currentQ.basePoints,
@@ -455,6 +464,9 @@ export function setupSocketHandlers(io: TypedServer) {
           actualResponseTime,
           isCorrect
         );
+        if (partialRatio < 1 && partialRatio > 0) {
+          points = Math.round(points * partialRatio);
+        }
 
         // Streak bonus
         let streakBonus = 0;
@@ -620,6 +632,9 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
       questionText: question.questionText,
       questionType: question.questionType,
       timeLimitSeconds: question.timeLimitSeconds,
+      basePoints: question.basePoints,
+      deductionPoints: question.deductionPoints,
+      deductionInterval: question.deductionInterval,
       mediaUrl: question.mediaUrl,
       backgroundUrl: question.backgroundUrl,
       choices: publicChoices,

@@ -489,16 +489,20 @@ function QuestionCard({
               <div
                 key={ci}
                 className={`${getChoiceColor(ci)} ${
-                  c.isCorrect &&
-                  question.questionType !== "ordering" &&
-                  question.questionType !== "text_input"
+                  question.questionType === "ordering" || question.questionType === "text_input"
+                    ? ""
+                    : c.isCorrect
                     ? "ring-2 ring-white"
                     : "opacity-70"
                 } rounded-lg px-3 py-2 text-white text-sm flex items-center gap-2`}
               >
                 <span className="text-xs">{getChoiceShape(ci)}</span>
                 <span className="truncate">{c.choiceText || t("editor.empty")}</span>
-                {c.isCorrect && <span className="ml-auto text-xs">✓</span>}
+                {question.questionType === "ordering" ? (
+                  <span className="ml-auto text-xs font-bold bg-white/20 rounded-full w-5 h-5 flex items-center justify-center">{ci + 1}</span>
+                ) : question.questionType === "text_input" ? null : (
+                  c.isCorrect && <span className="ml-auto text-xs">✓</span>
+                )}
               </div>
             ))}
           </div>
