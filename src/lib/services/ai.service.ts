@@ -34,6 +34,27 @@ interface AIQuestion {
   choices: { choiceText: string; isCorrect: boolean }[];
 }
 
+type ResponseFormatMode = "json_schema" | "json_object" | "none";
+
+const DB_SCHEMA_FOR_LLM = `
+DB SCHEMA CONTRACT (for generated payload mapping):
+
+Table: questions
+- question_text TEXT NOT NULL
+- question_type ENUM("multiple_choice","true_false","multi_select","text_input","ordering") NOT NULL
+- time_limit_seconds INTEGER NOT NULL
+- base_points INTEGER NOT NULL
+- deduction_points INTEGER NOT NULL
+- deduction_interval INTEGER NOT NULL
+
+Table: answer_choices
+- choice_text TEXT NOT NULL
+- is_correct BOOLEAN NOT NULL
+- order_index INTEGER NOT NULL
+
+Important: Every generated choice MUST include explicit boolean "isCorrect" so it can map to answer_choices.is_correct.
+`.trim();
+
 export interface GenerateQuizParams {
   topic: string;
   difficulty: string;
@@ -86,7 +107,7 @@ function validateQuestion(q: AIQuestion): boolean {
     case "true_false":
       return q.choices.length === 2 && correctCount === 1;
     case "multi_select":
-      return q.choices.length >= 2 && q.choices.length <= 8 && correctCount >= 2;
+      return q.choices.length >= 2 && q.choices.length <= 8 && correctCount >= 1;
     case "text_input":
       return q.choices.length >= 1 && q.choices.every((c) => c.isCorrect);
     case "ordering":
@@ -94,6 +115,251 @@ function validateQuestion(q: AIQuestion): boolean {
     default:
       return false;
   }
+}
+
+function normalizeComparableText(value: unknown): string {
+  return String(value ?? "").trim().toLocaleLowerCase("tr");
+}
+
+function buildQuizResponseSchema(numQuestions: number): Record<string, unknown> {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["questions"],
+    properties: {
+      questions: {
+        type: "array",
+        minItems: numQuestions,
+        maxItems: numQuestions,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "questionText",
+            "questionType",
+            "timeLimitSeconds",
+            "basePoints",
+            "deductionPoints",
+            "deductionInterval",
+            "choices",
+          ],
+          properties: {
+            questionText: { type: "string", minLength: 1, maxLength: 500 },
+            questionType: { type: "string", enum: [...QUESTION_TYPES] },
+            timeLimitSeconds: { type: "integer", minimum: 5, maximum: 120 },
+            basePoints: { type: "integer", minimum: 100, maximum: 5000 },
+            deductionPoints: { type: "integer", minimum: 0, maximum: 1000 },
+            deductionInterval: { type: "integer", minimum: 1, maximum: 60 },
+            choices: {
+              type: "array",
+              minItems: 1,
+              maxItems: 8,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["choiceText", "isCorrect"],
+                properties: {
+                  choiceText: { type: "string", minLength: 1, maxLength: 200 },
+                  isCorrect: { type: "boolean" },
+                },
+              },
+            },
+          },
+          allOf: [
+            {
+              if: { properties: { questionType: { const: "true_false" } } },
+              then: { properties: { choices: { minItems: 2, maxItems: 2 } } },
+            },
+            {
+              if: { properties: { questionType: { const: "multiple_choice" } } },
+              then: { properties: { choices: { minItems: 2, maxItems: 8 } } },
+            },
+            {
+              if: { properties: { questionType: { const: "multi_select" } } },
+              then: { properties: { choices: { minItems: 2, maxItems: 8 } } },
+            },
+            {
+              if: { properties: { questionType: { const: "text_input" } } },
+              then: { properties: { choices: { minItems: 1, maxItems: 8 } } },
+            },
+            {
+              if: { properties: { questionType: { const: "ordering" } } },
+              then: { properties: { choices: { minItems: 2, maxItems: 8 } } },
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+function resolveCorrectIndexesFromFallbackFields(
+  q: Record<string, unknown>,
+  choices: { choiceText: string; isCorrect: boolean }[],
+  questionType: QuestionType
+): number[] {
+  const indexes = new Set<number>();
+  const byText = new Map<string, number>(
+    choices.map((choice, idx) => [normalizeComparableText(choice.choiceText), idx])
+  );
+
+  const pushIndex = (index: number) => {
+    if (Number.isInteger(index) && index >= 0 && index < choices.length) {
+      indexes.add(index);
+    }
+  };
+
+  const fromString = (value: string) => {
+    const normalized = normalizeComparableText(value);
+    if (!normalized) return;
+
+    if (/^[a-h]$/.test(normalized)) {
+      pushIndex(normalized.charCodeAt(0) - 97);
+      return;
+    }
+
+    if (/^\d+$/.test(normalized)) {
+      const numeric = Number.parseInt(normalized, 10);
+      // Support both 0-based and 1-based index conventions from model outputs.
+      if (numeric >= 1) pushIndex(numeric - 1);
+      pushIndex(numeric);
+      return;
+    }
+
+    const byChoiceText = byText.get(normalized);
+    if (byChoiceText !== undefined) {
+      pushIndex(byChoiceText);
+      return;
+    }
+
+    if (questionType === "true_false") {
+      const truthy = new Set(["true", "dogru"]);
+      const falsy = new Set(["false", "yanlis"]);
+      if (truthy.has(normalized)) {
+        for (let i = 0; i < choices.length; i++) {
+          const choice = normalizeComparableText(choices[i].choiceText);
+          if (truthy.has(choice)) pushIndex(i);
+        }
+        return;
+      }
+      if (falsy.has(normalized)) {
+        for (let i = 0; i < choices.length; i++) {
+          const choice = normalizeComparableText(choices[i].choiceText);
+          if (falsy.has(choice)) pushIndex(i);
+        }
+      }
+    }
+  };
+
+  const consumeValue = (value: unknown) => {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      value.forEach(consumeValue);
+      return;
+    }
+    if (typeof value === "number") {
+      pushIndex(value);
+      if (value >= 1) pushIndex(value - 1);
+      return;
+    }
+    if (typeof value === "boolean") {
+      fromString(value ? "true" : "false");
+      return;
+    }
+    if (typeof value === "string") {
+      fromString(value);
+    }
+  };
+
+  const fallbackFields: unknown[] = [
+    q.correctAnswer,
+    q.correctAnswers,
+    q.correctChoice,
+    q.correctChoices,
+    q.correctOption,
+    q.correctOptions,
+    q.correctChoiceIndex,
+    q.correctChoiceIndexes,
+    q.correctIndex,
+    q.correctIndexes,
+    q.answer,
+    q.answers,
+  ];
+  fallbackFields.forEach(consumeValue);
+
+  return Array.from(indexes).sort((a, b) => a - b);
+}
+
+function normalizeRawQuestions(rawQuestions: unknown[]): AIQuestion[] {
+  const normalized: AIQuestion[] = [];
+
+  for (const rawQuestion of rawQuestions) {
+    if (!rawQuestion || typeof rawQuestion !== "object") continue;
+    const q = rawQuestion as Record<string, unknown>;
+    const rawType = q.questionType;
+    const questionType = QUESTION_TYPES.includes(rawType as QuestionType)
+      ? (rawType as QuestionType)
+      : "multiple_choice";
+
+    const rawChoices = Array.isArray(q.choices) ? q.choices : [];
+    let choices = rawChoices
+      .map((rawChoice): { choiceText: string; isCorrect: boolean } | null => {
+        if (typeof rawChoice === "string") {
+          const choiceText = rawChoice.trim();
+          return choiceText ? { choiceText, isCorrect: false } : null;
+        }
+        if (!rawChoice || typeof rawChoice !== "object") return null;
+        const c = rawChoice as Record<string, unknown>;
+        const choiceText =
+          typeof c.choiceText === "string"
+            ? c.choiceText.trim()
+            : typeof c.text === "string"
+            ? c.text.trim()
+            : "";
+        if (!choiceText) return null;
+        return { choiceText, isCorrect: c.isCorrect === true };
+      })
+      .filter((choice): choice is { choiceText: string; isCorrect: boolean } => choice !== null);
+
+    const fallbackIndexes = resolveCorrectIndexesFromFallbackFields(
+      q,
+      choices,
+      questionType
+    );
+    if (fallbackIndexes.length > 0) {
+      if (questionType === "multiple_choice" || questionType === "true_false") {
+        const first = fallbackIndexes[0];
+        choices = choices.map((choice, index) => ({ ...choice, isCorrect: index === first }));
+      } else if (questionType === "multi_select") {
+        const allowed = new Set(fallbackIndexes);
+        choices = choices.map((choice, index) => ({ ...choice, isCorrect: allowed.has(index) }));
+      }
+    }
+
+    normalized.push({
+      questionText: typeof q.questionText === "string" ? q.questionText.trim() : "",
+      questionType,
+      timeLimitSeconds:
+        Number.isInteger(q.timeLimitSeconds) && Number(q.timeLimitSeconds) > 0
+          ? Number(q.timeLimitSeconds)
+          : 20,
+      basePoints:
+        Number.isInteger(q.basePoints) && Number(q.basePoints) > 0
+          ? Number(q.basePoints)
+          : 1000,
+      deductionPoints:
+        Number.isInteger(q.deductionPoints) && Number(q.deductionPoints) >= 0
+          ? Number(q.deductionPoints)
+          : 50,
+      deductionInterval:
+        Number.isInteger(q.deductionInterval) && Number(q.deductionInterval) > 0
+          ? Number(q.deductionInterval)
+          : 1,
+      choices,
+    });
+  }
+
+  return normalized;
 }
 
 function buildSystemPrompt(
@@ -134,7 +400,10 @@ You MUST use ALL 5 question types with this EXACT distribution:
 - text_input: ${dist.text_input} question(s)
 - ordering: ${dist.ordering} question(s)
 
-Return ONLY a JSON object. Here is an example with one of each type:
+Your output must match this DB contract exactly:
+${DB_SCHEMA_FOR_LLM}
+
+Return ONLY a JSON object with a top-level "questions" array. Here is an example with one of each type:
 
 {
   "questions": [
@@ -210,7 +479,7 @@ Return ONLY a JSON object. Here is an example with one of each type:
 CRITICAL RULES FOR "isCorrect" VALUES:
 1. multiple_choice: EXACTLY 1 choice MUST have "isCorrect": true, all others MUST be false
 2. true_false: EXACTLY 2 choices total (one "${tf[0]}" and one "${tf[1]}"), EXACTLY 1 MUST have "isCorrect": true
-3. multi_select: AT LEAST 2 choices MUST have "isCorrect": true (can be more, but minimum 2)
+3. multi_select: AT LEAST 1 and AT MOST all choices can have "isCorrect": true
 4. text_input: ALL choices MUST have "isCorrect": true (they are all accepted answers)
 5. ordering: ALL choices MUST have "isCorrect": true (they are listed in correct order)
 
@@ -218,7 +487,8 @@ OTHER RULES:
 - Generate EXACTLY ${numQuestions} questions total
 - Follow the exact distribution of question types shown above
 - Do NOT include any text outside the JSON object
-- Each question must have meaningful and accurate content`;
+- Each question must have meaningful and accurate content
+- Every question MUST have its correct answer(s) explicitly marked in choices[].isCorrect`;
 }
 
 async function callHuggingFaceAPI(
@@ -227,7 +497,8 @@ async function callHuggingFaceAPI(
   systemPrompt: string,
   topic: string,
   numQuestions: number,
-  useJsonFormat: boolean
+  responseMode: ResponseFormatMode,
+  responseSchema?: Record<string, unknown>
 ): Promise<{ content: string | null; error: string | null; status: number }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000);
@@ -239,14 +510,23 @@ async function callHuggingFaceAPI(
         { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `Generate ${numQuestions} quiz questions about "${topic}".${!useJsonFormat ? " Return ONLY valid JSON, no other text." : ""}`,
+          content: `Generate ${numQuestions} quiz questions about "${topic}".${responseMode === "none" ? " Return ONLY valid JSON, no other text." : ""}`,
         },
       ],
       temperature: 0.7,
       max_tokens: 20000,
     };
 
-    if (useJsonFormat) {
+    if (responseMode === "json_schema" && responseSchema) {
+      body.response_format = {
+        type: "json_schema",
+        json_schema: {
+          name: "quiz_generation_response",
+          strict: true,
+          schema: responseSchema,
+        },
+      };
+    } else if (responseMode === "json_object") {
       body.response_format = { type: "json_object" };
     }
 
@@ -331,6 +611,23 @@ function autoFixQuestions(questions: AIQuestion[], timeLimitSeconds?: number): v
 
     if (!q.choices || !Array.isArray(q.choices)) continue;
 
+    // If model returned correct answer metadata outside choices[].isCorrect,
+    // backfill correct flags before per-type fixes.
+    const fallbackIndexes = resolveCorrectIndexesFromFallbackFields(
+      q as unknown as Record<string, unknown>,
+      q.choices,
+      q.questionType
+    );
+    if (fallbackIndexes.length > 0) {
+      if (q.questionType === "multiple_choice" || q.questionType === "true_false") {
+        const first = fallbackIndexes[0];
+        q.choices = q.choices.map((choice, idx) => ({ ...choice, isCorrect: idx === first }));
+      } else if (q.questionType === "multi_select") {
+        const allowed = new Set(fallbackIndexes);
+        q.choices = q.choices.map((choice, idx) => ({ ...choice, isCorrect: allowed.has(idx) }));
+      }
+    }
+
     // Fix text_input and ordering - all choices should be correct
     if (q.questionType === "text_input" || q.questionType === "ordering") {
       q.choices = q.choices.map((c) => ({ ...c, isCorrect: true }));
@@ -363,29 +660,22 @@ function autoFixQuestions(questions: AIQuestion[], timeLimitSeconds?: number): v
       }
     }
 
-    // Fix multi_select - ensure at least 2 correct answers
+    // Fix multi_select - ensure at least 1 correct answer
     if (q.questionType === "multi_select") {
       const correctCount = q.choices.filter((c) => c.isCorrect).length;
       
       if (correctCount === 0) {
-        // No correct answers - mark first 2 as correct
-        if (q.choices.length >= 2) {
+        // No correct answers - mark the first as correct
+        if (q.choices.length >= 1) {
           q.choices[0].isCorrect = true;
-          q.choices[1].isCorrect = true;
-        } else if (q.choices.length === 1) {
-          q.choices[0].isCorrect = true;
-          q.questionType = "multiple_choice";
         }
-      } else if (correctCount === 1) {
-        // Only 1 correct - change to multiple_choice
-        q.questionType = "multiple_choice";
       }
     }
   }
 }
 
 function parseAIResponse(rawContent: string): AIQuestion[] {
-  let parsed: { questions: AIQuestion[] };
+  let parsed: { questions: unknown[] };
 
   try {
     parsed = JSON.parse(rawContent);
@@ -406,7 +696,7 @@ function parseAIResponse(rawContent: string): AIQuestion[] {
     throw new AIServiceError("AI returned no questions");
   }
 
-  return parsed.questions;
+  return normalizeRawQuestions(parsed.questions);
 }
 
 export async function generateQuiz(params: GenerateQuizParams): Promise<GenerateQuizResult> {
@@ -426,18 +716,42 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
     params.language,
     params.timeLimitSeconds
   );
+  const responseSchema = buildQuizResponseSchema(params.numQuestions);
 
   logger.ai.info(`Generating ${params.numQuestions} questions about "${params.topic}" with model ${params.model}`);
 
-  // Try with response_format first, fall back without it
+  // Try strict JSON Schema first, then relaxed JSON object mode, then plain JSON text.
   let result = await callHuggingFaceAPI(
-    apiKey, params.model, systemPrompt, params.topic, params.numQuestions, true
+    apiKey,
+    params.model,
+    systemPrompt,
+    params.topic,
+    params.numQuestions,
+    "json_schema",
+    responseSchema
   );
 
-  if (!result.content && result.status === 400) {
+  if (!result.content && result.status >= 400 && result.status < 500) {
+    logger.ai.info("Retrying with json_object response format...");
+    result = await callHuggingFaceAPI(
+      apiKey,
+      params.model,
+      systemPrompt,
+      params.topic,
+      params.numQuestions,
+      "json_object"
+    );
+  }
+
+  if (!result.content && result.status >= 400 && result.status < 500) {
     logger.ai.info("Retrying without response_format...");
     result = await callHuggingFaceAPI(
-      apiKey, params.model, systemPrompt, params.topic, params.numQuestions, false
+      apiKey,
+      params.model,
+      systemPrompt,
+      params.topic,
+      params.numQuestions,
+      "none"
     );
   }
 
@@ -515,14 +829,11 @@ export async function generateQuiz(params: GenerateQuizParams): Promise<Generate
       }
     } else if (q.questionType === "multi_select") {
       const correctCount = choiceValues.filter(c => c.isCorrect).length;
-      if (correctCount < 2) {
-        // Force first 2 choices to be correct
-        logger.ai.warn(`[SAFETY FIX] multi_select had ${correctCount} correct answers, forcing first 2`);
-        for (let idx = 0; idx < Math.min(2, choiceValues.length); idx++) {
-          choiceValues[idx].isCorrect = true;
-        }
-        for (let idx = 2; idx < choiceValues.length; idx++) {
-          choiceValues[idx].isCorrect = false;
+      if (correctCount < 1) {
+        // Force at least one correct choice
+        logger.ai.warn(`[SAFETY FIX] multi_select had ${correctCount} correct answers, forcing first choice as correct`);
+        for (let idx = 0; idx < choiceValues.length; idx++) {
+          choiceValues[idx].isCorrect = idx === 0;
         }
       }
     } else if (q.questionType === "text_input" || q.questionType === "ordering") {
