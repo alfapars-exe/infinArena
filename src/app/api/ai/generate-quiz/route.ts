@@ -227,7 +227,14 @@ async function callHuggingFaceAPI(
       return { content: null, error: String(errText), status: res.status };
     }
 
-    const data = await res.json();
+    const rawText = await res.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      return { content: rawText || null, error: null, status: res.status };
+    }
+
     if (Array.isArray(data)) {
       return {
         content:
