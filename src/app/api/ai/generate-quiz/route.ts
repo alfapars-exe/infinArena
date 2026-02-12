@@ -273,7 +273,7 @@ export async function POST(request: NextRequest) {
     }
     if (
       timeLimitSeconds !== undefined &&
-      (!Number.isInteger(timeLimitSeconds) || timeLimitSeconds < 5 || timeLimitSeconds > 120)
+      (!Number.isInteger(timeLimitSeconds) || timeLimitSeconds < 0 || timeLimitSeconds > 120)
     ) {
       return NextResponse.json({ error: "Invalid time limit" }, { status: 400 });
     }
@@ -320,13 +320,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const rawContent =
+      typeof result.content === "string" ? result.content : String(result.content);
+
     // Parse JSON response
     let parsed: { questions: AIQuestion[] };
     try {
-      parsed = JSON.parse(result.content);
+      parsed = JSON.parse(rawContent);
     } catch {
       // Try to extract JSON from the response
-      const match = result.content.match(/\{[\s\S]*\}/);
+      const match = rawContent.match(/\{[\s\S]*\}/);
       if (match) {
         try {
           parsed = JSON.parse(match[0]);

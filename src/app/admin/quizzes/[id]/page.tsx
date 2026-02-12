@@ -852,7 +852,6 @@ function QuestionModal({
               </label>
               <input
                 type="number"
-                min={5}
                 max={120}
                 value={question.timeLimitSeconds}
                 onChange={(e) =>
@@ -861,15 +860,6 @@ function QuestionModal({
                     timeLimitSeconds: Number.isNaN(parseInt(e.target.value, 10))
                       ? 0
                       : parseInt(e.target.value, 10),
-                  })
-                }
-                onBlur={() =>
-                  onChange({
-                    ...question,
-                    timeLimitSeconds: Math.min(
-                      120,
-                      Math.max(5, question.timeLimitSeconds || 0)
-                    ),
                   })
                 }
                 className="input-field bg-white/10 text-sm"
