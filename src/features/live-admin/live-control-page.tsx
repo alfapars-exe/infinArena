@@ -74,6 +74,7 @@ export default function LiveControlPage() {
   >([]);
   const [playerCount, setPlayerCount] = useState(0);
   const [sessionId, setSessionId] = useState<number | null>(null);
+  const sessionIdRef = useRef<number | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionPayload | null>(null);
   const [questionNumber, setQuestionNumber] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState(0);
@@ -107,10 +108,13 @@ export default function LiveControlPage() {
           setSessionId(data.sessionId);
           setQuizTitle(data.quizTitle);
           setPhase("lobby");
-          void fetch(`/api/sessions/${pin}/live`, { method: "POST" });
         }
       });
   }, [pin]);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   useEffect(() => {
     const s: TypedSocket = io({ path: "/api/socketio" });
@@ -120,9 +124,9 @@ export default function LiveControlPage() {
       setIsConnected(true);
       socketConnectedAtLeastOnceRef.current = true;
       isPageInitialLoadRef.current = false;
-      if (sessionId) {
-        s.emit("admin:join-session", { sessionId });
-        s.emit("admin:start-live", { sessionId });
+      const activeSessionId = sessionIdRef.current;
+      if (activeSessionId) {
+        s.emit("admin:join-session", { sessionId: activeSessionId });
       }
     });
 
@@ -198,12 +202,11 @@ export default function LiveControlPage() {
     return () => {
       s.disconnect();
     };
-  }, [sessionId]);
+  }, []);
 
   useEffect(() => {
-    if (socket && sessionId) {
+    if (socket && socket.connected && sessionId) {
       socket.emit("admin:join-session", { sessionId });
-      socket.emit("admin:start-live", { sessionId });
     }
   }, [socket, sessionId]);
 
@@ -505,9 +508,11 @@ export default function LiveControlPage() {
               {currentQuestion.choices.map((c, i) => (
                 <div
                   key={c.id}
-                  className={`${getChoiceColor(i)} rounded-xl p-6 flex items-center gap-4`}
+                  className={`${getChoiceColor(i)} rounded-xl p-4 md:p-6 min-h-[88px] flex items-center gap-3`}
                 >
-                  <span className="text-xl font-bold text-white">{c.choiceText}</span>
+                  <span className="text-lg md:text-xl font-bold text-white break-words whitespace-normal leading-snug">
+                    {c.choiceText}
+                  </span>
                 </div>
               ))}
             </div>

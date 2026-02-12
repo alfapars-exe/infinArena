@@ -74,7 +74,8 @@
     @apply w-full py-6 rounded-lg font-bold text-xl text-white
            transition-all duration-200 transform hover:scale-[1.02]
            active:scale-[0.98] shadow-xl cursor-pointer
-           flex items-center justify-center gap-3;
+           flex items-center justify-center gap-3
+           break-words whitespace-normal text-center;
   }
 }
 

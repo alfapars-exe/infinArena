@@ -1056,7 +1056,9 @@ export default function PlayPage() {
                         isSelected ? "ring-4 ring-white scale-105" : ""
                       } ${isDisabled && !isSelected ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
-                      <span>{choice.choiceText}</span>
+                      <span className="w-full break-words whitespace-normal leading-snug text-center">
+                        {choice.choiceText}
+                      </span>
                     </motion.button>
                   );
                 })}
@@ -1087,7 +1089,9 @@ export default function PlayPage() {
                           active ? "ring-4 ring-white" : "opacity-90"
                         } ${isDisabled && !active ? "cursor-not-allowed opacity-50" : ""}`}
                       >
-                        <span>{choice.choiceText}</span>
+                        <span className="w-full break-words whitespace-normal leading-snug text-center">
+                          {choice.choiceText}
+                        </span>
                       </button>
                     );
                   })}
