@@ -596,39 +596,10 @@ export default function PlayPage() {
   }, [playerId, nickname, avatar, saveSession]);
 
   const submitAnswer = (choiceId: number) => {
-    console.log("submitAnswer called", {
-      hasSocket: !!socket,
-      hasQuestion: !!currentQuestion,
-      selectedChoice,
-      didSubmit,
-      isSubmittingAnswer: isSubmittingAnswerRef.current,
-      phase,
-    });
-
-    if (!socket) {
-      console.warn("No socket connection");
-      return;
-    }
-    if (!currentQuestion) {
-      console.warn("No current question");
-      return;
-    }
-    if (selectedChoice !== null) {
-      console.warn("Already selected a choice");
-      return;
-    }
-    if (didSubmit) {
-      console.warn("Already submitted");
-      return;
-    }
-    if (isSubmittingAnswerRef.current) {
-      console.warn("Already submitting");
-      return;
-    }
+    if (!socket || !currentQuestion || selectedChoice !== null || didSubmit || isSubmittingAnswerRef.current) return;
 
     setSelectedChoice(choiceId);
     const responseTimeMs = Date.now() - questionStartTime.current;
-    console.log("Emitting answer", { questionId: currentQuestion.id, choiceId, responseTimeMs });
     socket.emit("player:answer", {
       questionId: currentQuestion.id,
       choiceId,
@@ -942,10 +913,7 @@ export default function PlayPage() {
                       whileHover={!isDisabled ? { scale: 1.02 } : {}}
                       whileTap={!isDisabled ? { scale: 0.95 } : {}}
                       onClick={() => {
-                        console.log("Button clicked", { choiceId: choice.id, isDisabled });
-                        if (!isDisabled) {
-                          submitAnswer(choice.id);
-                        }
+                        if (!isDisabled) submitAnswer(choice.id);
                       }}
                       disabled={isDisabled}
                       className={`answer-btn ${getChoiceColor(i)} ${
