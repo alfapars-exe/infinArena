@@ -369,8 +369,73 @@ export function setupSocketHandlers(io: TypedServer) {
 
             if (phase === "answered") {
               socket.emit("game:answer-ack", { received: true });
+
+              // Also send batch results if available
+              const playerAnswer = session.pendingAnswers.get(player.id);
+              if (playerAnswer) {
+                let playerAnswerDisplay: any = null;
+
+                if (currentQ.questionType === "ordering") {
+                  const choiceTexts = playerAnswer.orderedChoiceIds
+                    .map((choiceId) => {
+                      const choice = currentQ.choices.find((c) => c.id === choiceId);
+                      return choice?.choiceText || `Choice ${choiceId}`;
+                    })
+                    .filter((text) => text);
+                  playerAnswerDisplay = choiceTexts.length > 0 ? choiceTexts : null;
+                } else if (currentQ.questionType === "text_input") {
+                  playerAnswerDisplay = playerAnswer.textAnswer || null;
+                }
+
+                socket.emit("game:batch-results", {
+                  isCorrect: playerAnswer.isCorrect,
+                  pointsAwarded: playerAnswer.points,
+                  streakBonus: playerAnswer.streakBonus,
+                  totalScore: playerAnswer.totalScore,
+                  correctChoiceId: currentQ.correctChoiceId,
+                  correctChoiceIds: currentQ.correctChoiceIds,
+                  streak: playerAnswer.streak,
+                  playerAnswer: playerAnswerDisplay,
+                  correctAnswerText: currentQ.choices
+                    .filter((c) => currentQ.correctChoiceIds.includes(c.id))
+                    .map((c) => c.choiceText),
+                });
+              }
             }
           } else if (phase === "leaderboard") {
+            // First send batch results for this player if they answered
+            const playerAnswer = session.pendingAnswers.get(player.id);
+            if (playerAnswer) {
+              let playerAnswerDisplay: any = null;
+
+              if (currentQ.questionType === "ordering") {
+                const choiceTexts = playerAnswer.orderedChoiceIds
+                  .map((choiceId) => {
+                    const choice = currentQ.choices.find((c) => c.id === choiceId);
+                    return choice?.choiceText || `Choice ${choiceId}`;
+                  })
+                  .filter((text) => text);
+                playerAnswerDisplay = choiceTexts.length > 0 ? choiceTexts : null;
+              } else if (currentQ.questionType === "text_input") {
+                playerAnswerDisplay = playerAnswer.textAnswer || null;
+              }
+
+              socket.emit("game:batch-results", {
+                isCorrect: playerAnswer.isCorrect,
+                pointsAwarded: playerAnswer.points,
+                streakBonus: playerAnswer.streakBonus,
+                totalScore: playerAnswer.totalScore,
+                correctChoiceId: currentQ.correctChoiceId,
+                correctChoiceIds: currentQ.correctChoiceIds,
+                streak: playerAnswer.streak,
+                playerAnswer: playerAnswerDisplay,
+                correctAnswerText: currentQ.choices
+                  .filter((c) => currentQ.correctChoiceIds.includes(c.id))
+                  .map((c) => c.choiceText),
+              });
+            }
+
+            // Then send leaderboard
             const allPlayers = (await db
               .select()
               .from(players)
