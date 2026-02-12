@@ -13,6 +13,16 @@ interface SessionInfo {
   createdAt: string;
 }
 
+const MUSIC_STORAGE_KEY = "infinarena:music";
+
+type StoredMusic = {
+  youtubeUrl?: string;
+  youtubeVideoId?: string | null;
+  volume?: number;
+  isRepeat?: boolean;
+  isPlaying?: boolean;
+};
+
 function getErrorMessage(err: unknown, fallback: string): string {
   if (typeof err === "string" && err.trim()) return err;
   if (err && typeof err === "object") {
@@ -68,6 +78,22 @@ export default function PublishPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(MUSIC_STORAGE_KEY);
+      if (!raw) return;
+      const stored = JSON.parse(raw) as StoredMusic;
+      if (stored.youtubeUrl) setYoutubeUrl(stored.youtubeUrl);
+      if (typeof stored.volume === "number") setVolume(stored.volume);
+      if (typeof stored.isRepeat === "boolean") setIsRepeat(stored.isRepeat);
+      if (typeof stored.isPlaying === "boolean") setIsPlaying(stored.isPlaying);
+      if (stored.youtubeVideoId) setYoutubeVideoId(stored.youtubeVideoId);
+    } catch {
+      // Ignore storage parse errors.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     if ((window as any).YT) return;
 
     const tag = document.createElement("script");
@@ -82,6 +108,22 @@ export default function PublishPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const payload: StoredMusic = {
+      youtubeUrl,
+      youtubeVideoId,
+      volume,
+      isRepeat,
+      isPlaying,
+    };
+    try {
+      window.localStorage.setItem(MUSIC_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [youtubeUrl, youtubeVideoId, volume, isRepeat, isPlaying]);
 
   const fetchData = async () => {
     const [quizRes, resultsRes] = await Promise.all([
@@ -247,6 +289,7 @@ export default function PublishPage() {
     }
 
     setYoutubeVideoId(vid);
+    setShowMusicInput(false);
   };
 
   const togglePlay = () => {
@@ -313,49 +356,49 @@ export default function PublishPage() {
         </p>
 
         <div className="mb-4">
-          {!youtubeVideoId ? (
-            !showMusicInput ? (
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                onClick={() => setShowMusicInput(true)}
-                className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-5 py-2.5 rounded-full text-sm font-semibold transition-all"
-              >
-                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
-                  <path d="M12 3v9.28c-.47-.46-1.12-.75-1.84-.75-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V7h4V3h-5z" />
-                </svg>
+          {showMusicInput ? (
+            <div>
+              <label className="text-white/60 text-sm block mb-2">
                 {t("live.bgMusic")}
-              </motion.button>
-            ) : (
-              <div>
-                <label className="text-white/60 text-sm block mb-2">
-                  {t("live.bgMusic")}
-                </label>
-                <div className="d-flex flex-column flex-md-row gap-2">
-                  <input
-                    type="text"
-                    value={youtubeUrl}
-                    onChange={(e) => setYoutubeUrl(e.target.value)}
-                    placeholder={t("live.youtubeMusicPlaceholder")}
-                    className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-inf-turquoise"
-                  />
-                  <button
-                    onClick={loadYouTube}
-                    disabled={!youtubeUrl.trim()}
-                    className="bg-gradient-to-r from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-5 py-2 rounded-lg font-semibold disabled:opacity-50 transition-all"
-                  >
-                    {t("live.play")}
-                  </button>
-                  <button
-                    onClick={() => setShowMusicInput(false)}
-                    className="text-white/40 hover:text-white/60 text-xl transition-colors px-2 font-bold"
-                  >
-                    ✕
-                  </button>
-                </div>
+              </label>
+              <div className="d-flex flex-column flex-md-row gap-2">
+                <input
+                  type="text"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder={t("live.youtubeMusicPlaceholder")}
+                  className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white text-sm placeholder-white/30 focus:outline-none focus:border-inf-turquoise"
+                />
+                <button
+                  onClick={loadYouTube}
+                  disabled={!youtubeUrl.trim()}
+                  className="bg-gradient-to-r from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-5 py-2 rounded-lg font-semibold disabled:opacity-50 transition-all"
+                >
+                  {t("live.play")}
+                </button>
+                <button
+                  onClick={() => setShowMusicInput(false)}
+                  className="text-white/40 hover:text-white/60 text-xl transition-colors px-2 font-bold"
+                >
+                  ✕
+                </button>
               </div>
-            )
-          ) : (
-            <div className="flex items-center gap-3 text-white/80">
+            </div>
+          ) : !youtubeVideoId ? (
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              onClick={() => setShowMusicInput(true)}
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-5 py-2.5 rounded-full text-sm font-semibold transition-all"
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
+                <path d="M12 3v9.28c-.47-.46-1.12-.75-1.84-.75-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V7h4V3h-5z" />
+              </svg>
+              {t("live.bgMusic")}
+            </motion.button>
+          ) : null}
+
+          {youtubeVideoId && (
+            <div className="flex flex-wrap items-center gap-3 text-white/80 mt-3">
               <div className="hidden">
                 <div id="yt-player-publish" />
               </div>
@@ -413,6 +456,18 @@ export default function PublishPage() {
                 />
                 <span className="text-white/70 text-xs font-medium min-w-6">{volume}%</span>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!youtubeUrl && youtubeVideoId) {
+                    setYoutubeUrl(`https://youtu.be/${youtubeVideoId}`);
+                  }
+                  setShowMusicInput(true);
+                }}
+                className="text-sm text-white/70 hover:text-white underline underline-offset-4"
+              >
+                {t("live.changeMusic")}
+              </button>
             </div>
           )}
         </div>

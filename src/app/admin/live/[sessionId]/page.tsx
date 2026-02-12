@@ -27,6 +27,15 @@ const CHOICE_COLORS = [
 ];
 const CHOICE_SHAPES = ["A", "B", "C", "D"];
 
+const MUSIC_STORAGE_KEY = "infinarena:music";
+
+type StoredMusic = {
+  youtubeVideoId?: string | null;
+  volume?: number;
+  isRepeat?: boolean;
+  isPlaying?: boolean;
+};
+
 function getChoiceColor(index: number): string {
   return CHOICE_COLORS[index % CHOICE_COLORS.length];
 }
@@ -61,6 +70,11 @@ export default function LiveControlPage() {
   const [notifications, setNotifications] = useState<
     { id: number; message: string }[]
   >([]);
+  const [musicVideoId, setMusicVideoId] = useState<string | null>(null);
+  const [musicVolume, setMusicVolume] = useState(50);
+  const [musicIsRepeat, setMusicIsRepeat] = useState(false);
+  const [musicIsPlaying, setMusicIsPlaying] = useState(false);
+  const musicPlayerRef = useRef<any>(null);
 
 
   const pushNotification = (message: string) => {
@@ -85,6 +99,30 @@ export default function LiveControlPage() {
         }
       });
   }, [pin]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if ((window as any).YT) return;
+
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(MUSIC_STORAGE_KEY);
+      if (!raw) return;
+      const stored = JSON.parse(raw) as StoredMusic;
+      if (typeof stored.volume === "number") setMusicVolume(stored.volume);
+      if (typeof stored.isRepeat === "boolean") setMusicIsRepeat(stored.isRepeat);
+      if (typeof stored.isPlaying === "boolean") setMusicIsPlaying(stored.isPlaying);
+      if (stored.youtubeVideoId) setMusicVideoId(stored.youtubeVideoId);
+    } catch {
+      // Ignore storage parse errors.
+    }
+  }, []);
 
   // Socket connection
   useEffect(() => {
@@ -174,6 +212,80 @@ export default function LiveControlPage() {
     }
   }, [socket, sessionId]);
 
+  const initializeMusicPlayer = (vid: string) => {
+    if (!(window as any).YT?.Player) return false;
+    const mountNode = document.getElementById("yt-player-live");
+    if (!mountNode) return false;
+
+    if (musicPlayerRef.current && typeof musicPlayerRef.current.destroy === "function") {
+      musicPlayerRef.current.destroy();
+    }
+
+    musicPlayerRef.current = new (window as any).YT.Player("yt-player-live", {
+      videoId: vid,
+      playerVars: {
+        autoplay: 0,
+        loop: musicIsRepeat ? 1 : 0,
+        playlist: musicIsRepeat ? vid : undefined,
+      },
+      events: {
+        onReady: (e: any) => {
+          if (typeof e?.target?.setVolume === "function") {
+            e.target.setVolume(musicVolume);
+          }
+          if (musicIsPlaying && typeof e?.target?.playVideo === "function") {
+            e.target.playVideo();
+          }
+        },
+        onStateChange: (e: any) => {
+          if (e.data === 0 && musicIsRepeat && typeof e?.target?.playVideo === "function") {
+            e.target.playVideo();
+          }
+        },
+      },
+    });
+    return true;
+  };
+
+  useEffect(() => {
+    if (!musicVideoId) return;
+    let attempts = 0;
+    const maxAttempts = 30;
+
+    const tryInit = () => {
+      if (initializeMusicPlayer(musicVideoId)) return;
+      attempts += 1;
+      if (attempts < maxAttempts) {
+        setTimeout(tryInit, 100);
+      }
+    };
+
+    setTimeout(tryInit, 0);
+  }, [musicVideoId, musicIsRepeat]);
+
+  useEffect(() => {
+    return () => {
+      if (musicPlayerRef.current && typeof musicPlayerRef.current.destroy === "function") {
+        musicPlayerRef.current.destroy();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const payload: StoredMusic = {
+      youtubeVideoId: musicVideoId,
+      volume: musicVolume,
+      isRepeat: musicIsRepeat,
+      isPlaying: musicIsPlaying,
+    };
+    try {
+      window.localStorage.setItem(MUSIC_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [musicVideoId, musicVolume, musicIsRepeat, musicIsPlaying]);
+
   // Server-synced timer refs
   const serverEndTimeRef = useRef<number>(0);
   const timerRafRef = useRef<number>(0);
@@ -191,6 +303,28 @@ export default function LiveControlPage() {
     };
     timerRafRef.current = requestAnimationFrame(tick);
   }, []);
+
+  const toggleMusicPlay = () => {
+    if (!musicPlayerRef.current) return;
+    const canPause = typeof musicPlayerRef.current.pauseVideo === "function";
+    const canPlay = typeof musicPlayerRef.current.playVideo === "function";
+    if (!canPause || !canPlay) return;
+
+    if (musicIsPlaying) {
+      musicPlayerRef.current.pauseVideo();
+      setMusicIsPlaying(false);
+    } else {
+      musicPlayerRef.current.playVideo();
+      setMusicIsPlaying(true);
+    }
+  };
+
+  const changeMusicVolume = (v: number) => {
+    setMusicVolume(v);
+    if (musicPlayerRef.current && typeof musicPlayerRef.current.setVolume === "function") {
+      musicPlayerRef.current.setVolume(v);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -250,6 +384,67 @@ export default function LiveControlPage() {
             </span>
             
           </div>
+          {musicVideoId && (
+            <div className="flex flex-wrap items-center justify-center gap-3 mt-4 text-white/80">
+              <div className="hidden">
+                <div id="yt-player-live" />
+              </div>
+              <button
+                onClick={toggleMusicPlay}
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
+                  musicIsPlaying
+                    ? "bg-gradient-to-br from-inf-red to-rose-600 hover:from-red-700 hover:to-rose-700 text-white"
+                    : "bg-gradient-to-br from-inf-turquoise to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white"
+                }`}
+                aria-label={musicIsPlaying ? t("live.pause") : t("live.play")}
+                title={musicIsPlaying ? t("live.pause") : t("live.play")}
+              >
+                {musicIsPlaying ? (
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
+                    <rect x="6" y="4" width="4" height="16" />
+                    <rect x="14" y="4" width="4" height="16" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true">
+                    <path d="M8 5.5v13l10-6.5-10-6.5z" />
+                  </svg>
+                )}
+              </button>
+              <button
+                onClick={() => setMusicIsRepeat(!musicIsRepeat)}
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 hover:shadow-lg ${
+                  musicIsRepeat
+                    ? "bg-gradient-to-br from-inf-yellow to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white"
+                    : "bg-white/20 hover:bg-white/30 text-white/60 hover:text-white"
+                }`}
+                aria-label={t("live.loop")}
+                title={t("live.loop")}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                  <path d="M3 12a7 7 0 0 1 7-7h7" />
+                  <path d="M17 2l4 3-4 3" />
+                  <path d="M21 12a7 7 0 0 1-7 7H7" />
+                  <path d="M7 22l-4-3 4-3" />
+                </svg>
+              </button>
+              <div className="flex items-center gap-2 bg-white/10 px-3 py-2 rounded-full">
+                <svg viewBox="0 0 24 24" className="w-4 h-4 text-white/70" fill="currentColor" aria-hidden="true">
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.26 2.5-4.02zM14 3.1v2.7c2.89.86 5 3.54 5 6.9s-2.11 6.04-5 6.9v2.7c4.01-.91 7-4.49 7-9.6s-2.99-8.69-7-9.6z" />
+                </svg>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={musicVolume}
+                  onChange={(e) => changeMusicVolume(Number(e.target.value))}
+                  className="h-2 w-20 accent-inf-turquoise cursor-pointer"
+                  aria-label={t("live.volume")}
+                  title={`${t("live.volume")}: ${musicVolume}%`}
+                />
+                <span className="text-white/70 text-xs font-medium min-w-6">{musicVolume}%</span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="position-fixed end-0 top-0 translate-middle-y-0 z-50 w-100 px-3 px-md-4 space-y-2" style={{ maxWidth: "360px", marginTop: "80px" }}>
