@@ -235,6 +235,8 @@ export default function PlayPage() {
   >([]);
   const [textAnswer, setTextAnswer] = useState("");
   const [didSubmit, setDidSubmit] = useState(false);
+  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const isSubmittingAnswerRef = useRef(false);
   const questionStartTime = useRef<number>(0);
   const serverEndTimeRef = useRef<number>(0);
   const timerRafRef = useRef<number>(0);
@@ -285,6 +287,10 @@ export default function PlayPage() {
       });
     } catch {}
   }, [pin, sessionCacheKey]);
+
+  useEffect(() => {
+    isSubmittingAnswerRef.current = isSubmittingAnswer;
+  }, [isSubmittingAnswer]);
 
   // Server-synced timer using requestAnimationFrame
   const startSyncedTimer = useCallback((serverStart: number, timeLimitSeconds: number) => {
@@ -373,6 +379,17 @@ export default function PlayPage() {
     });
 
     s.on("error", ({ message }) => {
+      if (message === "Already answered") {
+        setIsSubmittingAnswer(false);
+        isSubmittingAnswerRef.current = false;
+        setDidSubmit(true);
+        setPhase("answered");
+      } else if (isSubmittingAnswerRef.current) {
+        setIsSubmittingAnswer(false);
+        isSubmittingAnswerRef.current = false;
+        setDidSubmit(false);
+        setSelectedChoice(null);
+      }
       setError(message);
     });
 
@@ -405,6 +422,8 @@ export default function PlayPage() {
         );
         setTextAnswer("");
         setDidSubmit(false);
+        setIsSubmittingAnswer(false);
+        isSubmittingAnswerRef.current = false;
         setBatchResult(null);
         questionStartTime.current = serverStartTime;
         scoringRef.current = {
@@ -421,6 +440,8 @@ export default function PlayPage() {
 
     // Answer acknowledged - stay in "answered" phase waiting for batch results
     s.on("game:answer-ack", () => {
+      setIsSubmittingAnswer(false);
+      isSubmittingAnswerRef.current = false;
       setDidSubmit(true);
       setPhase("answered");
     });
@@ -429,6 +450,8 @@ export default function PlayPage() {
     s.on("game:time-up", () => {
       setTimeLeft(0);
       setTimeProgress(0);
+      setIsSubmittingAnswer(false);
+      isSubmittingAnswerRef.current = false;
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
     });
 
@@ -518,6 +541,20 @@ export default function PlayPage() {
     };
   }, [socket, emitRejoinFromCache]);
 
+  // If client misses an event while in answered screen, force periodic re-sync.
+  useEffect(() => {
+    if (!socket || phase !== "answered") return;
+
+    const interval = window.setInterval(() => {
+      if (!socket.connected) return;
+      emitRejoinFromCache(socket);
+    }, 3000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [socket, phase, emitRejoinFromCache]);
+
   // Update myRank when leaderboard changes
   useEffect(() => {
     if (playerId) {
@@ -545,7 +582,7 @@ export default function PlayPage() {
   }, [playerId, nickname, avatar, saveSession]);
 
   const submitAnswer = (choiceId: number) => {
-    if (!socket || !currentQuestion || selectedChoice !== null) return;
+    if (!socket || !currentQuestion || selectedChoice !== null || didSubmit || isSubmittingAnswerRef.current) return;
 
     setSelectedChoice(choiceId);
     const responseTimeMs = Date.now() - questionStartTime.current;
@@ -554,8 +591,8 @@ export default function PlayPage() {
       choiceId,
       responseTimeMs,
     });
-    setDidSubmit(true);
-    setPhase("answered");
+    setIsSubmittingAnswer(true);
+    isSubmittingAnswerRef.current = true;
   };
 
   const toggleMultiChoice = (choiceId: number) => {
@@ -590,7 +627,7 @@ export default function PlayPage() {
   }, [timeLeft, phase, currentQuestion, orderedChoices, didSubmit]);
 
   const submitAdvancedAnswer = () => {
-    if (!socket || !currentQuestion || phase !== "question") return;
+    if (!socket || !currentQuestion || phase !== "question" || didSubmit || isSubmittingAnswerRef.current) return;
     const responseTimeMs = Date.now() - questionStartTime.current;
 
     if (currentQuestion.questionType === "multi_select") {
@@ -618,8 +655,8 @@ export default function PlayPage() {
       return;
     }
 
-    setDidSubmit(true);
-    setPhase("answered");
+    setIsSubmittingAnswer(true);
+    isSubmittingAnswerRef.current = true;
   };
 
   const pageBackgroundStyle =

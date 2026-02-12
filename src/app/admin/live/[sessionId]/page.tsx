@@ -667,6 +667,111 @@ export default function LiveControlPage() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
             <h2 className="text-2xl font-bold text-white mb-6">{t("live.leaderboard")}</h2>
 
+            {/* Question Stats Summary - Show if available */}
+            {stats && currentQuestion && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-6 max-w-4xl mx-auto"
+              >
+                <h3 className="text-xl font-bold text-white mb-4">
+                  {t("live.answerDistribution")}
+                </h3>
+                
+                {/* Question text */}
+                <div className="bg-white/5 rounded-lg p-3 mb-4">
+                  <p className="text-white/90 text-sm font-semibold">
+                    {currentQuestion.questionText}
+                  </p>
+                </div>
+
+                {/* Answer distribution bars */}
+                <div className="space-y-3 mb-4">
+                  {stats.choiceSelections.map((selection, idx) => {
+                    const isCorrect = 
+                      selection.choiceId === stats.correctChoiceId ||
+                      (stats.correctChoiceIds && stats.correctChoiceIds.includes(selection.choiceId));
+                    const percentage = stats.totalPlayers > 0
+                      ? Math.round((selection.count / stats.totalPlayers) * 100)
+                      : 0;
+
+                    return (
+                      <div
+                        key={selection.choiceId}
+                        className={`relative overflow-hidden rounded-xl border-2 ${
+                          isCorrect 
+                            ? "border-green-500 bg-green-500/20" 
+                            : "border-white/20 bg-white/5"
+                        }`}
+                      >
+                        {/* Background bar */}
+                        <div
+                          className={`absolute inset-y-0 left-0 transition-all duration-500 ${
+                            isCorrect ? "bg-green-500/30" : "bg-white/10"
+                          }`}
+                          style={{ width: `${percentage}%` }}
+                        />
+
+                        {/* Content */}
+                        <div className="relative flex items-center justify-between p-3">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white ${
+                              getChoiceColor(idx)
+                            }`}>
+                              {getChoiceShape(idx)}
+                            </div>
+                            <span className="text-white font-medium flex-1 text-left">
+                              {selection.choiceText}
+                            </span>
+                            {isCorrect && (
+                              <span className="text-green-400 text-xl">✓</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-white/70 text-sm font-medium">
+                              {selection.count} {selection.count === 1 ? t("play.player") : t("play.players")}
+                            </span>
+                            <span className="text-white font-bold text-lg min-w-[3rem] text-right">
+                              {percentage}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Stats summary */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-white">
+                      {stats.answeredCount}
+                    </div>
+                    <div className="text-white/60 text-sm">
+                      {t("play.answered")}
+                    </div>
+                  </div>
+                  <div className="bg-green-500/20 border border-green-500/40 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-green-400">
+                      {stats.correctCount}
+                    </div>
+                    <div className="text-white/60 text-sm">
+                      {t("live.correct")}
+                    </div>
+                  </div>
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <div className="text-2xl font-bold text-white">
+                      {stats.totalPlayers}
+                    </div>
+                    <div className="text-white/60 text-sm">
+                      {t("play.totalPlayers")}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Leaderboard Rankings */}
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-6 max-w-lg mx-auto">
               {leaderboard.slice(0, 5).map((p, i) => (
                 <motion.div

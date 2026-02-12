@@ -39,6 +39,30 @@ function normalizeText(value: string): string {
   return value.trim().toLocaleLowerCase("tr");
 }
 
+async function getLiveConnectedPlayerCount(
+  io: TypedServer,
+  sessionId: number
+): Promise<number> {
+  const connectedPlayers = await db
+    .select({
+      id: players.id,
+      socketId: players.socketId,
+    })
+    .from(players)
+    .where(
+      and(
+        eq(players.sessionId, sessionId),
+        eq(players.isConnected, true)
+      )
+    );
+
+  return connectedPlayers.filter(
+    (player: { id: number; socketId: string | null }) =>
+      Boolean(player.socketId) &&
+      io.sockets.sockets.has(player.socketId as string)
+  ).length;
+}
+
 export function setupSocketHandlers(io: TypedServer) {
   void ensureDbMigrations();
 
@@ -253,16 +277,10 @@ export function setupSocketHandlers(io: TypedServer) {
         }
 
         if (session) {
-          const connected = await db
-            .select()
-            .from(players)
-            .where(
-              and(
-                eq(players.sessionId, dbSession.id),
-                eq(players.isConnected, true)
-              )
-            );
-          session.totalConnectedPlayers = connected.length;
+          session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
+            io,
+            dbSession.id
+          );
         }
 
         socket.emit("player:rejoined-success", {
@@ -400,23 +418,16 @@ export function setupSocketHandlers(io: TypedServer) {
           return;
         }
 
-        const connectedPlayers = await db
-          .select()
-          .from(players)
-          .where(
-            and(
-              eq(players.sessionId, sessionId),
-              eq(players.isConnected, true)
-            )
-          );
-
         const activeSession = createActiveSession(
           sessionId,
           dbSession.pin,
           socket.id,
           questionsWithChoices
         );
-        activeSession.totalConnectedPlayers = connectedPlayers.length;
+        activeSession.totalConnectedPlayers = await getLiveConnectedPlayerCount(
+          io,
+          sessionId
+        );
 
         await db
           .update(quizSessions)
@@ -449,6 +460,7 @@ export function setupSocketHandlers(io: TypedServer) {
     socket.on(
       "player:answer",
       async ({ questionId, choiceId, choiceIds, orderedChoiceIds, textAnswer }) => {
+      let session: ActiveSession | undefined;
       try {
         const playerInfo = getPlayerBySocket(socket.id);
         if (!playerInfo) {
@@ -456,7 +468,7 @@ export function setupSocketHandlers(io: TypedServer) {
           return;
         }
 
-        const session = getActiveSession(playerInfo.sessionId);
+        session = getActiveSession(playerInfo.sessionId);
         if (!session) {
           socket.emit("error", { message: "No active session" });
           return;
@@ -474,6 +486,10 @@ export function setupSocketHandlers(io: TypedServer) {
         }
 
         session.answeredPlayerIds.add(playerInfo.playerId);
+        const rejectAnswer = (message: string) => {
+          session?.answeredPlayerIds.delete(playerInfo.playerId);
+          socket.emit("error", { message });
+        };
 
         const serverResponseTime = Date.now() - session.questionStartTime;
         const actualResponseTime = Math.min(
@@ -497,7 +513,7 @@ export function setupSocketHandlers(io: TypedServer) {
           currentQ.questionType === "true_false"
         ) {
           if (!choiceId || !Number.isInteger(choiceId)) {
-            socket.emit("error", { message: "Choice is required" });
+            rejectAnswer("Choice is required");
             return;
           }
           persistedChoiceId = choiceId;
@@ -505,7 +521,7 @@ export function setupSocketHandlers(io: TypedServer) {
           session.choiceCounts[choiceId] = (session.choiceCounts[choiceId] || 0) + 1;
         } else if (currentQ.questionType === "multi_select") {
           if (safeChoiceIds.length === 0) {
-            socket.emit("error", { message: "At least one choice is required" });
+            rejectAnswer("At least one choice is required");
             return;
           }
           persistedChoiceId = safeChoiceIds[0] || null;
@@ -519,7 +535,7 @@ export function setupSocketHandlers(io: TypedServer) {
           }
         } else if (currentQ.questionType === "ordering") {
           if (safeOrderedChoiceIds.length !== currentQ.correctOrderChoiceIds.length) {
-            socket.emit("error", { message: "Ordering answer is incomplete" });
+            rejectAnswer("Ordering answer is incomplete");
             return;
           }
           persistedChoiceId = safeOrderedChoiceIds[0] || null;
@@ -528,7 +544,7 @@ export function setupSocketHandlers(io: TypedServer) {
           );
         } else {
           if (!safeTextAnswer) {
-            socket.emit("error", { message: "Answer text is required" });
+            rejectAnswer("Answer text is required");
             return;
           }
           const normalized = normalizeText(safeTextAnswer);
@@ -607,6 +623,10 @@ export function setupSocketHandlers(io: TypedServer) {
         });
 
         socket.emit("game:answer-ack", { received: true });
+        session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
+          io,
+          session.sessionId
+        );
 
         if (session.answeredPlayerIds.size >= session.totalConnectedPlayers) {
           if (session.timer) {
@@ -616,6 +636,12 @@ export function setupSocketHandlers(io: TypedServer) {
           await handleTimeUp(io, session);
         }
       } catch (err) {
+        if (session) {
+          const playerInfo = getPlayerBySocket(socket.id);
+          if (playerInfo) {
+            session.answeredPlayerIds.delete(playerInfo.playerId);
+          }
+        }
         logger.socket.error("player:answer error", err);
         socket.emit("error", { message: "Failed to process answer" });
       }
@@ -640,19 +666,12 @@ export function setupSocketHandlers(io: TypedServer) {
             .from(players)
             .where(eq(players.id, playerInfo.playerId));
 
-          const connected = await db
-            .select()
-            .from(players)
-            .where(
-              and(
-                eq(players.sessionId, playerInfo.sessionId),
-                eq(players.isConnected, true)
-              )
-            );
-
           const session = getActiveSession(playerInfo.sessionId);
           if (session) {
-            session.totalConnectedPlayers = connected.length;
+            session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
+              io,
+              playerInfo.sessionId
+            );
             if (
               session.timer &&
               session.answeredPlayerIds.size > 0 &&
@@ -670,7 +689,7 @@ export function setupSocketHandlers(io: TypedServer) {
               {
                 playerId: playerInfo.playerId,
                 nickname: player.nickname,
-                playerCount: connected.length,
+                playerCount: session?.totalConnectedPlayers ?? 0,
               }
             );
           }
@@ -703,16 +722,10 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
   const question = session.questions[session.currentQuestionIndex];
   session.questionStartTime = Date.now();
 
-  const connected = await db
-    .select()
-    .from(players)
-    .where(
-      and(
-        eq(players.sessionId, session.sessionId),
-        eq(players.isConnected, true)
-      )
-    );
-  session.totalConnectedPlayers = connected.length;
+  session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
+    io,
+    session.sessionId
+  );
 
   await db
     .update(quizSessions)
@@ -755,6 +768,22 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 
   io.to(`session:${session.sessionId}`).emit("game:time-up");
 
+  const allPlayers = await db
+    .select()
+    .from(players)
+    .where(
+      and(
+        eq(players.sessionId, session.sessionId),
+        eq(players.isConnected, true)
+      )
+    );
+
+  const connectedSocketByPlayerId = new Map<number, string>(
+    allPlayers
+      .filter((p: any) => Boolean(p.socketId))
+      .map((p: any) => [p.id, p.socketId as string])
+  );
+
   // Send batch results to each player who answered
   for (const [, answer] of Array.from(session.pendingAnswers)) {
     let playerAnswerDisplay: any = null;
@@ -771,7 +800,11 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       playerAnswerDisplay = answer.textAnswer || null;
     }
 
-    io.to(answer.socketId).emit("game:batch-results", {
+    const targetSocketId =
+      connectedSocketByPlayerId.get(answer.playerId) || answer.socketId;
+    if (!targetSocketId) continue;
+
+    io.to(targetSocketId).emit("game:batch-results", {
       isCorrect: answer.isCorrect,
       pointsAwarded: answer.points,
       streakBonus: answer.streakBonus,
@@ -787,16 +820,6 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   }
 
   // Send empty result to unanswered players
-  const allPlayers = await db
-    .select()
-    .from(players)
-    .where(
-      and(
-        eq(players.sessionId, session.sessionId),
-        eq(players.isConnected, true)
-      )
-    );
-
   for (const p of allPlayers) {
     if (!session.answeredPlayerIds.has(p.id) && p.socketId) {
       io.to(p.socketId).emit("game:batch-results", {
@@ -946,6 +969,11 @@ async function sendLeaderboard(io: TypedServer, session: ActiveSession) {
   io.to(`session:${session.sessionId}`).emit("game:leaderboard", {
     rankings,
   });
+
+  for (const player of allPlayers) {
+    if (!player.socketId) continue;
+    io.to(player.socketId).emit("game:leaderboard", { rankings });
+  }
 }
 
 async function endQuiz(io: TypedServer, sessionId: number) {

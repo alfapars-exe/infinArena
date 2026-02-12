@@ -5,30 +5,23 @@ import { getToken } from "next-auth/jwt";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
-    const target = pathname.replace("/admin", "/infinarenapanel");
-    const url = request.nextUrl.clone();
-    url.pathname = target;
-    return NextResponse.redirect(url);
-  }
-
-  if (!pathname.startsWith("/infinarenapanel")) {
+  if (!pathname.startsWith("/admin")) {
     return NextResponse.next();
   }
 
-  const isLoginPath = pathname === "/infinarenapanel/login";
+  const isLoginPath = pathname === "/admin/login";
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
 
   if (!token && !isLoginPath) {
     const url = request.nextUrl.clone();
-    url.pathname = "/infinarenapanel/login";
+    url.pathname = "/admin/login";
     url.searchParams.set("from", pathname);
     return NextResponse.redirect(url);
   }
 
   if (token && isLoginPath) {
     const url = request.nextUrl.clone();
-    url.pathname = "/infinarenapanel";
+    url.pathname = "/admin";
     url.search = "";
     return NextResponse.redirect(url);
   }
@@ -37,6 +30,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/infinarenapanel/:path*", "/admin/:path*"],
+  matcher: ["/admin/:path*"],
 };
 
