@@ -23,6 +23,7 @@ export default function AdminDashboard() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [createError, setCreateError] = useState("");
   const [showAIModal, setShowAIModal] = useState(false);
   const router = useRouter();
 
@@ -41,19 +42,34 @@ export default function AdminDashboard() {
 
   const createQuiz = async () => {
     if (!newTitle.trim()) return;
+    setCreateError("");
 
-    const res = await fetch("/api/quizzes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newTitle, description: newDescription }),
-    });
+    try {
+      const res = await fetch("/api/quizzes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle, description: newDescription }),
+      });
 
-    if (res.ok) {
-      const quiz = await res.json();
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const msg = Array.isArray(data?.error)
+          ? data.error.map((e: { message?: string }) => e.message).join(", ")
+          : data?.error;
+        setCreateError(msg ? String(msg).slice(0, 200) : t("dashboard.createError"));
+        return;
+      }
+
+      const quiz = data;
       setShowNewModal(false);
       setNewTitle("");
       setNewDescription("");
       router.push(`/infinarenapanel/quizzes/${quiz.id}`);
+    } catch (err: any) {
+      setCreateError(
+        t("dashboard.createError") + (err?.message ? ` (${err.message})` : "")
+      );
     }
   };
 
@@ -287,6 +303,9 @@ export default function AdminDashboard() {
                   {t("dashboard.create")}
                 </motion.button>
               </div>
+              {createError && (
+                <p className="text-sm text-red-300 mt-3">{createError}</p>
+              )}
             </motion.div>
           </motion.div>
         )}
