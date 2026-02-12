@@ -72,24 +72,29 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
         
         <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
           <div className="container-fluid app-container px-3 px-md-4">
-            <div className="d-flex flex-wrap flex-md-nowrap align-items-center justify-content-between gap-2 py-2 py-md-0 min-h-[64px]">
-              <Link href="/infinarenapanel" className="flex items-center gap-3">
-                <span className="bg-white/95 rounded-lg px-2 py-1 shadow-sm">
-                  <img src="/logo.png" alt="infinArena" className="h-7 md:h-8 w-auto" />
-                </span>
-                <span className="bg-white/20 text-white/80 text-xs font-medium px-2 py-1 rounded">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 min-h-[64px]">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="bg-white/20 text-white/90 text-xs font-medium px-2 py-1 rounded shrink-0">
                   ADMIN
                 </span>
-              </Link>
-
-              <div className="d-flex align-items-center flex-wrap gap-2 gap-md-4 justify-content-end">
                 <Link
                   href="/infinarenapanel"
                   className="text-white/70 hover:text-white transition-colors text-sm font-medium"
                 >
                   {t("nav.dashboard")}
                 </Link>
-                <span className="text-white/60 text-xs whitespace-nowrap">
+              </div>
+
+              <Link href="/infinarenapanel" className="justify-self-center">
+                <img
+                  src="/logo.png"
+                  alt="infinArena"
+                  className="h-8 md:h-9 w-auto drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]"
+                />
+              </Link>
+
+              <div className="flex items-center justify-end gap-2 gap-md-4 min-w-0">
+                <span className="text-white/60 text-xs whitespace-nowrap hidden lg:inline">
                   {t("nav.buildInfo", { date: formattedBuildDate, version: buildVersion })}
                 </span>
                 <LanguageToggle />
