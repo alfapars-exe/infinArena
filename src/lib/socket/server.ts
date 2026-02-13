@@ -119,6 +119,47 @@ function buildPlayerAnswerDisplay(
   return selectedTexts[0] || null;
 }
 
+function buildCorrectAnswerText(question: {
+  questionType: "multiple_choice" | "true_false" | "multi_select" | "text_input" | "ordering";
+  choices: Array<{ id: number; choiceText: string; orderIndex: number }>;
+  correctChoiceId: number;
+  correctChoiceIds: number[];
+}): string[] {
+  if (question.questionType === "text_input") {
+    return Array.from(
+      new Set(
+        question.choices
+          .map((choice) => choice.choiceText.trim())
+          .filter((choiceText) => choiceText.length > 0)
+      )
+    );
+  }
+
+  if (question.questionType === "ordering") {
+    return [...question.choices]
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .map((choice) => choice.choiceText.trim())
+      .filter((choiceText) => choiceText.length > 0);
+  }
+
+  const normalizedCorrectIds =
+    question.correctChoiceIds.length > 0
+      ? question.correctChoiceIds
+      : Number.isInteger(question.correctChoiceId) && question.correctChoiceId > 0
+      ? [question.correctChoiceId]
+      : [];
+
+  if (normalizedCorrectIds.length === 0) {
+    return [];
+  }
+
+  const correctIdSet = new Set(normalizedCorrectIds.map((choiceId) => Number(choiceId)));
+  return question.choices
+    .filter((choice) => correctIdSet.has(Number(choice.id)))
+    .map((choice) => choice.choiceText.trim())
+    .filter((choiceText) => choiceText.length > 0);
+}
+
 function getActivePlayerSocketMap(
   io: TypedServer,
   sessionId: number
@@ -441,9 +482,7 @@ export function setupSocketHandlers(io: TypedServer) {
                 correctChoiceIds: currentQ.correctChoiceIds,
                 streak: playerAnswer.streak,
                 playerAnswer: playerAnswerDisplay,
-                correctAnswerText: currentQ.choices
-                  .filter((c) => currentQ.correctChoiceIds.includes(c.id))
-                  .map((c) => c.choiceText),
+                correctAnswerText: buildCorrectAnswerText(currentQ),
               });
             }
 
@@ -942,9 +981,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       correctChoiceIds: currentQ.correctChoiceIds,
       streak: answer.streak,
       playerAnswer: playerAnswerDisplay,
-      correctAnswerText: currentQ.choices
-        .filter((c) => currentQ.correctChoiceIds.includes(c.id))
-        .map((c) => c.choiceText),
+      correctAnswerText: buildCorrectAnswerText(currentQ),
     });
   }
 
@@ -964,9 +1001,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
         correctChoiceIds: currentQ.correctChoiceIds,
         streak: 0,
         playerAnswer: null,
-        correctAnswerText: currentQ.choices
-          .filter((c) => currentQ.correctChoiceIds.includes(c.id))
-          .map((c) => c.choiceText),
+        correctAnswerText: buildCorrectAnswerText(currentQ),
       });
       session.playerStreaks.set(p.id, 0);
     }

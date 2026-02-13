@@ -264,6 +264,8 @@ export default function PlayPage() {
   const lastTickRef = useRef<number>(0);
   const lastRejoinAtRef = useRef<number>(0);
   const lastRejoinSocketIdRef = useRef<string | null>(null);
+  const lastBatchResultAtRef = useRef<number>(0);
+  const leaderboardDelayTimerRef = useRef<number | null>(null);
 
   const [batchResult, setBatchResult] = useState<BatchAnswerResult | null>(null);
   const [questionStats, setQuestionStats] = useState<QuestionStats | null>(null);
@@ -467,6 +469,10 @@ export default function PlayPage() {
     });
 
     s.on("game:countdown", ({ count }) => {
+      if (leaderboardDelayTimerRef.current !== null) {
+        window.clearTimeout(leaderboardDelayTimerRef.current);
+        leaderboardDelayTimerRef.current = null;
+      }
       setCountdownNumber(count);
       setPhase("countdown");
     });
@@ -517,6 +523,10 @@ export default function PlayPage() {
           deductionInterval: question.deductionInterval || 1,
         };
         setAvailablePoints(question.basePoints || 1000);
+        if (leaderboardDelayTimerRef.current !== null) {
+          window.clearTimeout(leaderboardDelayTimerRef.current);
+          leaderboardDelayTimerRef.current = null;
+        }
         setPhase("question");
         startSyncedTimer(serverStartTime, question.timeLimitSeconds);
       }
@@ -552,6 +562,11 @@ export default function PlayPage() {
       setBatchResult(result);
       setTotalScore(result.totalScore);
       setCurrentStreak(result.streak);
+      lastBatchResultAtRef.current = Date.now();
+      if (leaderboardDelayTimerRef.current !== null) {
+        window.clearTimeout(leaderboardDelayTimerRef.current);
+        leaderboardDelayTimerRef.current = null;
+      }
       setPhase("result");
       setMotivationalMsg(getMotivationalMessage(language));
 
@@ -575,10 +590,27 @@ export default function PlayPage() {
 
     s.on("game:leaderboard", ({ rankings }) => {
       setLeaderboard(rankings);
-      setPhase("leaderboard");
+      if (leaderboardDelayTimerRef.current !== null) {
+        window.clearTimeout(leaderboardDelayTimerRef.current);
+        leaderboardDelayTimerRef.current = null;
+      }
+      if (phaseRef.current !== "result") {
+        setPhase("leaderboard");
+        return;
+      }
+      const elapsedSinceResultMs = Date.now() - lastBatchResultAtRef.current;
+      const waitMs = Math.max(0, 2000 - elapsedSinceResultMs);
+      leaderboardDelayTimerRef.current = window.setTimeout(() => {
+        setPhase("leaderboard");
+        leaderboardDelayTimerRef.current = null;
+      }, waitMs);
     });
 
     s.on("game:quiz-ended", ({ finalRankings: fr }) => {
+      if (leaderboardDelayTimerRef.current !== null) {
+        window.clearTimeout(leaderboardDelayTimerRef.current);
+        leaderboardDelayTimerRef.current = null;
+      }
       setFinalRankings(fr);
       setPhase("ended");
       try { localStorage.removeItem(sessionCacheKey); } catch {}
@@ -602,6 +634,10 @@ export default function PlayPage() {
     return () => {
       clearSubmitWatchdog();
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
+      if (leaderboardDelayTimerRef.current !== null) {
+        window.clearTimeout(leaderboardDelayTimerRef.current);
+        leaderboardDelayTimerRef.current = null;
+      }
       s.disconnect();
     };
   }, []);
@@ -863,9 +899,11 @@ export default function PlayPage() {
     >
       <div className="container-fluid app-container px-2 px-md-3 py-2 py-md-3 flex-grow-1 d-flex flex-column">
         <div className="w-full d-flex justify-content-center mb-2">
-          <div className="bg-white/95 rounded-xl px-3 py-1 shadow-lg">
-            <img src="/logo.png" alt="infinArena" className="h-10 md:h-12 w-auto" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="infinArena"
+            className="h-10 md:h-12 w-auto object-contain drop-shadow-[0_4px_14px_rgba(0,0,0,0.35)]"
+          />
         </div>
 
                 <ConnectionStatusOverlay
