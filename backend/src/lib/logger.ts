@@ -1,11 +1,13 @@
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 interface LogEntry {
-  timestamp: string;
+  ts: string;
   level: LogLevel;
-  context: string;
-  message: string;
+  ctx: string;
+  msg: string;
   data?: unknown;
+  pod?: string;
+  env?: string;
 }
 
 const LOG_LEVELS: Record<LogLevel, number> = {
@@ -18,9 +20,17 @@ const LOG_LEVELS: Record<LogLevel, number> = {
 const currentLevel: LogLevel =
   (process.env.LOG_LEVEL as LogLevel) || (process.env.NODE_ENV === "production" ? "info" : "debug");
 
-function formatEntry(entry: LogEntry): string {
+const IS_JSON_MODE = process.env.NODE_ENV === "production" || process.env.LOG_FORMAT === "json";
+const POD_NAME = process.env.HOSTNAME || process.env.POD_NAME || "local";
+const ENV_NAME = process.env.NODE_ENV || "development";
+
+function formatHuman(entry: LogEntry): string {
   const dataStr = entry.data !== undefined ? ` ${JSON.stringify(entry.data)}` : "";
-  return `[${entry.context}] ${entry.level.toUpperCase()}: ${entry.message}${dataStr}`;
+  return `[${entry.ctx}] ${entry.level.toUpperCase()}: ${entry.msg}${dataStr}`;
+}
+
+function formatJson(entry: LogEntry): string {
+  return JSON.stringify(entry);
 }
 
 function shouldLog(level: LogLevel): boolean {
@@ -31,14 +41,24 @@ function log(level: LogLevel, context: string, message: string, data?: unknown):
   if (!shouldLog(level)) return;
 
   const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
+    ts: new Date().toISOString(),
     level,
-    context,
-    message,
-    data,
+    ctx: context,
+    msg: message,
+    pod: POD_NAME,
+    env: ENV_NAME,
   };
 
-  const formatted = formatEntry(entry);
+  if (data !== undefined) {
+    // Serialize Error objects properly
+    if (data instanceof Error) {
+      entry.data = { name: data.name, message: data.message, stack: data.stack };
+    } else {
+      entry.data = data;
+    }
+  }
+
+  const formatted = IS_JSON_MODE ? formatJson(entry) : formatHuman(entry);
 
   switch (level) {
     case "error":

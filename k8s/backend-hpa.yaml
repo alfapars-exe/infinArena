@@ -23,6 +23,15 @@ spec:
         target:
           type: Utilization
           averageUtilization: 80
+    # Custom metric: scale when Socket.IO connections per pod exceed 300
+    # Requires prometheus-adapter or KEDA
+    - type: Pods
+      pods:
+        metric:
+          name: socketio_connections_current
+        target:
+          type: AverageValue
+          averageValue: "300"
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 60

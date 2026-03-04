@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-config
+  namespace: infinarena
+  labels:
+    app: prometheus-adapter
+data:
+  config.yaml: |
+    rules:
+      # Map socketio_connections_current gauge to HPA custom metric
+      - seriesQuery: 'socketio_connections_current{namespace="infinarena"}'
+        resources:
+          overrides:
+            namespace: {resource: "namespace"}
+            pod: {resource: "pod"}
+        name:
+          matches: "^(.*)"
+          as: "socketio_connections_current"
+        metricsQuery: 'sum(<<.Series>>{<<.LabelMatchers>>}) by (pod)'
+
+      # Map event loop lag for alerting
+      - seriesQuery: 'nodejs_eventloop_lag_seconds{namespace="infinarena"}'
+        resources:
+          overrides:
+            namespace: {resource: "namespace"}
+            pod: {resource: "pod"}
+        name:
+          matches: "^(.*)"
+          as: "nodejs_eventloop_lag_seconds"
+        metricsQuery: 'avg(<<.Series>>{<<.LabelMatchers>>}) by (pod)'

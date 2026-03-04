@@ -1,0 +1,82 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: infinarena-alerts
+  namespace: infinarena
+  labels:
+    app: backend
+spec:
+  groups:
+    - name: infinarena.critical
+      rules:
+        - alert: BackendPodDown
+          expr: up{job="backend", namespace="infinarena"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Backend pod {{ $labels.pod }} is down"
+            description: "Pod has been unreachable for more than 1 minute."
+
+        - alert: ErrorRateHigh
+          expr: |
+            sum(rate(http_request_duration_seconds_count{namespace="infinarena", code=~"5.."}[2m]))
+            /
+            sum(rate(http_request_duration_seconds_count{namespace="infinarena"}[2m]))
+            > 0.05
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High 5xx error rate ({{ $value | humanizePercentage }})"
+            description: "More than 5% of requests are returning 5xx errors."
+
+        - alert: EventLoopLagHigh
+          expr: nodejs_eventloop_lag_seconds{namespace="infinarena"} > 0.1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High event loop lag on {{ $labels.pod }} ({{ $value }}s)"
+            description: "Event loop lag exceeds 100ms, indicating CPU saturation."
+
+        - alert: RedisDown
+          expr: redis_up{namespace="infinarena"} == 0
+          for: 30s
+          labels:
+            severity: critical
+          annotations:
+            summary: "Redis is unreachable"
+            description: "Redis has been down for more than 30 seconds."
+
+    - name: infinarena.warning
+      rules:
+        - alert: P95LatencyHigh
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{namespace="infinarena"}[5m])) by (le)
+            ) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "p95 HTTP latency is {{ $value }}s"
+            description: "95th percentile response time exceeds 500ms."
+
+        - alert: WebSocketConnectionsHigh
+          expr: socketio_connections_current{namespace="infinarena"} > 400
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High WebSocket connections on {{ $labels.pod }} ({{ $value }})"
+            description: "Pod has more than 400 active WebSocket connections."
+
+        - alert: AnswerBatchQueueBacklog
+          expr: answer_batch_queue_length{namespace="infinarena"} > 1000
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Answer batch queue backlog ({{ $value }} items)"
+            description: "The answer write queue has accumulated too many pending items."
