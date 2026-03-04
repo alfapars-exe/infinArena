@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import "bootstrap/dist/css/bootstrap.min.css";
 import "./globals.css";
 import { SystemStatusOverlay } from "@/components/system-status-overlay";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "infinArena - Interactive Quiz Platform",
@@ -24,6 +24,17 @@ export default function RootLayout({
       <body className="antialiased">
         {children}
         <SystemStatusOverlay />
+        <Toaster
+          theme="dark"
+          position="top-right"
+          toastOptions={{
+            style: {
+              background: 'rgba(31, 41, 55, 0.95)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: '#fff',
+            },
+          }}
+        />
       </body>
     </html>
   );

@@ -3,9 +3,10 @@
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { useI18n, useTranslation } from "@/lib/i18n";
 import { MusicProvider } from "@/lib/music-context";
+import { QueryProvider } from "@/lib/query-client";
 import {
   fetchCurrentAdmin,
   logoutAdmin,
@@ -97,10 +98,11 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   return (
+    <QueryProvider>
     <MusicProvider>
       <div className="min-h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
-          <div className="container-fluid app-container px-3 px-md-4">
+          <div className="app-container px-3 md:px-4">
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 min-h-[64px]">
               <div className="flex items-center gap-3 min-w-0">
                 <Link
@@ -128,7 +130,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
                 />
               </Link>
 
-              <div className="flex items-center justify-end gap-2 gap-md-4 min-w-0">
+              <div className="flex items-center justify-end gap-2 md:gap-4 min-w-0">
                 <span className="text-white/60 text-xs whitespace-nowrap hidden lg:inline">
                   {t("nav.buildInfo", { date: formattedBuildDate, version: buildVersion })}
                 </span>
@@ -147,13 +149,12 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
 
-        <main className="container-fluid app-container px-3 px-md-4 py-3 py-md-4 py-lg-5">
-          <div className="row">
-            <div className="col-12">{children}</div>
-          </div>
+        <main className="app-container px-3 md:px-4 py-3 md:py-4 lg:py-5">
+          {children}
         </main>
       </div>
     </MusicProvider>
+    </QueryProvider>
   );
 }
 

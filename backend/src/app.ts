@@ -632,14 +632,20 @@ export async function createHttpApp() {
     requireAuth,
     asyncHandler(async (req, res) => {
       const quizId = parseIntegerParam(req.params.id, "quiz id");
-      const buffer = await exportSessionResultsAsExcel(quizId);
+      const sessionIdRaw = typeof req.query.sessionId === "string" ? req.query.sessionId : undefined;
+      const sessionId = sessionIdRaw ? parseIntegerParam(sessionIdRaw, "session id") : null;
+      const buffer = sessionId
+        ? await exportSingleSessionResultsAsExcel(quizId, sessionId)
+        : await exportSessionResultsAsExcel(quizId);
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       );
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename=\"quiz-${quizId}-results.xlsx\"`
+        sessionId
+          ? `attachment; filename=\"quiz-${quizId}-session-${sessionId}-results.xlsx\"`
+          : `attachment; filename=\"quiz-${quizId}-results.xlsx\"`
       );
       res.status(200).send(Buffer.from(buffer));
     })

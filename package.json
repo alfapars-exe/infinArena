@@ -13,6 +13,7 @@
     "build": "pnpm --dir backend build && pnpm --dir frontend build",
     "typecheck": "pnpm --dir backend typecheck && pnpm --dir frontend typecheck",
     "lint": "pnpm --dir backend lint && pnpm --dir frontend lint",
-    "test": "pnpm --dir backend test"
+    "test": "pnpm --dir backend test",
+    "l10n:check": "node scripts/l10n-check.mjs"
   }
 }

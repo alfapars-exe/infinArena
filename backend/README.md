@@ -1,10 +1,10 @@
 ﻿# infinArena Backend
 
-Express + Socket.IO + Drizzle tabanli API sunucusu.
+Express + Socket.IO + Drizzle tabanlı API sunucusu.
 
-## Gelistirme
+## Geliştirme
 
-Birlesik mod:
+Birleşik mod:
 
 ```bash
 pnpm dev
@@ -16,32 +16,32 @@ Admin backend:
 pnpm dev:admin
 ```
 
-Yarismaci backend:
+Yarışmacı backend:
 
 ```bash
 pnpm dev:player
 ```
 
-Varsayilan portlar:
+Varsayılan portlar:
 
-- Birlesik / Admin: `7860`
-- Yarismaci: `7861`
+- Birleşik / Admin: `7860`
+- Yarışmacı: `7861`
 
-## Ortam Degiskenleri
+## Ortam Değişkenleri
 
-- `BACKEND_ROLE`: `all | admin | player` (script'ler tarafindan otomatik set edilir)
+- `BACKEND_ROLE`: `all | admin | player` (script'ler tarafından otomatik set edilir)
 - `PORT`: dinleme portu
-- Veritabani (Supabase PostgreSQL onerilen):
-	- `DATABASE_URL` (oncelikli)
+- Veritabanı (Supabase PostgreSQL önerilen):
+	- `DATABASE_URL` (öncelikli)
 	- veya `SUPABASE_DATABASE_URL`
-	- veya parcali tanim:
+	- veya parçalı tanım:
 		- `SUPABASE_DB_HOST`
 		- `SUPABASE_DB_PASSWORD`
-		- `SUPABASE_DB_USER` (opsiyonel, varsayilan: `postgres`)
-		- `SUPABASE_DB_PORT` (opsiyonel, varsayilan: `5432`)
-		- `SUPABASE_DB_NAME` (opsiyonel, varsayilan: `postgres`)
+		- `SUPABASE_DB_USER` (opsiyonel, varsayılan: `postgres`)
+		- `SUPABASE_DB_PORT` (opsiyonel, varsayılan: `5432`)
+		- `SUPABASE_DB_NAME` (opsiyonel, varsayılan: `postgres`)
 
-Not: Production/Hugging Face Space ortaminda DB URL verilmemisse backend baslatilmaz.
+Not: Production/Hugging Face Space ortamında DB URL verilmemişse backend başlatılmaz.
 
 ## Test
 
@@ -51,7 +51,7 @@ pnpm test
 
 ## OpenAPI (Swagger Contract)
 
-Backend, Swagger UI ve makine-okunur OpenAPI dokumanini su endpoint'lerde sunar:
+Backend, Swagger UI ve makine-okunur OpenAPI dokümanını şu endpoint'lerde sunar:
 
 ```bash
 GET /api/docs
@@ -61,9 +61,9 @@ GET /api/docs
 GET /api/openapi.json
 ```
 
-Bu sozlesme, testte dogrudan dogrulanir:
+Bu sözleşme, testte doğrudan doğrulanır:
 
-- OpenAPI belgesi semantik olarak gecerli olmali
-- Express route'larinin tamami OpenAPI dokumaninda yer almali
+- OpenAPI belgesi semantik olarak geçerli olmalı
+- Express route'larının tamamı OpenAPI dokümanında yer almalı
 
-Bu sayede endpoint eklendiginde/degistiginde sozlesme drift'i testte yakalanir.
+Bu sayede endpoint eklendiğinde/değiştiğinde sözleşme drift'i testte yakalanır.

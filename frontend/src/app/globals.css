@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -20,56 +20,6 @@
 }
 
 @layer components {
-  .btn-primary {
-    @apply bg-inf-red text-white font-bold py-3 px-6 rounded-lg
-           hover:bg-red-700 transition-all duration-200 transform hover:scale-105
-           active:scale-95 shadow-lg;
-  }
-
-  .btn-secondary {
-    @apply bg-inf-blue text-white font-bold py-3 px-6 rounded-lg
-           hover:bg-blue-800 transition-all duration-200 transform hover:scale-105
-           active:scale-95 shadow-lg;
-  }
-
-  .btn-danger {
-    @apply bg-inf-red text-white font-bold py-3 px-6 rounded-lg
-           hover:bg-red-700 transition-all duration-200 transform hover:scale-105
-           active:scale-95 shadow-lg;
-  }
-
-  .btn-success {
-    @apply bg-inf-green text-white font-bold py-3 px-6 rounded-lg
-           hover:bg-green-700 transition-all duration-200 transform hover:scale-105
-           active:scale-95 shadow-lg;
-  }
-
-  .card {
-    @apply bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20;
-  }
-
-  .input-field {
-    @apply w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30
-           text-white placeholder-white/60 focus:outline-none focus:ring-2
-           focus:ring-inf-turquoise/50 focus:border-transparent transition-all;
-  }
-
-  select.input-field {
-    color-scheme: dark;
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #ffffff;
-  }
-
-  select.input-field option {
-    background-color: #1f2937;
-    color: #ffffff;
-  }
-
-  select.input-field option:checked {
-    background-color: #2563eb;
-    color: #ffffff;
-  }
-
   .answer-btn {
     @apply w-full py-6 rounded-lg font-bold text-xl text-white
            transition-all duration-200 transform hover:scale-[1.02]
@@ -79,12 +29,13 @@
   }
 }
 
-/* Bootstrap + Tailwind interoperability helpers */
+/* Container utility */
 .app-container {
   width: min(1400px, 100%);
   margin: 0 auto;
 }
 
+/* Modal helpers */
 .modal-shell {
   max-height: calc(var(--app-vh) - 2rem);
   overflow: hidden;
@@ -137,4 +88,17 @@
   background: rgba(255, 255, 255, 0.5);
 }
 
+/* Dark select styling */
+select {
+  color-scheme: dark;
+}
 
+select option {
+  background-color: #1f2937;
+  color: #ffffff;
+}
+
+select option:checked {
+  background-color: #2563eb;
+  color: #ffffff;
+}

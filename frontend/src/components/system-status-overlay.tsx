@@ -9,7 +9,7 @@ const HEALTH_CHECK_TIMEOUT_MS = 4000;
 const MAINTENANCE_FAILURE_THRESHOLD = 2;
 
 export function SystemStatusOverlay() {
-  const { locale } = useTranslation();
+  const { t } = useTranslation();
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   const failureCountRef = useRef(0);
   const requestInFlightRef = useRef(false);
@@ -92,17 +92,9 @@ export function SystemStatusOverlay() {
 
   if (!isMaintenanceMode) return null;
 
-  const title =
-    locale === "tr"
-      ? "Bakım modu aktifleştirildi."
-      : "Maintenance mode activated.";
-
-  const detail =
-    locale === "tr"
-      ? "Hugging Face Space yeniden başlatılıyor, build alıyor veya başlatılıyor olabilir."
-      : "Hugging Face Space may currently be restarting, building, or starting.";
-
-  const waitText = locale === "tr" ? "Lütfen bekleyiniz..." : "Please wait...";
+  const title = t("live.maintenanceMode");
+  const detail = t("common.spaceRestarting");
+  const waitText = t("common.pleaseWait");
 
   return (
     <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-sm flex items-center justify-center px-4">

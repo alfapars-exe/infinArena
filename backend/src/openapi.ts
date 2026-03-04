@@ -410,7 +410,10 @@ const routes: RouteDoc[] = [
     tag: "exports",
     summary: "Export results",
     secured: true,
-    parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } }],
+    parameters: [
+      { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+      { name: "sessionId", in: "query", required: false, schema: { type: "integer", minimum: 1 } },
+    ],
     responses: {
       "200": {
         description: "Binary export",

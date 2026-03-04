@@ -1,38 +1,38 @@
 ﻿# infinArena Frontend
 
-Next.js tabanli UI uygulamasi.
+Next.js tabanlı UI uygulaması.
 
-## Gelistirme
+## Geliştirme
 
-Birlesik mod:
+Birleşik mod:
 
 ```bash
 pnpm dev
 ```
 
-Admin frontend (sadece admin rotalari):
+Admin frontend (sadece admin rotaları):
 
 ```bash
 pnpm dev:admin
 ```
 
-Yarismaci frontend (sadece oyuncu rotalari):
+Yarışmacı frontend (sadece oyuncu rotaları):
 
 ```bash
 pnpm dev:player
 ```
 
-Varsayilan portlar:
+Varsayılan portlar:
 
-- Birlesik / Admin: `3000`
-- Yarismaci: `3001`
+- Birleşik / Admin: `3000`
+- Yarışmacı: `3001`
 
-## Ortam Degiskenleri
+## Ortam Değişkenleri
 
-- `NEXT_PUBLIC_BACKEND_URL`: frontend'in baglanacagi backend URL'i
-- `FRONTEND_ROLE`: `all | admin | player` (script'ler tarafindan otomatik set edilir)
+- `NEXT_PUBLIC_BACKEND_URL`: frontend'in bağlanacağı backend URL'i
+- `FRONTEND_ROLE`: `all | admin | player` (script'ler tarafından otomatik set edilir)
 
-Ornek:
+Örnek:
 
 ```env
 NEXT_PUBLIC_BACKEND_URL=http://localhost:7860

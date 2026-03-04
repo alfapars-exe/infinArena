@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
 import { authedFetch, downloadAuthedFile } from "@/lib/services/auth-client";
+import { toast } from "sonner";
 
 interface Choice {
   id?: number;
@@ -319,7 +320,7 @@ export default function QuizEditor() {
       void fetchQuiz();
     } else {
       const err = await res.json();
-      alert(getErrorMessage(err, t("editor.addFailed")));
+      toast.error(getErrorMessage(err, t("editor.addFailed")));
     }
   };
 
@@ -375,7 +376,7 @@ export default function QuizEditor() {
   }
 
   return (
-    <div className="container-fluid px-0">
+    <div>
       <div className="mx-auto" style={{ maxWidth: "1120px" }}>
       
       <motion.div
@@ -453,7 +454,7 @@ export default function QuizEditor() {
               type="text"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
-              className="input-field bg-white/10 text-sm"
+              className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all bg-white/10 text-sm"
             />
           </div>
           <div>
@@ -464,7 +465,7 @@ export default function QuizEditor() {
               type="text"
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
-              className="input-field bg-white/10 text-sm"
+              className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all bg-white/10 text-sm"
             />
           </div>
         </div>
@@ -488,7 +489,7 @@ export default function QuizEditor() {
       </motion.div>
 
       
-      <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-4 mb-md-6">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4 md:mb-6">
         <h2 className="text-2xl font-bold text-white">
           {t("editor.questions")} ({quiz.questions.length})
         </h2>
@@ -749,12 +750,12 @@ function QuestionModal({
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         const errMsg = getErrorMessage(err, `${t("editor.uploadFailed")} (${res.status})`);
         console.error(`✗ Upload failed: ${field}`, errMsg);
-        alert(errMsg);
+        toast.error(errMsg);
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : t("editor.uploadFailed");
       console.error(`✗ Upload error: ${field}`, error);
-      alert(errMsg);
+      toast.error(errMsg);
     }
     setUploading(false);
   };
@@ -943,22 +944,22 @@ function QuestionModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm d-flex align-items-start justify-content-center z-50 p-3 p-md-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-50 p-3 md:p-4 overflow-y-auto"
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-800 rounded-2xl w-full border border-white/10 mt-2 mt-md-3 modal-shell"
+        className="bg-gray-800 rounded-2xl w-full border border-white/10 mt-2 md:mt-3 modal-shell"
         style={{ maxWidth: "960px" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky-modal-header px-4 px-md-6 py-4 border-b border-white/10 rounded-t-2xl">
+        <div className="sticky-modal-header px-4 md:px-6 py-4 border-b border-white/10 rounded-t-2xl">
           <h2 className="text-xl font-bold text-white">{title}</h2>
         </div>
 
-        <div className="modal-body-scroll px-4 px-md-6 py-4 space-y-4">
+        <div className="modal-body-scroll px-4 md:px-6 py-4 space-y-4">
           
           <div>
             <label className="block text-white/70 text-sm font-medium mb-1">
@@ -969,7 +970,7 @@ function QuestionModal({
               onChange={(e) =>
                 onChange({ ...question, questionText: e.target.value })
               }
-              className="input-field bg-white/10 resize-none h-20"
+              className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all bg-white/10 resize-none h-20"
               placeholder={t("editor.enterQuestion")}
             />
           </div>
@@ -1063,8 +1064,8 @@ function QuestionModal({
           </div>
 
           
-          <div className="row g-3">
-            <div className="col-12 col-md-6">
+          <div className="grid grid-cols-12 gap-3">
+            <div className="col-span-12 md:col-span-6">
               <label className="block text-white/70 text-sm font-medium mb-1">
                 {t("editor.questionType")}
               </label>
@@ -1075,7 +1076,7 @@ function QuestionModal({
                     e.target.value as QuestionType
                   )
                 }
-                className="input-field bg-white/10 text-sm"
+                className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all bg-white/10 text-sm"
               >
                 <option value="multiple_choice">{t("editor.multipleChoice")}</option>
                 <option value="true_false">{t("editor.trueFalse")}</option>
@@ -1084,7 +1085,7 @@ function QuestionModal({
                 <option value="ordering">{t("editor.ordering")}</option>
               </select>
             </div>
-            <div className="col-12 col-md-6">
+            <div className="col-span-12 md:col-span-6">
               <label className="block text-white/70 text-sm font-medium mb-1">
                 {t("editor.timeLimit")}
               </label>
@@ -1097,7 +1098,7 @@ function QuestionModal({
                   updateNumericDraft("timeLimitSeconds", e.target.value)
                 }
                 onBlur={() => touchNumericField("timeLimitSeconds")}
-                className="input-field bg-white/10 text-sm"
+                className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all bg-white/10 text-sm"
               />
               {getNumericError("timeLimitSeconds") && (
                 <p className="mt-1 text-xs text-red-300">
@@ -1108,8 +1109,8 @@ function QuestionModal({
           </div>
 
           
-          <div className="row g-3">
-            <div className="col-12 col-md-4">
+          <div className="grid grid-cols-12 gap-3">
+            <div className="col-span-12 md:col-span-4">
               <label className="block text-white/70 text-sm font-medium mb-1">
                 {t("editor.basePoints")}
               </label>
@@ -1120,7 +1121,7 @@ function QuestionModal({
                 value={numericDrafts.basePoints}
                 onChange={(e) => updateNumericDraft("basePoints", e.target.value)}
                 onBlur={() => touchNumericField("basePoints")}
-                className="input-field bg-white/10 text-sm"
+                className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all bg-white/10 text-sm"
               />
               {getNumericError("basePoints") && (
                 <p className="mt-1 text-xs text-red-300">
@@ -1128,7 +1129,7 @@ function QuestionModal({
                 </p>
               )}
             </div>
-            <div className="col-12 col-md-4">
+            <div className="col-span-12 md:col-span-4">
               <label className="block text-white/70 text-sm font-medium mb-1">
                 {t("editor.pointLoss")}
               </label>
@@ -1141,7 +1142,7 @@ function QuestionModal({
                   updateNumericDraft("deductionPoints", e.target.value)
                 }
                 onBlur={() => touchNumericField("deductionPoints")}
-                className="input-field bg-white/10 text-sm"
+                className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all bg-white/10 text-sm"
               />
               {getNumericError("deductionPoints") && (
                 <p className="mt-1 text-xs text-red-300">
@@ -1149,7 +1150,7 @@ function QuestionModal({
                 </p>
               )}
             </div>
-            <div className="col-12 col-md-4">
+            <div className="col-span-12 md:col-span-4">
               <label className="block text-white/70 text-sm font-medium mb-1">
                 {t("editor.every")}
               </label>
@@ -1162,7 +1163,7 @@ function QuestionModal({
                   updateNumericDraft("deductionInterval", e.target.value)
                 }
                 onBlur={() => touchNumericField("deductionInterval")}
-                className="input-field bg-white/10 text-sm"
+                className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all bg-white/10 text-sm"
               />
               {getNumericError("deductionInterval") && (
                 <p className="mt-1 text-xs text-red-300">
@@ -1198,7 +1199,7 @@ function QuestionModal({
               {question.choices.map((choice, ci) => (
                 <div
                   key={ci}
-                  className={`choice-row flex items-center gap-2 gap-md-3 ${getChoiceColor(ci)} rounded-lg border border-white/25 p-2 p-md-3 flex-wrap flex-md-nowrap shadow-sm`}
+                  className={`choice-row flex items-center gap-2 md:gap-3 ${getChoiceColor(ci)} rounded-lg border border-white/25 p-2 md:p-3 flex-wrap md:flex-nowrap shadow-sm`}
                 >
                   <span className="text-white text-lg">{getChoiceShape(ci)}</span>
                   <input
@@ -1283,10 +1284,10 @@ function QuestionModal({
           </div>
         </div>
 
-        <div className="sticky-modal-footer px-4 px-md-6 py-4 border-t border-white/10 rounded-b-2xl d-flex flex-column flex-md-row gap-3">
+        <div className="sticky-modal-footer px-4 md:px-6 py-4 border-t border-white/10 rounded-b-2xl flex flex-col md:flex-row gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 hover:bg-white/5 transition-colors font-medium w-100"
+            className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 hover:bg-white/5 transition-colors font-medium w-full"
           >
             {t("editor.cancel")}
           </button>
@@ -1300,7 +1301,7 @@ function QuestionModal({
               !hasValidCorrect ||
               !allNumericDraftsValid
             }
-            className="flex-1 bg-inf-red hover:bg-purple-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-colors w-100"
+            className="flex-1 bg-inf-red hover:bg-purple-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-colors w-full"
           >
             {t("editor.saveQuestion")}
           </motion.button>

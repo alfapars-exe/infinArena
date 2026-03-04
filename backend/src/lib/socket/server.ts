@@ -79,7 +79,7 @@ const socketPlayerAnswerSchema = z.object({
 });
 
 const socketSessionIdSchema = z.object({
-  sessionId: z.number().int().positive(),
+  sessionId: z.coerce.number().int().positive(),
 });
 
 // --- Socket.IO rate limiting ---

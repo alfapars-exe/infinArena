@@ -1,121 +1,84 @@
-﻿"use client";
+"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { useTranslation, useI18n } from "@/lib/i18n";
 import { authedFetch } from "@/lib/services/auth-client";
-
-interface Quiz {
-  id: number;
-  title: string;
-  description: string | null;
-  status: string;
-  questionCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
+import { useQuizzes, useCreateQuiz, useDeleteQuiz } from "@/lib/hooks/use-quizzes";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function AdminDashboard() {
   const { t } = useTranslation();
-  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: quizzes = [], isLoading: loading } = useQuizzes();
+  const createQuizMutation = useCreateQuiz();
+  const deleteQuizMutation = useDeleteQuiz();
   const [showNewModal, setShowNewModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [createError, setCreateError] = useState("");
   const [showAIModal, setShowAIModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const router = useRouter();
-  const fetchQuizzesRequestIdRef = useRef(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetchQuizzes({ signal: controller.signal, updateLoading: true });
-    return () => {
-      controller.abort();
-    };
-  }, []);
-
-  const fetchQuizzes = async (options?: {
-    signal?: AbortSignal;
-    updateLoading?: boolean;
-  }) => {
-    const signal = options?.signal;
-    const updateLoading = options?.updateLoading ?? false;
-    const requestId = ++fetchQuizzesRequestIdRef.current;
-
-    if (updateLoading) {
-      setLoading(true);
-    }
-
-    try {
-      const res = await authedFetch("/api/quizzes", { signal });
-      if (signal?.aborted || requestId !== fetchQuizzesRequestIdRef.current) return;
-
-      if (res.ok) {
-        const data = await res.json();
-        if (signal?.aborted || requestId !== fetchQuizzesRequestIdRef.current) return;
-        setQuizzes(data);
-      }
-    } catch (err) {
-      if ((err as { name?: string })?.name === "AbortError") return;
-      console.error("Failed to fetch quizzes:", err);
-    } finally {
-      if (
-        updateLoading &&
-        !signal?.aborted &&
-        requestId === fetchQuizzesRequestIdRef.current
-      ) {
-        setLoading(false);
-      }
-    }
-  };
 
   const createQuiz = async () => {
     if (!newTitle.trim()) return;
     setCreateError("");
 
     try {
-      const res = await authedFetch("/api/quizzes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: newTitle, description: newDescription }),
+      const quiz = await createQuizMutation.mutateAsync({
+        title: newTitle,
+        description: newDescription,
       });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        const msg = Array.isArray(data?.error)
-          ? data.error.map((e: { message?: string }) => e.message).join(", ")
-          : data?.error;
-        setCreateError(msg ? String(msg).slice(0, 200) : t("dashboard.createError"));
-        return;
-      }
-
-      const quiz = data;
       setShowNewModal(false);
       setNewTitle("");
       setNewDescription("");
+      toast.success(t("dashboard.newQuizTitle"));
       router.push(`/infinarenapanel/quizzes/${quiz.id}`);
     } catch (err: any) {
       setCreateError(
-        t("dashboard.createError") + (err?.message ? ` (${err.message})` : "")
+        err?.message || t("dashboard.createError")
       );
     }
   };
 
   const deleteQuiz = async (id: number) => {
-    if (!confirm(t("dashboard.deleteConfirm"))) return;
-
-    await authedFetch(`/api/quizzes/${id}`, { method: "DELETE" });
-    await fetchQuizzes();
+    try {
+      await deleteQuizMutation.mutateAsync(id);
+      setDeleteTarget(null);
+      toast.success(t("editor.delete"));
+    } catch {
+      toast.error(t("dashboard.createError"));
+    }
   };
 
-  const statusColors: Record<string, string> = {
-    draft: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
-    published: "bg-green-500/20 text-green-300 border-green-500/30",
-    archived: "bg-gray-500/20 text-gray-300 border-gray-500/30",
+  const statusVariants: Record<string, "warning" | "success" | "muted"> = {
+    draft: "warning",
+    published: "success",
+    archived: "muted",
   };
 
   const statusLabels: Record<string, string> = {
@@ -125,15 +88,15 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="container-fluid px-0">
-      <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-4 mb-md-5">
+    <div>
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4 md:mb-5">
         <div>
           <h1 className="text-3xl font-bold text-white">{t("dashboard.myQuizzes")}</h1>
           <p className="text-gray-400 mt-1">
             {t("dashboard.manageQuizzes")}
           </p>
         </div>
-        <div className="d-flex gap-2 gap-md-3">
+        <div className="flex gap-2 md:gap-3">
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -184,7 +147,7 @@ export default function AdminDashboard() {
           </motion.button>
         </motion.div>
       ) : (
-        <div className="row g-3 g-lg-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
           <AnimatePresence>
             {quizzes.map((quiz, i) => (
               <motion.div
@@ -193,19 +156,16 @@ export default function AdminDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ delay: i * 0.05 }}
-                className="col-12 col-md-6 col-xl-4"
               >
-                <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all group h-100">
+                <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all group h-full">
                 <div className="p-6">
-                  <div className="d-flex align-items-start justify-content-between gap-2 mb-3">
+                  <div className="flex items-start justify-between gap-2 mb-3">
                     <h3 className="text-lg font-bold text-white group-hover:text-inf-yellow transition-colors">
                       {quiz.title}
                     </h3>
-                    <span
-                      className={`text-xs font-medium px-2 py-1 rounded-full border ${statusColors[quiz.status]}`}
-                    >
+                    <Badge variant={statusVariants[quiz.status] || "muted"}>
                       {statusLabels[quiz.status] || quiz.status}
-                    </span>
+                    </Badge>
                   </div>
 
                   {quiz.description && (
@@ -214,12 +174,12 @@ export default function AdminDashboard() {
                     </p>
                   )}
 
-                  <div className="d-flex align-items-center gap-4 text-sm text-gray-500">
+                  <div className="flex items-center gap-4 text-sm text-gray-500">
                     <span>{quiz.questionCount} {t("dashboard.questions")}</span>
                   </div>
                 </div>
 
-                <div className="border-top border-white/10 px-6 py-3 d-flex align-items-center gap-2 flex-wrap">
+                <div className="border-t border-white/10 px-6 py-3 flex items-center gap-2 flex-wrap">
                   <Link
                     href={`/infinarenapanel/quizzes/${quiz.id}`}
                     className="text-inf-blue hover:text-blue-300 text-sm font-medium transition-colors"
@@ -242,7 +202,7 @@ export default function AdminDashboard() {
                   </Link>
                   <span className="text-gray-600">|</span>
                   <button
-                    onClick={() => deleteQuiz(quiz.id)}
+                    onClick={() => setDeleteTarget(quiz.id)}
                     className="text-inf-red hover:text-red-300 text-sm font-medium transition-colors"
                   >
                     {t("editor.delete")}
@@ -254,6 +214,27 @@ export default function AdminDashboard() {
           </AnimatePresence>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("editor.delete")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("dashboard.deleteConfirm")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("dashboard.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteQuiz(deleteTarget)}
+              className="bg-inf-red hover:bg-red-700"
+            >
+              {t("editor.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* AI Generate Modal */}
       <AnimatePresence>
@@ -269,79 +250,61 @@ export default function AdminDashboard() {
       </AnimatePresence>
 
       {/* New Quiz Modal */}
-      <AnimatePresence>
-        {showNewModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm d-flex align-items-start justify-content-center z-50 p-3 p-md-4 overflow-y-auto"
-            onClick={() => setShowNewModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-gray-800 rounded-2xl p-4 p-md-5 w-full border border-white/10 mt-2 mt-md-3"
-              style={{ maxWidth: "560px" }}
-              onClick={(e) => e.stopPropagation()}
+      <Dialog open={showNewModal} onOpenChange={setShowNewModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("dashboard.newQuizTitle")}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label>
+                {t("editor.title")} *
+              </Label>
+              <Input
+                type="text"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                className="bg-white/10"
+                placeholder={t("dashboard.newQuizTitle")}
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <Label>
+                {t("editor.description")}
+              </Label>
+              <Textarea
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                className="bg-white/10 resize-none h-24"
+                placeholder={t("editor.description")}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-3 mt-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowNewModal(false)}
+              className="flex-1"
             >
-              <h2 className="text-2xl font-bold text-white mb-6">
-                {t("dashboard.newQuizTitle")}
-              </h2>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-white/70 text-sm font-medium mb-2">
-                    {t("editor.title")} *
-                  </label>
-                  <input
-                    type="text"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    className="input-field bg-white/10"
-                    placeholder={t("dashboard.newQuizTitle")}
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-white/70 text-sm font-medium mb-2">
-                    {t("editor.description")}
-                  </label>
-                  <textarea
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    className="input-field bg-white/10 resize-none h-24"
-                    placeholder={t("editor.description")}
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => setShowNewModal(false)}
-                  className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 hover:bg-white/5 transition-colors font-medium"
-                >
-                  {t("dashboard.cancel")}
-                </button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={createQuiz}
-                  disabled={!newTitle.trim()}
-                  className="flex-1 bg-inf-red hover:bg-red-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-colors"
-                >
-                  {t("dashboard.create")}
-                </motion.button>
-              </div>
-              {createError && (
-                <p className="text-sm text-red-300 mt-3">{createError}</p>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              {t("dashboard.cancel")}
+            </Button>
+            <Button
+              onClick={createQuiz}
+              disabled={!newTitle.trim()}
+              className="flex-1"
+            >
+              {t("dashboard.create")}
+            </Button>
+          </DialogFooter>
+          {createError && (
+            <p className="text-sm text-red-300 mt-1">{createError}</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -440,14 +403,14 @@ function AIGenerateModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm d-flex align-items-start justify-content-center z-50 p-3 p-md-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center z-50 p-3 md:p-4 overflow-y-auto"
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-800 rounded-2xl p-4 p-md-5 w-full border border-white/10 mt-2 mt-md-3"
+        className="bg-gray-800 rounded-2xl p-4 md:p-5 w-full border border-white/10 mt-2 md:mt-3"
         style={{ maxWidth: "560px" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -459,14 +422,14 @@ function AIGenerateModal({
         <div className="space-y-4">
           {/* Topic */}
           <div>
-            <label className="block text-white/70 text-sm font-medium mb-2">
+            <Label>
               {t("ai.topic")} *
-            </label>
-            <input
+            </Label>
+            <Input
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              className="input-field bg-white/10"
+              className="bg-white/10"
               placeholder={t("ai.topicPlaceholder")}
               autoFocus
               disabled={loading}
@@ -475,10 +438,10 @@ function AIGenerateModal({
 
           {/* Difficulty */}
           <div>
-            <label className="block text-white/70 text-sm font-medium mb-2">
+            <Label>
               {t("ai.difficulty")}
-            </label>
-            <div className="d-flex gap-2">
+            </Label>
+            <div className="flex gap-2">
               {difficulties.map((d) => (
                 <button
                   key={d.key}
@@ -502,26 +465,26 @@ function AIGenerateModal({
 
           {/* Number of Questions */}
           <div>
-            <label className="block text-white/70 text-sm font-medium mb-2">
+            <Label>
               {t("ai.numQuestions")}
-            </label>
-            <input
+            </Label>
+            <Input
               type="number"
               min={1}
               max={200}
               value={numQuestions}
               onChange={(e) => setNumQuestions(Math.min(200, Math.max(1, parseInt(e.target.value) || 1)))}
-              className="input-field bg-white/10 w-full"
+              className="bg-white/10 w-full"
               disabled={loading}
             />
           </div>
 
           {/* Time Limit */}
           <div>
-            <label className="block text-white/70 text-sm font-medium mb-2">
+            <Label>
               {t("editor.timeLimit")}
-            </label>
-            <input
+            </Label>
+            <Input
               type="number"
               min={AI_TIME_LIMIT_MIN}
               max={AI_TIME_LIMIT_MAX}
@@ -531,7 +494,7 @@ function AIGenerateModal({
                 setError("");
               }}
               onBlur={() => setTimeLimitTouched(true)}
-              className="input-field bg-white/10 w-full"
+              className="bg-white/10 w-full"
               disabled={loading}
             />
             {timeLimitError && (
@@ -541,13 +504,13 @@ function AIGenerateModal({
 
           {/* Model */}
           <div>
-            <label className="block text-white/70 text-sm font-medium mb-2">
+            <Label>
               {t("ai.model")}
-            </label>
+            </Label>
             <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="input-field bg-white/10 w-full"
+              className="flex h-11 w-full rounded-lg bg-white/10 border border-white/30 px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all"
               disabled={loading}
             >
               {AI_MODELS.map((m) => (
@@ -560,10 +523,10 @@ function AIGenerateModal({
 
           {/* Language */}
           <div>
-            <label className="block text-white/70 text-sm font-medium mb-2">
+            <Label>
               {t("ai.language")}
-            </label>
-            <div className="d-flex gap-2">
+            </Label>
+            <div className="flex gap-2">
               <button
                 onClick={() => setLanguage("en")}
                 disabled={loading}
@@ -612,7 +575,7 @@ function AIGenerateModal({
             whileTap={{ scale: loading ? 1 : 0.98 }}
             onClick={handleGenerate}
             disabled={!topic.trim() || loading || parsedTimeLimit === null}
-            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-all d-flex align-items-center justify-content-center gap-2"
+            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-all flex items-center justify-center gap-2"
           >
             {loading ? (
               <>

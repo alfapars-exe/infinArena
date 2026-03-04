@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import confetti from "canvas-confetti";
 import { io, Socket } from "socket.io-client";
 import { useTranslation } from "@/lib/i18n";
@@ -10,6 +10,7 @@ import { useMusicPlayer } from "@/lib/music-context";
 import { ConnectionStatusOverlay } from "@/components/live/connection-status-overlay";
 import { useAdminKahootAudio } from "@/features/live-admin/hooks/use-admin-kahoot-audio";
 import { apiFetch, getSocketBaseUrl } from "@/lib/services/api-client";
+import { toast } from "sonner";
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -145,9 +146,10 @@ export default function LiveControlPage() {
         const data = await response.json();
         if (!isActive || controller.signal.aborted) return;
 
-        if (data.sessionId) {
-          setSessionId(data.sessionId);
-          setQuizTitle(data.quizTitle);
+        const resolvedSessionId = Number((data as { sessionId?: unknown })?.sessionId);
+        if (Number.isInteger(resolvedSessionId) && resolvedSessionId > 0) {
+          setSessionId(resolvedSessionId);
+          setQuizTitle((data as { quizTitle?: string })?.quizTitle || t("live.quizDefault"));
           setPhase("lobby");
         }
       } catch (err) {
@@ -163,7 +165,7 @@ export default function LiveControlPage() {
       isActive = false;
       controller.abort();
     };
-  }, [pin]);
+  }, [pin, t]);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -248,7 +250,7 @@ export default function LiveControlPage() {
         typeof data === "string"
           ? data
           : data?.message || t("live.unexpectedError");
-      window.alert(message);
+      toast.error(message);
       pushNotification(message);
     });
 
@@ -399,10 +401,10 @@ export default function LiveControlPage() {
 
   return (
     <div
-      className="min-h-[100dvh] bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black p-3 p-md-4"
+      className="min-h-[100dvh] bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black p-3 md:p-4"
       style={questionBackgroundStyle}
     >
-      <div className="container-fluid app-container px-0">
+      <div className="app-container px-0">
         
         <div className="text-center mb-8">
           <h1 className="text-3xl font-black text-white">{quizTitle}</h1>
@@ -522,7 +524,7 @@ export default function LiveControlPage() {
           </div>
         </div>
 
-        <div className="position-fixed end-0 top-0 translate-middle-y-0 z-50 w-100 px-3 px-md-4 space-y-2" style={{ maxWidth: "min(360px, calc(100vw - 1rem))", marginTop: "80px" }}>
+        <div className="position-fixed end-0 top-0 translate-middle-y-0 z-50 w-full px-3 md:px-4 space-y-2" style={{ maxWidth: "min(360px, calc(100vw - 1rem))", marginTop: "80px" }}>
           <AnimatePresence>
             {notifications.map((n) => (
               <motion.div
@@ -554,7 +556,7 @@ export default function LiveControlPage() {
         />
         {phase === "lobby" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 p-md-5 mb-4 mb-md-6">
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
               <h2 className="text-2xl font-bold text-white mb-4">
                 {t("live.waitingForPlayers")}
               </h2>

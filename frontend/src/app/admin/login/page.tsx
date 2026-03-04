@@ -2,9 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { useTranslation } from "@/lib/i18n";
 import { loginWithPassword } from "@/lib/services/auth-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 
 export default function AdminLogin() {
   const { t } = useTranslation();
@@ -29,15 +33,15 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black d-flex align-items-center justify-content-center p-3 p-md-4">
+    <div className="min-h-screen bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black flex items-center justify-center p-3 md:p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-100"
+        className="w-full"
         style={{ maxWidth: "520px" }}
       >
         <div className="text-center mb-8">
-          <div className="d-flex justify-content-center mb-4">
+          <div className="flex justify-center mb-4">
             <div className="bg-white/95 rounded-xl px-3 py-1 shadow-lg">
               <img src="/logo.png" alt="infinArena" className="h-12 w-auto" />
             </div>
@@ -53,31 +57,29 @@ export default function AdminLogin() {
           <p className="text-white/70 text-lg">{t("login.adminPanel")}</p>
         </div>
 
-        <div className="card bg-white/10 backdrop-blur-md rounded-2xl p-4 p-md-5">
+        <Card className="bg-white/10 backdrop-blur-md rounded-2xl p-4 md:p-5">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">
+              <Label className="text-white/80">
                 {t("login.username")}
-              </label>
-              <input
+              </Label>
+              <Input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="input-field"
                 placeholder="admin"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-white/80 text-sm font-medium mb-2">
+              <Label className="text-white/80">
                 {t("login.password")}
-              </label>
-              <input
+              </Label>
+              <Input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="input-field"
                 placeholder={t("login.passwordPlaceholder")}
                 required
               />
@@ -98,17 +100,13 @@ export default function AdminLogin() {
               disabled={loading}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="w-full btn-primary text-lg disabled:opacity-50"
+              className="w-full bg-inf-red text-white font-bold py-3 px-6 rounded-lg hover:bg-red-700 transition-all duration-200 active:scale-95 shadow-lg text-lg disabled:opacity-50"
             >
               {loading ? t("login.loggingIn") : t("login.submit")}
             </motion.button>
           </form>
-        </div>
+        </Card>
       </motion.div>
     </div>
   );
 }
-
-
-
-

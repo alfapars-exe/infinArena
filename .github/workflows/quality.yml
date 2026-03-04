@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Localization checks
+        run: pnpm l10n:check
+
       - name: Lint
         run: pnpm lint
 
@@ -35,4 +38,3 @@ jobs:
 
       - name: Build
         run: pnpm build
-

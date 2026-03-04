@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
 import { useMusicPlayer } from "@/lib/music-context";
 import { authedFetch, downloadAuthedFile } from "@/lib/services/auth-client";
+import { toast } from "sonner";
 
 interface SessionInfo {
   id: number;
@@ -149,7 +150,7 @@ export default function PublishPage() {
         await fetchData();
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(getErrorMessage(err, t("publish.failed")));
+        toast.error(getErrorMessage(err, t("publish.failed")));
       }
     } finally {
       setPublishing(false);
@@ -168,13 +169,13 @@ export default function PublishPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(getErrorMessage(err, t("publish.terminateFailed")));
+        toast.error(getErrorMessage(err, t("publish.terminateFailed")));
         return;
       }
 
       await fetchData();
     } catch (err) {
-      alert(getErrorMessage(err, t("publish.terminateFailed")));
+      toast.error(getErrorMessage(err, t("publish.terminateFailed")));
     } finally {
       setTerminatingSessionId(null);
     }
@@ -226,9 +227,9 @@ export default function PublishPage() {
   }
 
   return (
-    <div className="container-fluid px-0">
+    <div className="">
       <div className="mx-auto" style={{ maxWidth: "960px" }}>
-      <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-4 mb-md-5">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4 md:mb-5">
         <div>
           <h1 className="text-3xl font-bold text-white">{t("publish.title")}</h1>
           <p className="text-gray-400 mt-1">{quiz?.title}</p>
@@ -261,7 +262,7 @@ export default function PublishPage() {
               <label className="text-white/60 text-sm block mb-2">
                 {t("live.bgMusic")}
               </label>
-              <div className="d-flex flex-column flex-md-row gap-2">
+              <div className="flex flex-col md:flex-row gap-2">
                 <input
                   type="text"
                   value={youtubeUrl}
@@ -397,7 +398,7 @@ export default function PublishPage() {
           <div className="text-6xl font-black text-white tracking-wider mb-4">
             {lastPin}
           </div>
-          <div className="d-flex flex-column flex-md-row gap-2 gap-md-3 justify-content-center">
+          <div className="flex flex-col md:flex-row gap-2 md:gap-3 justify-center">
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={copyPin}
@@ -455,7 +456,7 @@ export default function PublishPage() {
                     {statusLabels[s.status] || s.status}
                   </span>
                 </div>
-                <div className="d-flex align-items-center gap-3">
+                <div className="flex items-center gap-3">
                   <span className="text-gray-500 text-sm">
                     {t("publish.playersCount", { count: s.players?.length || 0 })}
                   </span>
@@ -463,7 +464,7 @@ export default function PublishPage() {
                     type="button"
                     onClick={() =>
                       void downloadAuthedFile(
-                        `/api/quizzes/${quizId}/sessions/${s.id}/results/export`,
+                        `/api/quizzes/${quizId}/results/export?sessionId=${s.id}`,
                         `quiz-${quizId}-session-${s.id}-results.xlsx`
                       )
                     }

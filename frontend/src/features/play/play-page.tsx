@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { io, Socket } from "socket.io-client";
 import confetti from "canvas-confetti";
 import { useTranslation } from "@/lib/i18n";
@@ -982,11 +982,11 @@ export default function PlayPage() {
 
   return (
     <div
-      className="min-h-[100dvh] bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black d-flex flex-column"
+      className="min-h-[100dvh] bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black flex flex-col"
       style={pageBackgroundStyle}
     >
-      <div className="container-fluid app-container px-2 px-md-3 py-2 py-md-3 flex-grow-1 d-flex flex-column">
-        <div className="w-full d-flex justify-content-center mb-2">
+      <div className="app-container px-2 md:px-3 py-2 md:py-3 flex-grow-1 flex flex-col">
+        <div className="w-full flex justify-center mb-2">
           <img
             src="/logo.png"
             alt="infinArena"
@@ -1169,11 +1169,11 @@ export default function PlayPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col p-2 p-md-4 overflow-x-hidden"
+            className="flex-1 flex flex-col p-2 md:p-4 overflow-x-hidden"
           >
             <div className="w-full max-w-5xl mx-auto min-w-0">
             
-            <div className="flex items-center justify-between mb-3 mb-md-4">
+            <div className="flex items-center justify-between mb-3 md:mb-4">
               <span className="text-white/60 text-sm">
                 {questionNumber}/{totalQuestions}
               </span>
@@ -1208,7 +1208,7 @@ export default function PlayPage() {
             </div>
 
             
-            <div className="w-full bg-white/10 rounded-full h-2 mb-4 mb-md-6">
+            <div className="w-full bg-white/10 rounded-full h-2 mb-4 md:mb-6">
               <div
                 className="bg-inf-yellow h-2 rounded-full transition-none"
                 style={{ width: `${Math.max(0, Math.min(100, timeProgress))}%` }}
@@ -1216,9 +1216,9 @@ export default function PlayPage() {
             </div>
 
             
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 p-md-6 mb-4 mb-md-6 text-center">
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 md:p-6 mb-4 md:mb-6 text-center">
               {currentQuestion.mediaUrl && (
-                <div className="flex justify-center mb-4 mb-md-6 bg-black/30 rounded-lg p-2 p-md-4">
+                <div className="flex justify-center mb-4 md:mb-6 bg-black/30 rounded-lg p-2 md:p-4">
                   <img
                     src={currentQuestion.mediaUrl}
                     alt="Question media"

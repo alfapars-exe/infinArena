@@ -559,8 +559,8 @@ function resolveCorrectIndexesFromFallbackFields(
     }
 
     if (questionType === "true_false") {
-      const truthy = new Set(["true", "dogru"]);
-      const falsy = new Set(["false", "yanlis"]);
+      const truthy = new Set(["true", "dogru", "doğru"]);
+      const falsy = new Set(["false", "yanlis", "yanlış"]);
       if (truthy.has(normalized)) {
         for (let i = 0; i < choices.length; i++) {
           const choice = normalizeComparableText(choices[i].choiceText);

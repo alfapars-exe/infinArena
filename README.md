@@ -10,10 +10,10 @@ pinned: false
 
 # infinArena Monorepo
 
-Bu repo iki role ayrik calisacak sekilde duzenlendi:
+Bu repo iki role ayrık çalışacak şekilde düzenlendi:
 
-- `frontend/`: admin ve yarismaci arayuzlerini role-mode ile ayri calistirir
-- `backend/`: admin ve yarismaci API yuzeylerini role-mode ile ayri calistirir
+- `frontend/`: admin ve yarışmacı arayüzlerini role-mode ile ayrı çalıştırır
+- `backend/`: admin ve yarışmacı API yüzeylerini role-mode ile ayrı çalıştırır
 
 ## Kurulum
 
@@ -21,9 +21,9 @@ Bu repo iki role ayrik calisacak sekilde duzenlendi:
 pnpm install
 ```
 
-## Gelistirme
+## Geliştirme
 
-### Ayrik mod (onerilen)
+### Ayrık mod (önerilen)
 
 Terminal 1 (admin backend):
 
@@ -31,7 +31,7 @@ Terminal 1 (admin backend):
 pnpm dev:backend:admin
 ```
 
-Terminal 2 (yarismaci backend):
+Terminal 2 (yarışmacı backend):
 
 ```bash
 pnpm dev:backend:player
@@ -43,20 +43,20 @@ Terminal 3 (admin frontend):
 pnpm dev:frontend:admin
 ```
 
-Terminal 4 (yarismaci frontend):
+Terminal 4 (yarışmacı frontend):
 
 ```bash
 pnpm dev:frontend:player
 ```
 
-Varsayilan portlar:
+Varsayılan portlar:
 
 - Admin frontend: `http://localhost:3000`
-- Yarismaci frontend: `http://localhost:3001`
+- Yarışmacı frontend: `http://localhost:3001`
 - Admin backend: `http://localhost:7860`
-- Yarismaci backend: `http://localhost:7861`
+- Yarışmacı backend: `http://localhost:7861`
 
-### Birlesik mod (geriye donuk uyum)
+### Birleşik mod (geriye dönük uyum)
 
 Terminal 1:
 
@@ -70,29 +70,29 @@ Terminal 2:
 pnpm dev:frontend
 ```
 
-Varsayilan portlar:
+Varsayılan portlar:
 
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:7860`
 
-## Ortam Degiskenleri
+## Ortam Değişkenleri
 
 - `frontend/.env.local`
-  - birlesik mod icin: `NEXT_PUBLIC_BACKEND_URL=http://localhost:7860`
+  - birleşik mod için: `NEXT_PUBLIC_BACKEND_URL=http://localhost:7860`
 - `backend/.env.local`
-  - birlesik mod icin: `PORT=7860`
+  - birleşik mod için: `PORT=7860`
   - `ADMIN_USERNAME=admin`
   - `ADMIN_PASSWORD=...`
   - `HUGGINGFACE_API_KEY=...`
   - `AUTH_TOKEN_SECRET=...`
   - `APP_STORAGE_DIR=./data`
 
-## Hugging Face Space Notlari
+## Hugging Face Space Notları
 
-- Space artik `AUTH_TOKEN_SECRET` ve `ADMIN_PASSWORD` eksik olsa da acilir.
-- `AUTH_TOKEN_SECRET` yoksa container baslangicinda gecici (ephemeral) bir secret uretilir.
-- `ADMIN_PASSWORD` yoksa bootstrap icin varsayilan `admin123` kullanilir.
-- Guvenlik icin Space Settings -> Secrets altinda en az su degerleri tanimlayin:
+- Space artık `AUTH_TOKEN_SECRET` ve `ADMIN_PASSWORD` eksik olsa da açılır.
+- `AUTH_TOKEN_SECRET` yoksa container başlangıcında geçici (ephemeral) bir secret üretilir.
+- `ADMIN_PASSWORD` yoksa bootstrap için varsayılan `admin123` kullanılır.
+- Güvenlik için Space Settings -> Secrets altında en az şu değerleri tanımlayın:
   - `AUTH_TOKEN_SECRET`
   - `ADMIN_PASSWORD`
 
@@ -101,4 +101,4 @@ Varsayilan portlar:
 - `pnpm build`: backend + frontend build
 - `pnpm typecheck`: backend + frontend typecheck
 - `pnpm test`: backend testleri
-
+- `pnpm l10n:check`: TR/ENG metin ve i18n tutarlılık kontrolü

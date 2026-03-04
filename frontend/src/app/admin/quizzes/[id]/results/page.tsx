@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
 import { authedFetch, downloadAuthedFile } from "@/lib/services/auth-client";
+import { toast } from "sonner";
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (typeof err === "string" && err.trim()) return err;
@@ -93,14 +94,14 @@ export default function ResultsPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(getErrorMessage(err, t("publish.terminateFailed")));
+        toast.error(getErrorMessage(err, t("publish.terminateFailed")));
         return;
       }
 
       await fetchResults();
       setSelectedPlayer(null);
     } catch (err) {
-      alert(getErrorMessage(err, t("publish.terminateFailed")));
+      toast.error(getErrorMessage(err, t("publish.terminateFailed")));
     } finally {
       setTerminatingSessionId(null);
     }
@@ -117,11 +118,11 @@ export default function ResultsPage() {
     setDownloadingSessionId(sessionId);
     try {
       await downloadAuthedFile(
-        `/api/quizzes/${quizId}/sessions/${sessionId}/results/export`,
+        `/api/quizzes/${quizId}/results/export?sessionId=${sessionId}`,
         `quiz-${quizId}-session-${sessionId}-results.xlsx`
       );
     } catch (err) {
-      alert(getErrorMessage(err, t("results.exportFailed")));
+      toast.error(getErrorMessage(err, t("results.exportFailed")));
     } finally {
       setDownloadingSessionId(null);
     }
@@ -140,9 +141,9 @@ export default function ResultsPage() {
   }
 
   return (
-    <div className="container-fluid px-0">
+    <div className="">
       <div className="mx-auto" style={{ maxWidth: "1200px" }}>
-      <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-4 mb-md-5">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4 md:mb-5">
         <div>
           <h1 className="text-3xl font-bold text-white">{t("results.title")}</h1>
           <p className="text-gray-400 mt-1">
@@ -166,9 +167,9 @@ export default function ResultsPage() {
           </p>
         </div>
       ) : (
-        <div className="row g-3 g-lg-4">
+        <div className="grid grid-cols-12 gap-3 lg:gap-4">
           {/* Session selector */}
-          <div className="col-12 col-lg-4 col-xl-3">
+          <div className="col-span-12 lg:col-span-4 xl:col-span-3">
             <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">
               {t("results.sessions")}
             </h2>
@@ -247,14 +248,14 @@ export default function ResultsPage() {
           </div>
 
           {/* Player scores */}
-          <div className="col-12 col-lg-8 col-xl-9">
+          <div className="col-span-12 lg:col-span-8 xl:col-span-9">
             {selectedSession && (
               <>
                 <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">
                   {t("results.leaderboardPin", { pin: selectedSession.pin })}
                 </h2>
 
-                <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden table-responsive">
+                <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden overflow-x-auto">
                   <table className="w-full min-w-[720px]">
                     <thead>
                       <tr className="border-b border-white/10">

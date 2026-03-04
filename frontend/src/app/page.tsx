@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { useTranslation } from "@/lib/i18n";
 import { apiFetch } from "@/lib/services/api-client";
 
@@ -89,7 +89,7 @@ export default function HomePage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black d-flex flex-column align-items-center justify-content-center p-3 p-md-4">
+    <div className="min-h-screen bg-gradient-to-br from-inf-black via-inf-darkGray to-inf-black flex flex-col items-center justify-center p-3 md:p-4">
       {/* Animated background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         {backgroundBubbles.map((bubble, i) => (
@@ -122,7 +122,7 @@ export default function HomePage() {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="relative z-10 text-center w-100"
+        className="relative z-10 text-center w-full"
         style={{ maxWidth: "520px" }}
       >
         {/* Logo */}
