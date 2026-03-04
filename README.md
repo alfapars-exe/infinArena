@@ -87,6 +87,15 @@ Varsayilan portlar:
   - `AUTH_TOKEN_SECRET=...`
   - `APP_STORAGE_DIR=./data`
 
+## Hugging Face Space Notlari
+
+- Space artik `AUTH_TOKEN_SECRET` ve `ADMIN_PASSWORD` eksik olsa da acilir.
+- `AUTH_TOKEN_SECRET` yoksa container baslangicinda gecici (ephemeral) bir secret uretilir.
+- `ADMIN_PASSWORD` yoksa bootstrap icin varsayilan `admin123` kullanilir.
+- Guvenlik icin Space Settings -> Secrets altinda en az su degerleri tanimlayin:
+  - `AUTH_TOKEN_SECRET`
+  - `ADMIN_PASSWORD`
+
 ## Komutlar
 
 - `pnpm build`: backend + frontend build

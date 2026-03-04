@@ -10,6 +10,10 @@ fail() {
   exit 1
 }
 
+warn() {
+  printf '%s\n' "[space-entrypoint] WARN: $*"
+}
+
 is_truthy() {
   case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on) return 0 ;;
@@ -25,8 +29,18 @@ require_var() {
   fi
 }
 
-require_var "AUTH_TOKEN_SECRET"
-require_var "ADMIN_PASSWORD"
+random_token() {
+  if [ -r /proc/sys/kernel/random/uuid ]; then
+    uuid1="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || true)"
+    uuid2="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || true)"
+    if [ -n "${uuid1}" ] && [ -n "${uuid2}" ]; then
+      printf '%s%s' "${uuid1}" "${uuid2}" | tr -d '-'
+      return 0
+    fi
+  fi
+
+  date +%s%N | tr -d '\n'
+}
 
 export NODE_ENV="${NODE_ENV:-production}"
 export BACKEND_ROLE="${BACKEND_ROLE:-all}"
@@ -35,6 +49,16 @@ export BACKEND_PORT="${BACKEND_PORT:-7860}"
 export FRONTEND_PORT="${FRONTEND_PORT:-3001}"
 export PUBLIC_PORT="${PUBLIC_PORT:-3000}"
 export REQUIRE_PERSISTENT_STORAGE="${REQUIRE_PERSISTENT_STORAGE:-false}"
+
+if [ -z "${AUTH_TOKEN_SECRET:-}" ]; then
+  export AUTH_TOKEN_SECRET="$(random_token)"
+  warn "AUTH_TOKEN_SECRET not set; generated ephemeral secret for this container run."
+fi
+
+if [ -z "${ADMIN_PASSWORD:-}" ]; then
+  export ADMIN_PASSWORD="admin123"
+  warn "ADMIN_PASSWORD not set; using default value for bootstrap. Set ADMIN_PASSWORD secret in Space settings."
+fi
 
 if [ -z "${ADMIN_USERNAME:-}" ]; then
   export ADMIN_USERNAME="admin"
