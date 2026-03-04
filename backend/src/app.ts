@@ -197,6 +197,10 @@ export function getAllowedOrigins(): string[] | true {
 export async function createHttpApp() {
   const app = express();
 
+  if (process.env.NODE_ENV === "production" || process.env.SPACE_ID) {
+    app.set("trust proxy", 1);
+  }
+
   const allowedOrigins = resolveAllowedOrigins();
   const backendRole = resolveBackendRole(process.env.BACKEND_ROLE);
 

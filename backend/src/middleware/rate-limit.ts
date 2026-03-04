@@ -2,6 +2,7 @@ import rateLimit from "express-rate-limit";
 import RedisStore from "rate-limit-redis";
 import { isRedisEnabled, getRedisClient } from "@/lib/redis";
 import { createLogger } from "@/lib/logger";
+import type { Request } from "express";
 
 const log = createLogger("RateLimit");
 
@@ -27,12 +28,30 @@ function getStore() {
   return storePromise;
 }
 
+function getForwardedClientIp(req: Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  if (typeof value === "string" && value.trim()) {
+    return value.split(",")[0].trim();
+  }
+  return req.ip || "unknown";
+}
+
 /** Login brute-force protection: 10 req / 15 min per IP */
 export async function createLoginLimiter() {
   const store = await getStore();
   return rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 10,
+    max: 20,
+    skipSuccessfulRequests: true,
+    keyGenerator: (req) => {
+      const ip = getForwardedClientIp(req);
+      const username =
+        typeof req.body?.username === "string"
+          ? req.body.username.trim().toLowerCase()
+          : "";
+      return username ? `${ip}:${username}` : ip;
+    },
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many login attempts. Please try again later." },
