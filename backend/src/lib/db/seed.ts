@@ -197,17 +197,17 @@ async function seed() {
     }
   }
 
-  // Ensure admin user exists (create only if not present)
+  // Ensure admin user exists and password is synced from env when provided.
   try {
+    const adminUsername = (process.env.ADMIN_USERNAME || "admin").trim() || "admin";
+    const adminPassword = process.env.ADMIN_PASSWORD?.trim();
+
     const existing = await dbAny
       .select()
       .from(admins)
-      .where(eq(admins.username, "admin"));
+      .where(eq(admins.username, adminUsername));
 
     if (existing.length === 0) {
-      const adminUsername = (process.env.ADMIN_USERNAME || "admin").trim();
-      const adminPassword = process.env.ADMIN_PASSWORD?.trim();
-
       if (!adminPassword) {
         console.warn("[db] ADMIN_PASSWORD not set; skipping admin seed");
         return;
@@ -223,7 +223,22 @@ async function seed() {
       });
       console.log("✓ Admin user created via ADMIN_USERNAME/ADMIN_PASSWORD");
     } else {
-      console.log("✓ Admin user already exists - no changes made");
+      if (!adminPassword) {
+        console.log("✓ Admin user already exists - no password sync (ADMIN_PASSWORD not set)");
+      } else {
+        const currentAdmin = existing[0];
+        const passwordMatches = await bcrypt.compare(adminPassword, currentAdmin.passwordHash);
+        if (passwordMatches) {
+          console.log("✓ Admin user already exists - password already in sync");
+        } else {
+          const hash = await bcrypt.hash(adminPassword, 10);
+          await dbAny
+            .update(admins)
+            .set({ passwordHash: hash })
+            .where(eq(admins.id, currentAdmin.id));
+          console.log("✓ Admin user password updated from ADMIN_PASSWORD");
+        }
+      }
     }
   } catch (err) {
     console.error("Error during seed:", err);
