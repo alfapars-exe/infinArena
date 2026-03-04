@@ -22,6 +22,12 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<"loading" | "authenticated" | "unauthenticated">("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
   const isAdminPath = pathname.startsWith("/admin");
+  const isLivePath =
+    pathname === "/admin/live"
+    || pathname.startsWith("/admin/live/")
+    || pathname === "/infinarenapanel/live"
+    || pathname.startsWith("/infinarenapanel/live/");
+  const isLoginPath = pathname === "/infinarenapanel/login" || pathname === "/admin/login";
   const loginPath = isAdminPath ? "/admin/login" : "/infinarenapanel/login";
   const dashboardPath = isAdminPath ? "/admin" : "/infinarenapanel";
 
@@ -46,13 +52,13 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
       if (currentUser) {
         setUser(currentUser);
         setStatus("authenticated");
-        if (pathname === "/infinarenapanel/login" || pathname === "/admin/login") {
+        if (isLoginPath) {
           router.replace(dashboardPath);
         }
       } else {
         setUser(null);
         setStatus("unauthenticated");
-        if (pathname !== "/infinarenapanel/login" && pathname !== "/admin/login") {
+        if (!isLoginPath) {
           router.replace(loginPath);
         }
       }
@@ -63,7 +69,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
     return () => {
       isCancelled = true;
     };
-  }, [dashboardPath, loginPath, pathname, router]);
+  }, [dashboardPath, isLoginPath, loginPath, pathname, router]);
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
@@ -75,7 +81,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
     }
   };
 
-  if (pathname === "/infinarenapanel/login" || pathname === "/admin/login") {
+  if (isLoginPath) {
     return <>{children}</>;
   }
 
@@ -97,63 +103,71 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 
   if (!user) return null;
 
+  if (isLivePath) {
+    return (
+      <QueryProvider>
+        <MusicProvider>{children}</MusicProvider>
+      </QueryProvider>
+    );
+  }
+
   return (
     <QueryProvider>
-    <MusicProvider>
-      <div className="min-h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-        <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
-          <div className="app-container px-3 md:px-4">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 min-h-[64px]">
-              <div className="flex items-center gap-3 min-w-0">
-                <Link
-                  href="/infinarenapanel"
-                  className="text-2xl font-black text-white tracking-tight leading-none shrink-0"
-                >
-                  infin<span className="text-inf-yellow">Arena</span>
-                </Link>
-                <span className="bg-white/20 text-white/90 text-xs font-medium px-2 py-1 rounded shrink-0 hidden sm:inline-flex">
-                  ADMIN
-                </span>
-                <Link
-                  href="/infinarenapanel"
-                  className="text-white/70 hover:text-white transition-colors text-sm font-medium hidden md:inline"
-                >
-                  {t("nav.dashboard")}
-                </Link>
-              </div>
+      <MusicProvider>
+        <div className="min-h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+          <nav className="bg-inf-red/90 backdrop-blur-sm border-b border-white/10 sticky top-0 z-50">
+            <div className="app-container px-3 md:px-4">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-2 min-h-[64px]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Link
+                    href="/infinarenapanel"
+                    className="text-2xl font-black text-white tracking-tight leading-none shrink-0"
+                  >
+                    infin<span className="text-inf-yellow">Arena</span>
+                  </Link>
+                  <span className="bg-white/20 text-white/90 text-xs font-medium px-2 py-1 rounded shrink-0 hidden sm:inline-flex">
+                    ADMIN
+                  </span>
+                  <Link
+                    href="/infinarenapanel"
+                    className="text-white/70 hover:text-white transition-colors text-sm font-medium hidden md:inline"
+                  >
+                    {t("nav.dashboard")}
+                  </Link>
+                </div>
 
-              <Link href="/infinarenapanel" className="justify-self-center">
-                <img
-                  src="/logo.png"
-                  alt="infinArena"
-                  className="h-8 md:h-9 w-auto drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]"
-                />
-              </Link>
+                <Link href="/infinarenapanel" className="justify-self-center">
+                  <img
+                    src="/logo.png"
+                    alt="infinArena"
+                    className="h-8 md:h-9 w-auto drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]"
+                  />
+                </Link>
 
-              <div className="flex items-center justify-end gap-2 md:gap-4 min-w-0">
-                <span className="text-white/60 text-xs whitespace-nowrap hidden lg:inline">
-                  {t("nav.buildInfo", { date: formattedBuildDate, version: buildVersion })}
-                </span>
-                <LanguageToggle />
-                <span className="text-white/50 text-sm">{user.name}</span>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  disabled={isLoggingOut}
-                  className="text-white/50 hover:text-white transition-colors text-sm bg-transparent border-0 p-0"
-                >
-                  {t("nav.logout")}
-                </button>
+                <div className="flex items-center justify-end gap-2 md:gap-4 min-w-0">
+                  <span className="text-white/60 text-xs whitespace-nowrap hidden lg:inline">
+                    {t("nav.buildInfo", { date: formattedBuildDate, version: buildVersion })}
+                  </span>
+                  <LanguageToggle />
+                  <span className="text-white/50 text-sm">{user.name}</span>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    disabled={isLoggingOut}
+                    className="text-white/50 hover:text-white transition-colors text-sm bg-transparent border-0 p-0"
+                  >
+                    {t("nav.logout")}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </nav>
+          </nav>
 
-        <main className="app-container px-3 md:px-4 py-3 md:py-4 lg:py-5">
-          {children}
-        </main>
-      </div>
-    </MusicProvider>
+          <main className="app-container px-3 md:px-4 py-3 md:py-4 lg:py-5">
+            {children}
+          </main>
+        </div>
+      </MusicProvider>
     </QueryProvider>
   );
 }

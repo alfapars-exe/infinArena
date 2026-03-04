@@ -65,6 +65,8 @@ function shuffleChoices<T>(arr: T[]): T[] {
 }
 
 const BROWSER_CLIENT_ID_STORAGE_KEY = "infinarena:browser-client-id";
+const LEGACY_EMPTY_PIN_SESSION_CACHE_KEY = "quiz-session-";
+const SESSION_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function createBrowserClientId(): string {
   return `bc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
@@ -308,6 +310,7 @@ export default function PlayPage() {
   const [podiumStep, setPodiumStep] = useState(0);
 
   const sessionCacheKey = `quiz-session-${pin}`;
+  const hasValidPin = /^\d{6}$/.test(pin);
   const getBrowserClientId = useCallback(() => {
     if (!browserClientIdRef.current) {
       browserClientIdRef.current = getOrCreateBrowserClientId();
@@ -323,20 +326,61 @@ export default function PlayPage() {
     playerIdentityRef.current = { playerId, nickname };
   }, [nickname, playerId]);
 
+  const readCachedSession = useCallback((): { playerId: number; nickname: string; avatar: string } | null => {
+    const parseCachedSession = (raw: string | null) => {
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (
+        typeof data?.timestamp === "number" &&
+        Date.now() - data.timestamp > SESSION_CACHE_MAX_AGE_MS
+      ) {
+        return null;
+      }
+      const cachedPlayerId = Number(data?.playerId);
+      const cachedNickname =
+        typeof data?.nickname === "string" ? data.nickname.trim() : "";
+      if (!Number.isInteger(cachedPlayerId) || cachedPlayerId <= 0 || !cachedNickname) {
+        return null;
+      }
+      return {
+        playerId: cachedPlayerId,
+        nickname: cachedNickname,
+        avatar: typeof data?.avatar === "string" ? data.avatar : "",
+      };
+    };
+
+    try {
+      const primary = parseCachedSession(localStorage.getItem(sessionCacheKey));
+      if (primary) return primary;
+      if (sessionCacheKey !== LEGACY_EMPTY_PIN_SESSION_CACHE_KEY) {
+        const legacy = parseCachedSession(localStorage.getItem(LEGACY_EMPTY_PIN_SESSION_CACHE_KEY));
+        if (legacy) return legacy;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, [sessionCacheKey]);
+
   const saveSession = useCallback((pid: number, nick: string, av: string) => {
+    const normalizedNick = nick.trim();
+    if (!hasValidPin || !Number.isInteger(pid) || pid <= 0 || !normalizedNick) return;
     try {
       localStorage.setItem(sessionCacheKey, JSON.stringify({
         playerId: pid,
-        nickname: nick,
+        nickname: normalizedNick,
         avatar: av,
         timestamp: Date.now(),
       }));
+      if (sessionCacheKey !== LEGACY_EMPTY_PIN_SESSION_CACHE_KEY) {
+        localStorage.removeItem(LEGACY_EMPTY_PIN_SESSION_CACHE_KEY);
+      }
     } catch {}
-  }, [sessionCacheKey]);
+  }, [hasValidPin, sessionCacheKey]);
 
   const emitRejoinFromCache = useCallback((targetSocket: TypedSocket, options?: { force?: boolean }) => {
     try {
-      if (!targetSocket.connected) return;
+      if (!targetSocket.connected || !hasValidPin) return;
 
       const now = Date.now();
       const socketId = targetSocket.id ?? "";
@@ -350,18 +394,13 @@ export default function PlayPage() {
         return;
       }
 
-      const cached = localStorage.getItem(sessionCacheKey);
       let resolvedPlayerId: number | null = null;
       let resolvedNickname = "";
 
-      if (cached) {
-        const data = JSON.parse(cached);
-        if (typeof data?.timestamp === "number" && now - data.timestamp < 4 * 60 * 60 * 1000) {
-          if (Number.isInteger(data.playerId) && typeof data.nickname === "string") {
-            resolvedPlayerId = Number(data.playerId);
-            resolvedNickname = data.nickname;
-          }
-        }
+      const cachedSession = readCachedSession();
+      if (cachedSession) {
+        resolvedPlayerId = cachedSession.playerId;
+        resolvedNickname = cachedSession.nickname;
       }
 
       if (!resolvedPlayerId || !resolvedNickname) {
@@ -384,7 +423,7 @@ export default function PlayPage() {
       lastRejoinAtRef.current = now;
       lastRejoinSocketIdRef.current = socketId;
     } catch {}
-  }, [getBrowserClientId, pin, sessionCacheKey]);
+  }, [getBrowserClientId, hasValidPin, pin, readCachedSession]);
 
   const clearSubmitWatchdog = useCallback(() => {
     if (submitWatchdogRef.current) {
@@ -453,6 +492,8 @@ export default function PlayPage() {
   }, []);
 
   useEffect(() => {
+    if (!hasValidPin) return;
+
     const s: TypedSocket = io(getSocketBaseUrl(), { path: "/api/socketio" });
     setSocket(s);
 
@@ -474,8 +515,10 @@ export default function PlayPage() {
         setQuizTitle(qt);
         setAvatar(av);
         setPhase("lobby");
-        setNickname((prev) => prev); // keep existing nickname
-        saveSession(pid, nickname || "", av);
+        const currentNickname = playerIdentityRef.current.nickname.trim();
+        if (currentNickname) {
+          saveSession(pid, currentNickname, av);
+        }
       }
     );
 
@@ -484,13 +527,10 @@ export default function PlayPage() {
       setQuizTitle(qt);
       setAvatar(av);
       setTotalScore(ts);
-      try {
-        const cached = localStorage.getItem(sessionCacheKey);
-        if (cached) {
-          const data = JSON.parse(cached);
-          setNickname(data.nickname);
-        }
-      } catch {}
+      const cachedSession = readCachedSession();
+      if (cachedSession?.nickname) {
+        setNickname(cachedSession.nickname);
+      }
       if (serverPhase === "ended") {
         setPhase("ended");
       } else if (serverPhase === "leaderboard") {
@@ -717,7 +757,7 @@ export default function PlayPage() {
       }
       s.disconnect();
     };
-  }, []);
+  }, [hasValidPin, pin]);
 
   useEffect(() => {
     if (!socket) return;
