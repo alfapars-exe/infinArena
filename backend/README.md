@@ -31,6 +31,17 @@ Varsayilan portlar:
 
 - `BACKEND_ROLE`: `all | admin | player` (script'ler tarafindan otomatik set edilir)
 - `PORT`: dinleme portu
+- Veritabani (Supabase PostgreSQL onerilen):
+	- `DATABASE_URL` (oncelikli)
+	- veya `SUPABASE_DATABASE_URL`
+	- veya parcali tanim:
+		- `SUPABASE_DB_HOST`
+		- `SUPABASE_DB_PASSWORD`
+		- `SUPABASE_DB_USER` (opsiyonel, varsayilan: `postgres`)
+		- `SUPABASE_DB_PORT` (opsiyonel, varsayilan: `5432`)
+		- `SUPABASE_DB_NAME` (opsiyonel, varsayilan: `postgres`)
+
+Not: Production/Hugging Face Space ortaminda DB URL verilmemisse backend baslatilmaz.
 
 ## Test
 
