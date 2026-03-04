@@ -12,14 +12,22 @@ export interface AuthenticatedAdmin {
   name: string;
 }
 
+function normalizeAdminId(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new UnauthorizedError("Invalid admin account id");
+  }
+  return parsed;
+}
+
 function mapAdmin(admin: {
-  id: number;
+  id: number | string;
   username: string;
   email: string;
   name: string;
 }): AuthenticatedAdmin {
   return {
-    id: admin.id,
+    id: normalizeAdminId(admin.id),
     username: admin.username,
     email: admin.email,
     name: admin.name,
