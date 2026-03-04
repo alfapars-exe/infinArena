@@ -8,6 +8,8 @@ export const metadata: Metadata = {
   description: "Create and play interactive quizzes in real-time!",
 };
 
+import { SmoothScroll } from "@/components/ui/smooth-scroll";
+
 export default function RootLayout({
   children,
 }: {
@@ -22,7 +24,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
-        {children}
+        <SmoothScroll>{children}</SmoothScroll>
         <SystemStatusOverlay />
         <Toaster
           theme="dark"

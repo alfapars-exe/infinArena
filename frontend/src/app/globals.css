@@ -11,6 +11,9 @@
 
 :root {
   --app-vh: 100vh;
+  --white: #ffffff;
+  --black: #000000;
+  --transparent: transparent;
 }
 
 @supports (height: 100dvh) {

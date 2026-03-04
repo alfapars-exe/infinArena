@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { MagicCard } from "@/components/ui/magic-card";
 import {
   Dialog,
   DialogContent,
@@ -126,28 +127,38 @@ export default function AdminDashboard() {
         </div>
       ) : quizzes.length === 0 ? (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-center py-20"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 20 }}
+          className="text-center py-20 px-4 bg-white/5 rounded-3xl border border-white/10 backdrop-blur-sm max-w-2xl mx-auto mt-10"
         >
-          <div className="text-6xl mb-4">🎯</div>
-          <h2 className="text-2xl font-bold text-white mb-2">
+          <motion.div
+            animate={{
+              y: [0, -10, 0],
+              rotate: [0, 5, -5, 0]
+            }}
+            transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+            className="text-7xl mb-6 drop-shadow-2xl"
+          >
+            🎯
+          </motion.div>
+          <h2 className="text-3xl font-black text-white mb-3 tracking-tight">
             {t("dashboard.noQuizzes")}
           </h2>
-          <p className="text-gray-400 mb-6">
+          <p className="text-gray-400 mb-8 text-lg">
             {t("dashboard.createFirst")}
           </p>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setShowNewModal(true)}
-            className="bg-inf-red hover:bg-red-700 text-white font-bold py-3 px-8 rounded-xl"
+            className="bg-gradient-to-r from-inf-red to-orange-500 hover:from-red-600 hover:to-orange-600 text-white font-bold py-4 px-10 rounded-2xl shadow-xl transition-all"
           >
             {t("dashboard.createFirstQuiz")}
           </motion.button>
         </motion.div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
           <AnimatePresence>
             {quizzes.map((quiz, i) => (
               <motion.div
@@ -156,59 +167,57 @@ export default function AdminDashboard() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ delay: i * 0.05 }}
+                className="h-full"
               >
-                <div className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden hover:border-white/20 transition-all group h-full">
-                <div className="p-6">
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <h3 className="text-lg font-bold text-white group-hover:text-inf-yellow transition-colors">
-                      {quiz.title}
-                    </h3>
-                    <Badge variant={statusVariants[quiz.status] || "muted"}>
-                      {statusLabels[quiz.status] || quiz.status}
-                    </Badge>
+                <MagicCard gradientColor="rgba(251, 182, 21, 0.15)">
+                  <div className="p-6 flex-1 flex flex-col">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <h3 className="text-xl font-black text-white group-hover:text-inf-yellow transition-colors tracking-tight">
+                        {quiz.title}
+                      </h3>
+                      <Badge variant={statusVariants[quiz.status] || "muted"}>
+                        {statusLabels[quiz.status] || quiz.status}
+                      </Badge>
+                    </div>
+
+                    {quiz.description && (
+                      <p className="text-gray-400 text-sm mb-4 line-clamp-2">
+                        {quiz.description}
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-4 text-sm text-gray-500 mt-auto pt-2">
+                      <span className="font-semibold text-white/50">{quiz.questionCount} {t("dashboard.questions")}</span>
+                    </div>
                   </div>
 
-                  {quiz.description && (
-                    <p className="text-gray-400 text-sm mb-4 line-clamp-2">
-                      {quiz.description}
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-4 text-sm text-gray-500">
-                    <span>{quiz.questionCount} {t("dashboard.questions")}</span>
+                  <div className="border-t border-white/10 px-6 py-4 flex items-center justify-between gap-2 flex-wrap bg-white/[0.02]">
+                    <Link
+                      href={`/infinarenapanel/quizzes/${quiz.id}`}
+                      className="text-inf-blue hover:text-blue-400 text-sm font-bold transition-colors flex items-center gap-1"
+                    >
+                      {t("dashboard.edit")}
+                    </Link>
+                    <Link
+                      href={`/infinarenapanel/quizzes/${quiz.id}/publish`}
+                      className="text-inf-green hover:text-green-400 text-sm font-bold transition-colors flex items-center gap-1"
+                    >
+                      {t("dashboard.publish")}
+                    </Link>
+                    <Link
+                      href={`/infinarenapanel/quizzes/${quiz.id}/results`}
+                      className="text-inf-yellow hover:text-yellow-400 text-sm font-bold transition-colors flex items-center gap-1"
+                    >
+                      {t("editor.results")}
+                    </Link>
+                    <button
+                      onClick={() => setDeleteTarget(quiz.id)}
+                      className="text-inf-red hover:text-red-400 text-sm font-bold transition-colors flex items-center gap-1"
+                    >
+                      {t("editor.delete")}
+                    </button>
                   </div>
-                </div>
-
-                <div className="border-t border-white/10 px-6 py-3 flex items-center gap-2 flex-wrap">
-                  <Link
-                    href={`/infinarenapanel/quizzes/${quiz.id}`}
-                    className="text-inf-blue hover:text-blue-300 text-sm font-medium transition-colors"
-                  >
-                    {t("dashboard.edit")}
-                  </Link>
-                  <span className="text-gray-600">|</span>
-                  <Link
-                    href={`/infinarenapanel/quizzes/${quiz.id}/publish`}
-                    className="text-inf-green hover:text-green-300 text-sm font-medium transition-colors"
-                  >
-                    {t("dashboard.publish")}
-                  </Link>
-                  <span className="text-gray-600">|</span>
-                  <Link
-                    href={`/infinarenapanel/quizzes/${quiz.id}/results`}
-                    className="text-inf-yellow hover:text-yellow-300 text-sm font-medium transition-colors"
-                  >
-                    {t("editor.results")}
-                  </Link>
-                  <span className="text-gray-600">|</span>
-                  <button
-                    onClick={() => setDeleteTarget(quiz.id)}
-                    className="text-inf-red hover:text-red-300 text-sm font-medium transition-colors"
-                  >
-                    {t("editor.delete")}
-                  </button>
-                </div>
-                </div>
+                </MagicCard>
               </motion.div>
             ))}
           </AnimatePresence>
@@ -410,26 +419,26 @@ function AIGenerateModal({
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-800 rounded-2xl p-4 md:p-5 w-full border border-white/10 mt-2 md:mt-3"
+        className="bg-gray-800 rounded-3xl p-6 md:p-8 w-full border border-white/10 mt-2 md:mt-3 shadow-2xl"
         style={{ maxWidth: "560px" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-2xl font-bold text-white mb-1">
+        <h2 className="text-3xl font-black text-white mb-2 tracking-tight">
           ✨ {t("ai.generateQuiz")}
         </h2>
-        <p className="text-gray-400 text-sm mb-5">{t("ai.generatingDesc").replace("...", "")}</p>
+        <p className="text-gray-400 text-sm mb-6">{t("ai.generatingDesc").replace("...", "")}</p>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           {/* Topic */}
           <div>
-            <Label>
+            <Label className="text-white/80 font-medium mb-1.5 block">
               {t("ai.topic")} *
             </Label>
             <Input
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              className="bg-white/10"
+              className="bg-white/5 border-white/10 text-white rounded-xl focus:border-inf-blue transition-colors px-4 py-6"
               placeholder={t("ai.topicPlaceholder")}
               autoFocus
               disabled={loading}
@@ -438,7 +447,7 @@ function AIGenerateModal({
 
           {/* Difficulty */}
           <div>
-            <Label>
+            <Label className="text-white/80 font-medium mb-1.5 block">
               {t("ai.difficulty")}
             </Label>
             <div className="flex gap-2">
@@ -447,15 +456,14 @@ function AIGenerateModal({
                   key={d.key}
                   onClick={() => setDifficulty(d.key)}
                   disabled={loading}
-                  className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-                    difficulty === d.key
+                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${difficulty === d.key
                       ? d.key === "easy"
-                        ? "bg-green-600 text-white"
+                        ? "bg-inf-green text-white shadow-lg shadow-inf-green/20"
                         : d.key === "medium"
-                        ? "bg-yellow-600 text-white"
-                        : "bg-red-600 text-white"
-                      : "bg-white/10 text-white/60 hover:bg-white/20"
-                  }`}
+                          ? "bg-inf-yellow text-white shadow-lg shadow-inf-yellow/20"
+                          : "bg-inf-red text-white shadow-lg shadow-inf-red/20"
+                      : "bg-white/5 text-white/60 hover:bg-white/10 border border-white/10"
+                    }`}
                 >
                   {d.label}
                 </button>
@@ -463,58 +471,60 @@ function AIGenerateModal({
             </div>
           </div>
 
-          {/* Number of Questions */}
-          <div>
-            <Label>
-              {t("ai.numQuestions")}
-            </Label>
-            <Input
-              type="number"
-              min={1}
-              max={200}
-              value={numQuestions}
-              onChange={(e) => setNumQuestions(Math.min(200, Math.max(1, parseInt(e.target.value) || 1)))}
-              className="bg-white/10 w-full"
-              disabled={loading}
-            />
-          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {/* Number of Questions */}
+            <div>
+              <Label className="text-white/80 font-medium mb-1.5 block">
+                {t("ai.numQuestions")}
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                max={200}
+                value={numQuestions}
+                onChange={(e) => setNumQuestions(Math.min(200, Math.max(1, parseInt(e.target.value) || 1)))}
+                className="bg-white/5 border-white/10 text-white rounded-xl py-6"
+                disabled={loading}
+              />
+            </div>
 
-          {/* Time Limit */}
-          <div>
-            <Label>
-              {t("editor.timeLimit")}
-            </Label>
-            <Input
-              type="number"
-              min={AI_TIME_LIMIT_MIN}
-              max={AI_TIME_LIMIT_MAX}
-              value={timeLimitDraft}
-              onChange={(e) => {
-                setTimeLimitDraft(e.target.value);
-                setError("");
-              }}
-              onBlur={() => setTimeLimitTouched(true)}
-              className="bg-white/10 w-full"
-              disabled={loading}
-            />
-            {timeLimitError && (
-              <p className="text-xs text-red-300 mt-1">{timeLimitError}</p>
-            )}
+            {/* Time Limit */}
+            <div>
+              <Label className="text-white/80 font-medium mb-1.5 block">
+                {t("editor.timeLimit")}
+              </Label>
+              <Input
+                type="number"
+                min={AI_TIME_LIMIT_MIN}
+                max={AI_TIME_LIMIT_MAX}
+                value={timeLimitDraft}
+                onChange={(e) => {
+                  setTimeLimitDraft(e.target.value);
+                  setError("");
+                }}
+                onBlur={() => setTimeLimitTouched(true)}
+                className="bg-white/5 border-white/10 text-white rounded-xl py-6"
+                disabled={loading}
+              />
+              {timeLimitError && (
+                <p className="text-xs text-red-400 mt-2 font-medium">{timeLimitError}</p>
+              )}
+            </div>
           </div>
 
           {/* Model */}
           <div>
-            <Label>
+            <Label className="text-white/80 font-medium mb-1.5 block">
               {t("ai.model")}
             </Label>
             <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="flex h-11 w-full rounded-lg bg-white/10 border border-white/30 px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-inf-turquoise/50 focus:border-transparent transition-all"
+              className="flex h-[52px] w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-inf-blue/50 focus:border-transparent transition-all"
               disabled={loading}
             >
               {AI_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
+                <option key={m.id} value={m.id} className="bg-gray-800">
                   {m.name}
                 </option>
               ))}
@@ -523,29 +533,27 @@ function AIGenerateModal({
 
           {/* Language */}
           <div>
-            <Label>
+            <Label className="text-white/80 font-medium mb-1.5 block">
               {t("ai.language")}
             </Label>
             <div className="flex gap-2">
               <button
                 onClick={() => setLanguage("en")}
                 disabled={loading}
-                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-                  language === "en"
-                    ? "bg-blue-600 text-white"
-                    : "bg-white/10 text-white/60 hover:bg-white/20"
-                }`}
+                className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${language === "en"
+                    ? "bg-inf-blue text-white shadow-lg shadow-inf-blue/20"
+                    : "bg-white/5 text-white/60 hover:bg-white/10 border border-white/10"
+                  }`}
               >
                 English
               </button>
               <button
                 onClick={() => setLanguage("tr")}
                 disabled={loading}
-                className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-                  language === "tr"
-                    ? "bg-blue-600 text-white"
-                    : "bg-white/10 text-white/60 hover:bg-white/20"
-                }`}
+                className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${language === "tr"
+                    ? "bg-inf-blue text-white shadow-lg shadow-inf-blue/20"
+                    : "bg-white/5 text-white/60 hover:bg-white/10 border border-white/10"
+                  }`}
               >
                 Türkçe
               </button>
@@ -554,19 +562,26 @@ function AIGenerateModal({
         </div>
 
         {/* Error */}
-        {error && (
-          <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
-            {error}
-            <p className="text-red-400/70 text-xs mt-1">{t("ai.errorRetry")}</p>
-          </div>
-        )}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl"
+            >
+              <p className="text-red-400 font-medium text-sm">{error}</p>
+              <p className="text-red-400/60 text-xs mt-1">{t("ai.errorRetry")}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Actions */}
-        <div className="flex gap-3 mt-6">
+        <div className="flex gap-3 mt-8">
           <button
             onClick={onClose}
             disabled={loading}
-            className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 hover:bg-white/5 transition-colors font-medium disabled:opacity-50"
+            className="flex-1 py-4 rounded-xl border border-white/10 text-white/60 hover:bg-white/5 hover:text-white transition-all font-bold disabled:opacity-50"
           >
             {t("ai.cancel")}
           </button>
@@ -575,7 +590,7 @@ function AIGenerateModal({
             whileTap={{ scale: loading ? 1 : 0.98 }}
             onClick={handleGenerate}
             disabled={!topic.trim() || loading || parsedTimeLimit === null}
-            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-xl disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+            className="flex-[2] bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-black py-4 rounded-xl disabled:opacity-50 transition-all shadow-xl shadow-pink-900/20 flex items-center justify-center gap-2"
           >
             {loading ? (
               <>

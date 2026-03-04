@@ -34,6 +34,7 @@ const config: Config = {
         "streak-fire": "streakFire 0.6s ease-out",
         "countdown-pulse": "countdownPulse 1s ease-in-out",
         "rank-change": "rankChange 0.5s ease-out",
+        aurora: "aurora 60s linear infinite",
       },
       keyframes: {
         bounceIn: {
@@ -68,6 +69,10 @@ const config: Config = {
         rankChange: {
           "0%": { transform: "translateX(-20px)", opacity: "0" },
           "100%": { transform: "translateX(0)", opacity: "1" },
+        },
+        aurora: {
+          from: { backgroundPosition: "50% 50%, 50% 50%" },
+          to: { backgroundPosition: "350% 50%, 350% 50%" },
         },
       },
     },
