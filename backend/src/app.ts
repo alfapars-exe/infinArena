@@ -29,6 +29,7 @@ import {
 import {
   exportQuizDraftAsExcel,
   exportQuizDraftAsWord,
+  exportSingleSessionResultsAsExcel,
   exportSessionResultsAsExcel,
 } from "@/lib/services/export.service";
 import { openApiDocument } from "@/openapi";
@@ -639,6 +640,25 @@ export async function createHttpApp() {
       res.setHeader(
         "Content-Disposition",
         `attachment; filename=\"quiz-${quizId}-results.xlsx\"`
+      );
+      res.status(200).send(Buffer.from(buffer));
+    })
+  );
+
+  app.get(
+    "/api/quizzes/:id/sessions/:sessionId/results/export",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const quizId = parseIntegerParam(req.params.id, "quiz id");
+      const sessionId = parseIntegerParam(req.params.sessionId, "session id");
+      const buffer = await exportSingleSessionResultsAsExcel(quizId, sessionId);
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=\"quiz-${quizId}-session-${sessionId}-results.xlsx\"`
       );
       res.status(200).send(Buffer.from(buffer));
     })

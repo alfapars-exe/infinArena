@@ -463,8 +463,8 @@ export default function PublishPage() {
                     type="button"
                     onClick={() =>
                       void downloadAuthedFile(
-                        `/api/quizzes/${quizId}/results/export`,
-                        `quiz-${quizId}-results.xlsx`
+                        `/api/quizzes/${quizId}/sessions/${s.id}/results/export`,
+                        `quiz-${quizId}-session-${s.id}-results.xlsx`
                       )
                     }
                     className="text-xs text-green-300 hover:text-green-200 transition-colors bg-transparent border-0 p-0"

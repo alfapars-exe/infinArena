@@ -14,6 +14,30 @@ warn() {
   printf '%s\n' "[space-entrypoint] WARN: $*"
 }
 
+wait_for_backend_health() {
+  attempts="${1:-45}"
+  interval_seconds="${2:-1}"
+
+  i=1
+  while [ "${i}" -le "${attempts}" ]; do
+    if node -e "const http=require('http');const req=http.get('http://127.0.0.1:${BACKEND_PORT}/api/health',res=>{process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));req.setTimeout(1500,()=>{req.destroy();process.exit(1)});" >/dev/null 2>&1; then
+      log "Backend health endpoint is reachable."
+      return 0
+    fi
+
+    if ! kill -0 "${backend_pid}" 2>/dev/null; then
+      wait "${backend_pid}" || true
+      fail "Backend process exited while waiting for health endpoint."
+    fi
+
+    sleep "${interval_seconds}"
+    i=$((i + 1))
+  done
+
+  warn "Backend health endpoint did not become ready after ${attempts}s; starting Caddy anyway."
+  return 1
+}
+
 is_truthy() {
   case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on) return 0 ;;
@@ -114,6 +138,9 @@ backend_pid="$!"
 log "Starting frontend on ${FRONTEND_PORT}"
 (cd /app && PORT="${FRONTEND_PORT}" HOSTNAME="0.0.0.0" FRONTEND_ROLE="${FRONTEND_ROLE}" node "${frontend_server}") &
 frontend_pid="$!"
+
+log "Waiting for backend readiness before starting Caddy"
+wait_for_backend_health 45 1 || true
 
 log "Starting Caddy on ${PUBLIC_PORT}"
 caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &

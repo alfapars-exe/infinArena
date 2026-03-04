@@ -190,6 +190,9 @@ const translations = {
     "results.leaderboardPin": "Leaderboard - PIN: {pin}",
     "results.answer": "Answer",
     "results.secondsShort": "s",
+    "results.exportExcel": "Export Excel",
+    "results.exporting": "Exporting...",
+    "results.exportFailed": "Failed to export session results",
 
     // Live
     "live.readyToGoLive": "Ready to go live?",
@@ -462,6 +465,9 @@ const translations = {
     "results.leaderboardPin": "Sıralama - PIN: {pin}",
     "results.answer": "Cevap",
     "results.secondsShort": "sn",
+    "results.exportExcel": "Excel İndir",
+    "results.exporting": "İndiriliyor...",
+    "results.exportFailed": "Oturum sonuçları dışa aktarılamadı",
 
     // Live
     "live.readyToGoLive": "Canlı yayına hazır mısınız?",

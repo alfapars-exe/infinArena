@@ -1,13 +1,13 @@
 {
-  auto_https off
-  admin off
+	auto_https off
+	admin off
 }
 
 :{$PUBLIC_PORT:3000} {
-  encode zstd gzip
+	encode zstd gzip
 
-  @backend path /api/*
-  reverse_proxy @backend 127.0.0.1:{$BACKEND_PORT:7860}
+	@backend path /api/*
+	reverse_proxy @backend 127.0.0.1:{$BACKEND_PORT:7860}
 
-  reverse_proxy 127.0.0.1:{$FRONTEND_PORT:3001}
+	reverse_proxy 127.0.0.1:{$FRONTEND_PORT:3001}
 }

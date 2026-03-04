@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n";
-import { authedFetch } from "@/lib/services/auth-client";
+import { authedFetch, downloadAuthedFile } from "@/lib/services/auth-client";
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (typeof err === "string" && err.trim()) return err;
@@ -27,6 +27,7 @@ export default function ResultsPage() {
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
   const [terminatingSessionId, setTerminatingSessionId] = useState<number | null>(null);
+  const [downloadingSessionId, setDownloadingSessionId] = useState<number | null>(null);
   const fetchResultsRequestIdRef = useRef(0);
 
   useEffect(() => {
@@ -110,6 +111,20 @@ export default function ResultsPage() {
     if (status === "in_progress") return t("publish.status.inProgress");
     if (status === "completed") return t("publish.status.completed");
     return status;
+  };
+
+  const downloadSessionExcel = async (sessionId: number) => {
+    setDownloadingSessionId(sessionId);
+    try {
+      await downloadAuthedFile(
+        `/api/quizzes/${quizId}/sessions/${sessionId}/results/export`,
+        `quiz-${quizId}-session-${sessionId}-results.xlsx`
+      );
+    } catch (err) {
+      alert(getErrorMessage(err, t("results.exportFailed")));
+    } finally {
+      setDownloadingSessionId(null);
+    }
   };
 
   if (loading) {
@@ -198,6 +213,19 @@ export default function ResultsPage() {
                   <p className="text-gray-400 text-sm mt-1">
                     {t("results.playersCount", { count: s.players?.length || 0 })}
                   </p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void downloadSessionExcel(s.id);
+                    }}
+                    disabled={downloadingSessionId === s.id}
+                    className="mt-2 mr-3 text-xs text-green-300 hover:text-green-200 disabled:opacity-60 transition-colors"
+                  >
+                    {downloadingSessionId === s.id
+                      ? t("results.exporting")
+                      : t("results.exportExcel")}
+                  </button>
                   {s.status !== "completed" && (
                     <button
                       type="button"

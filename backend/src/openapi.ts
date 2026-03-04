@@ -424,6 +424,28 @@ const routes: RouteDoc[] = [
     },
   },
   {
+    method: "get",
+    path: "/api/quizzes/{id}/sessions/{sessionId}/results/export",
+    tag: "exports",
+    summary: "Export session results",
+    secured: true,
+    parameters: [
+      { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+      { name: "sessionId", in: "path", required: true, schema: { type: "integer", minimum: 1 } },
+    ],
+    responses: {
+      "200": {
+        description: "Binary export",
+        content: {
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+            schema: { type: "string", format: "binary" },
+          },
+        },
+      },
+      "401": authedJsonResponses["401"],
+    },
+  },
+  {
     method: "post",
     path: "/api/ai/generate-quiz",
     tag: "ai",
