@@ -131,15 +131,38 @@ export default function LiveControlPage() {
   }, [music]);
 
   useEffect(() => {
-    apiFetch(`/api/sessions/${pin}`)
-      .then((r) => r.json())
-      .then((data) => {
+    let isActive = true;
+    const controller = new AbortController();
+
+    const loadSession = async () => {
+      try {
+        const response = await apiFetch(`/api/sessions/${pin}`, {
+          method: "GET",
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!isActive || controller.signal.aborted) return;
+
         if (data.sessionId) {
           setSessionId(data.sessionId);
           setQuizTitle(data.quizTitle);
           setPhase("lobby");
         }
-      });
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") {
+          return;
+        }
+      }
+    };
+
+    void loadSession();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
   }, [pin]);
 
   useEffect(() => {

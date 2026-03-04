@@ -1,4 +1,4 @@
-import fs from "fs";
+import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
 
 const HF_ROOT = "/data";
@@ -73,13 +73,13 @@ function isUnderHfPersistentRoot(rootDir: string): boolean {
   return resolved === HF_ROOT || resolved.startsWith(`${HF_ROOT}/`);
 }
 
-function hasDataMount(): boolean {
+async function hasDataMount(): Promise<boolean> {
   if (process.platform === "win32") {
     return false;
   }
 
   try {
-    const mounts = fs.readFileSync("/proc/mounts", "utf8");
+    const mounts = await readFile("/proc/mounts", "utf8");
     return mounts
       .split("\n")
       .some((line) => line.trim().length > 0 && line.split(" ")[1] === HF_ROOT);
@@ -88,11 +88,15 @@ function hasDataMount(): boolean {
   }
 }
 
-export function ensureStorageReady(): {
+export interface StorageReadyInfo {
   storageRoot: string;
   uploadsDir: string;
   requirePersistentStorage: boolean;
-} {
+}
+
+let storageReadyPromise: Promise<StorageReadyInfo> | null = null;
+
+async function ensureStorageReadyOnce(): Promise<StorageReadyInfo> {
   const storageRoot = resolveStorageRoot();
   const uploadsDir = resolveUploadsDir();
   const requirePersistentStorage = resolveRequirePersistentStorage();
@@ -107,7 +111,7 @@ export function ensureStorageReady(): {
     );
   }
 
-  if (requirePersistentStorage && !hasDataMount()) {
+  if (requirePersistentStorage && !(await hasDataMount())) {
     throw new Error(
       [
         "Persistent storage is required but /data is not mounted.",
@@ -117,8 +121,8 @@ export function ensureStorageReady(): {
   }
 
   try {
-    fs.mkdirSync(storageRoot, { recursive: true });
-    fs.mkdirSync(uploadsDir, { recursive: true });
+    await mkdir(storageRoot, { recursive: true });
+    await mkdir(uploadsDir, { recursive: true });
   } catch (err) {
     throw new Error(
       [
@@ -136,8 +140,8 @@ export function ensureStorageReady(): {
   );
 
   try {
-    fs.writeFileSync(writeCheckFile, "ok");
-    fs.unlinkSync(writeCheckFile);
+    await writeFile(writeCheckFile, "ok");
+    await unlink(writeCheckFile);
   } catch (err) {
     throw new Error(
       [
@@ -150,4 +154,15 @@ export function ensureStorageReady(): {
   }
 
   return { storageRoot, uploadsDir, requirePersistentStorage };
+}
+
+export function ensureStorageReady(): Promise<StorageReadyInfo> {
+  if (!storageReadyPromise) {
+    storageReadyPromise = ensureStorageReadyOnce().catch((err) => {
+      storageReadyPromise = null;
+      throw err;
+    });
+  }
+
+  return storageReadyPromise;
 }

@@ -26,6 +26,7 @@ const TIMER_CHANNEL = "timer:expired";
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let isRunning = false;
+let isPolling = false;
 let onTimerExpired: ((sessionId: number) => void) | null = null;
 
 export interface TimerEntry {
@@ -178,10 +179,14 @@ export async function startTimerWorker(
 
   // Start polling loop
   pollTimer = setInterval(async () => {
+    if (isPolling) return;
+    isPolling = true;
     try {
       await pollExpiredTimers();
     } catch (err) {
       log.error("Timer poll loop error", err);
+    } finally {
+      isPolling = false;
     }
   }, POLL_INTERVAL_MS);
 
@@ -194,6 +199,7 @@ export async function startTimerWorker(
 export function stopTimerWorker(): void {
   if (!isRunning) return;
   isRunning = false;
+  isPolling = false;
   onTimerExpired = null;
 
   if (pollTimer) {

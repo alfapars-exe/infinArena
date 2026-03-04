@@ -213,7 +213,7 @@ async function seed() {
         return;
       }
 
-      const hash = bcrypt.hashSync(adminPassword, 10);
+      const hash = await bcrypt.hash(adminPassword, 10);
       await dbAny.insert(admins).values({
         username: adminUsername,
         email: "admin@infinarena.com",
@@ -233,4 +233,3 @@ async function seed() {
 }
 
 seed().catch(console.error);
-

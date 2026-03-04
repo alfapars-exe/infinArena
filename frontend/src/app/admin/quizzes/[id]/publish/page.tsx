@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -81,45 +81,79 @@ export default function PublishPage() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [showMusicInput, setShowMusicInput] = useState(false);
   const [terminatingSessionId, setTerminatingSessionId] = useState<number | null>(null);
+  const fetchDataRequestIdRef = useRef(0);
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    void fetchData({ signal: controller.signal, updateLoading: true });
+    return () => {
+      controller.abort();
+    };
   }, [quizId]);
 
-  const fetchData = async () => {
-    const [quizRes, resultsRes] = await Promise.all([
-      authedFetch(`/api/quizzes/${quizId}`),
-      authedFetch(`/api/quizzes/${quizId}/results`),
-    ]);
+  const fetchData = async (options?: {
+    signal?: AbortSignal;
+    updateLoading?: boolean;
+  }) => {
+    const signal = options?.signal;
+    const updateLoading = options?.updateLoading ?? false;
+    const requestId = ++fetchDataRequestIdRef.current;
 
-    if (quizRes.ok) {
-      const q = await quizRes.json();
-      setQuiz(q);
-      setCustomSlug(q.customSlug || "");
+    if (updateLoading) {
+      setLoading(true);
     }
-    if (resultsRes.ok) {
-      const r = await resultsRes.json();
-      setSessions(r);
+
+    try {
+      const [quizRes, resultsRes] = await Promise.all([
+        authedFetch(`/api/quizzes/${quizId}`, { signal }),
+        authedFetch(`/api/quizzes/${quizId}/results`, { signal }),
+      ]);
+
+      if (signal?.aborted || requestId !== fetchDataRequestIdRef.current) return;
+
+      if (quizRes.ok) {
+        const q = await quizRes.json();
+        if (signal?.aborted || requestId !== fetchDataRequestIdRef.current) return;
+        setQuiz(q);
+        setCustomSlug(q.customSlug || "");
+      }
+      if (resultsRes.ok) {
+        const r = await resultsRes.json();
+        if (signal?.aborted || requestId !== fetchDataRequestIdRef.current) return;
+        setSessions(r);
+      }
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      console.error(`Failed to fetch publish data for quiz ${quizId}:`, err);
+    } finally {
+      if (
+        updateLoading &&
+        !signal?.aborted &&
+        requestId === fetchDataRequestIdRef.current
+      ) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   };
 
   const publish = async () => {
     setPublishing(true);
+    try {
+      const res = await authedFetch(`/api/quizzes/${quizId}/publish`, {
+        method: "POST",
+      });
 
-    const res = await authedFetch(`/api/quizzes/${quizId}/publish`, {
-      method: "POST",
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      setLastPin(data.pin);
-      fetchData();
-    } else {
-      const err = await res.json();
-      alert(getErrorMessage(err, t("publish.failed")));
+      if (res.ok) {
+        const data = await res.json();
+        setLastPin(data.pin);
+        await fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(getErrorMessage(err, t("publish.failed")));
+      }
+    } finally {
+      setPublishing(false);
     }
-    setPublishing(false);
   };
 
   const terminateSession = async (sessionId: number) => {

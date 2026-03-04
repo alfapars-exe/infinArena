@@ -176,6 +176,7 @@ export default function QuizEditor() {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const fetchQuizRequestIdRef = useRef(0);
 
   function getDefaultQuestion(): Question {
     return {
@@ -196,7 +197,11 @@ export default function QuizEditor() {
   }
 
   useEffect(() => {
-    fetchQuiz();
+    const controller = new AbortController();
+    void fetchQuiz({ signal: controller.signal, updateLoading: true });
+    return () => {
+      controller.abort();
+    };
   }, [quizId]);
 
   useEffect(() => {
@@ -214,15 +219,29 @@ export default function QuizEditor() {
     };
   }, []);
 
-  const fetchQuiz = async () => {
+  const fetchQuiz = async (options?: {
+    signal?: AbortSignal;
+    updateLoading?: boolean;
+  }) => {
+    const signal = options?.signal;
+    const updateLoading = options?.updateLoading ?? false;
+    const requestId = ++fetchQuizRequestIdRef.current;
+
     if (!quizId) {
-      setLoading(false);
+      if (updateLoading) setLoading(false);
       return;
     }
+
+    if (updateLoading) {
+      setLoading(true);
+    }
+
     try {
-      const res = await authedFetch(`/api/quizzes/${quizId}`);
+      const res = await authedFetch(`/api/quizzes/${quizId}`, { signal });
+      if (signal?.aborted || requestId !== fetchQuizRequestIdRef.current) return;
       if (res.ok) {
         const data = await res.json();
+        if (signal?.aborted || requestId !== fetchQuizRequestIdRef.current) return;
         const normalizedQuestions = Array.isArray(data.questions)
           ? data.questions.map((question: Question) => normalizeEditorQuestion(question))
           : [];
@@ -233,9 +252,17 @@ export default function QuizEditor() {
         console.error(`Failed to fetch quiz ${quizId}:`, res.status);
       }
     } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
       console.error(`Error fetching quiz ${quizId}:`, err);
+    } finally {
+      if (
+        updateLoading &&
+        !signal?.aborted &&
+        requestId === fetchQuizRequestIdRef.current
+      ) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -270,7 +297,7 @@ export default function QuizEditor() {
       }),
     });
     setSaving(false);
-    fetchQuiz();
+    void fetchQuiz();
   };
 
   const addQuestion = async (questionToSave: Question = newQuestion) => {
@@ -289,7 +316,7 @@ export default function QuizEditor() {
     if (res.ok) {
       setShowAddQuestion(false);
       setNewQuestion(getDefaultQuestion());
-      fetchQuiz();
+      void fetchQuiz();
     } else {
       const err = await res.json();
       alert(getErrorMessage(err, t("editor.addFailed")));
@@ -319,7 +346,7 @@ export default function QuizEditor() {
       }),
     });
 
-    fetchQuiz();
+    void fetchQuiz();
   };
 
   const deleteQuestion = async (questionId: number) => {
@@ -328,7 +355,7 @@ export default function QuizEditor() {
     await authedFetch(`/api/quizzes/${quizId}/questions?questionId=${questionId}`, {
       method: "DELETE",
     });
-    fetchQuiz();
+    void fetchQuiz();
   };
 
   if (loading) {

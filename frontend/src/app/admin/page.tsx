@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -27,18 +27,49 @@ export default function AdminDashboard() {
   const [createError, setCreateError] = useState("");
   const [showAIModal, setShowAIModal] = useState(false);
   const router = useRouter();
+  const fetchQuizzesRequestIdRef = useRef(0);
 
   useEffect(() => {
-    fetchQuizzes();
+    const controller = new AbortController();
+    void fetchQuizzes({ signal: controller.signal, updateLoading: true });
+    return () => {
+      controller.abort();
+    };
   }, []);
 
-  const fetchQuizzes = async () => {
-    const res = await authedFetch("/api/quizzes");
-    if (res.ok) {
-      const data = await res.json();
-      setQuizzes(data);
+  const fetchQuizzes = async (options?: {
+    signal?: AbortSignal;
+    updateLoading?: boolean;
+  }) => {
+    const signal = options?.signal;
+    const updateLoading = options?.updateLoading ?? false;
+    const requestId = ++fetchQuizzesRequestIdRef.current;
+
+    if (updateLoading) {
+      setLoading(true);
     }
-    setLoading(false);
+
+    try {
+      const res = await authedFetch("/api/quizzes", { signal });
+      if (signal?.aborted || requestId !== fetchQuizzesRequestIdRef.current) return;
+
+      if (res.ok) {
+        const data = await res.json();
+        if (signal?.aborted || requestId !== fetchQuizzesRequestIdRef.current) return;
+        setQuizzes(data);
+      }
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      console.error("Failed to fetch quizzes:", err);
+    } finally {
+      if (
+        updateLoading &&
+        !signal?.aborted &&
+        requestId === fetchQuizzesRequestIdRef.current
+      ) {
+        setLoading(false);
+      }
+    }
   };
 
   const createQuiz = async () => {
@@ -78,7 +109,7 @@ export default function AdminDashboard() {
     if (!confirm(t("dashboard.deleteConfirm"))) return;
 
     await authedFetch(`/api/quizzes/${id}`, { method: "DELETE" });
-    fetchQuizzes();
+    await fetchQuizzes();
   };
 
   const statusColors: Record<string, string> = {

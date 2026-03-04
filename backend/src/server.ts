@@ -1,3 +1,7 @@
+// Tracing must be initialized before other imports
+import { initTracing, shutdownTracing } from "@/lib/tracing";
+initTracing();
+
 import { createServer } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
@@ -27,7 +31,7 @@ process.on("uncaughtException", (err) => {
 });
 
 async function bootstrap() {
-  ensureStorageReady();
+  await ensureStorageReady();
   await ensureDbMigrations();
   log.db.info("Migrations completed");
 
@@ -94,7 +98,9 @@ async function bootstrap() {
       await stopAnswerBatchWriter();
       log.startup.info("Answer batch writer drained");
       await closeRedis();
-      log.startup.info("Redis closed, exiting");
+      log.startup.info("Redis closed");
+      await shutdownTracing();
+      log.startup.info("Tracing shut down, exiting");
       process.exit(0);
     });
 

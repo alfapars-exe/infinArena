@@ -32,6 +32,7 @@ interface QueuedAnswer {
 
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 let isRunning = false;
+let isFlushing = false;
 
 /**
  * Queue an answer for batch insertion.
@@ -130,10 +131,14 @@ export function startAnswerBatchWriter(): void {
 
   isRunning = true;
   flushTimer = setInterval(async () => {
+    if (isFlushing) return;
+    isFlushing = true;
     try {
       await flushAnswers();
     } catch (err) {
       log.error("Answer flush loop error", err);
+    } finally {
+      isFlushing = false;
     }
   }, FLUSH_INTERVAL_MS);
 
@@ -150,6 +155,11 @@ export async function stopAnswerBatchWriter(): Promise<void> {
   if (flushTimer) {
     clearInterval(flushTimer);
     flushTimer = null;
+  }
+
+  // Wait for any in-flight flush loop iteration to complete.
+  while (isFlushing) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
   }
 
   // Final drain

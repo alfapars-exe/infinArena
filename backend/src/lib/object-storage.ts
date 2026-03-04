@@ -100,7 +100,7 @@ export async function storeFile(
   }
 
   // Local filesystem fallback
-  ensureStorageReady();
+  await ensureStorageReady();
   const filePath = join(resolveUploadsDir(), uniqueName);
   await writeFile(filePath, buffer);
 
@@ -148,7 +148,7 @@ export async function retrieveFile(
   }
 
   // Local filesystem fallback
-  ensureStorageReady();
+  await ensureStorageReady();
   const filePath = join(resolveUploadsDir(), filename);
   try {
     const buffer = await readFile(filePath);

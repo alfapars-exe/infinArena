@@ -3,7 +3,7 @@ import { drizzle as drizzleSqlite } from "drizzle-orm/libsql";
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import { resolveDatabaseUrl } from "@/lib/storage";
-import fs from "fs";
+import { mkdir } from "fs/promises";
 import path from "path";
 import postgres from "postgres";
 import * as schema from "./schema";
@@ -12,7 +12,7 @@ const databaseUrl = resolveDatabaseUrl();
 
 const isSqlite = databaseUrl.startsWith("file:");
 
-function ensureDatabaseDirectory(url: string): void {
+async function ensureDatabaseDirectory(url: string): Promise<void> {
   if (!url.startsWith("file:")) {
     return;
   }
@@ -23,11 +23,15 @@ function ensureDatabaseDirectory(url: string): void {
   }
 
   const dbPath = path.isAbsolute(rawPath) ? rawPath : path.join(process.cwd(), rawPath);
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  await mkdir(path.dirname(dbPath), { recursive: true });
 }
 
-if (isSqlite) {
-  ensureDatabaseDirectory(databaseUrl);
+const databaseDirectoryReadyPromise = isSqlite
+  ? ensureDatabaseDirectory(databaseUrl)
+  : Promise.resolve();
+
+export function ensureDatabaseDirectoryReady(): Promise<void> {
+  return databaseDirectoryReadyPromise;
 }
 
 const client = isSqlite

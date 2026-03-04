@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -27,19 +27,57 @@ export default function ResultsPage() {
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
   const [terminatingSessionId, setTerminatingSessionId] = useState<number | null>(null);
+  const fetchResultsRequestIdRef = useRef(0);
 
   useEffect(() => {
-    fetchResults();
+    const controller = new AbortController();
+    void fetchResults({ signal: controller.signal, updateLoading: true });
+    return () => {
+      controller.abort();
+    };
   }, [quizId]);
 
-  const fetchResults = async () => {
-    const res = await authedFetch(`/api/quizzes/${quizId}/results`);
-    if (res.ok) {
-      const data = await res.json();
-      setSessions(data);
-      if (data.length > 0) setSelectedSession(data[0]);
+  const fetchResults = async (options?: {
+    signal?: AbortSignal;
+    updateLoading?: boolean;
+  }) => {
+    const signal = options?.signal;
+    const updateLoading = options?.updateLoading ?? false;
+    const requestId = ++fetchResultsRequestIdRef.current;
+
+    if (updateLoading) {
+      setLoading(true);
     }
-    setLoading(false);
+
+    try {
+      const res = await authedFetch(`/api/quizzes/${quizId}/results`, { signal });
+      if (signal?.aborted || requestId !== fetchResultsRequestIdRef.current) return;
+
+      if (res.ok) {
+        const data = await res.json();
+        if (signal?.aborted || requestId !== fetchResultsRequestIdRef.current) return;
+        setSessions(data);
+        setSelectedSession((prev: any) => {
+          if (!Array.isArray(data) || data.length === 0) return null;
+          if (prev) {
+            const existing = data.find((session: any) => session.id === prev.id);
+            if (existing) return existing;
+          }
+          return data[0];
+        });
+      }
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      console.error(`Failed to fetch results for quiz ${quizId}:`, err);
+    } finally {
+      if (
+        updateLoading &&
+        !signal?.aborted &&
+        requestId === fetchResultsRequestIdRef.current
+      ) {
+        setLoading(false);
+      }
+    }
   };
 
   const terminateSession = async (sessionId: number) => {

@@ -1,4 +1,4 @@
-﻿import { client, isSqlite } from "./index";
+import { client, isSqlite, ensureDatabaseDirectoryReady } from "./index";
 
 let migrationPromise: Promise<void> | null = null;
 
@@ -46,6 +46,8 @@ async function tableExists(table: string): Promise<boolean> {
 }
 
 async function runMigrations() {
+  await ensureDatabaseDirectoryReady();
+
   const hasQuestions = await tableExists("questions");
   const hasPlayers = await tableExists("players");
   if (!hasQuestions && !hasPlayers) {
@@ -87,4 +89,3 @@ export function ensureDbMigrations(): Promise<void> {
   }
   return migrationPromise;
 }
-
