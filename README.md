@@ -1,4 +1,14 @@
-﻿# infinArena Monorepo
+﻿---
+title: infinArena
+emoji: 🎮
+colorFrom: red
+colorTo: blue
+sdk: docker
+app_port: 3000
+pinned: false
+---
+
+# infinArena Monorepo
 
 Bu repo iki role ayrik calisacak sekilde duzenlendi:
 
@@ -82,3 +92,4 @@ Varsayilan portlar:
 - `pnpm build`: backend + frontend build
 - `pnpm typecheck`: backend + frontend typecheck
 - `pnpm test`: backend testleri
+
