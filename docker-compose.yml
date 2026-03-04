@@ -1,0 +1,108 @@
+version: "3.8"
+
+services:
+  # --- Infrastructure ---
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: infinarena
+      POSTGRES_USER: infinarena
+      POSTGRES_PASSWORD: infinarena_dev_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infinarena"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # --- Application ---
+  backend-admin:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "7860:7860"
+    environment:
+      BACKEND_ROLE: admin
+      PORT: "7860"
+      NODE_ENV: production
+      DATABASE_URL: postgresql://infinarena:infinarena_dev_password@postgres:5432/infinarena?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      AUTH_TOKEN_SECRET: dev-secret-change-in-production-minimum-32-chars
+      ALLOWED_ORIGINS: http://localhost:3000
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+      # S3/R2 object storage (optional, falls back to local filesystem)
+      # S3_BUCKET: infinarena-uploads
+      # S3_REGION: auto
+      # S3_ENDPOINT: https://<account-id>.r2.cloudflarestorage.com
+      # S3_PUBLIC_URL: https://cdn.example.com
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  backend-player:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "7861:7861"
+    environment:
+      BACKEND_ROLE: player
+      PORT: "7861"
+      NODE_ENV: production
+      DATABASE_URL: postgresql://infinarena:infinarena_dev_password@postgres:5432/infinarena?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      AUTH_TOKEN_SECRET: dev-secret-change-in-production-minimum-32-chars
+      ALLOWED_ORIGINS: http://localhost:3001
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  frontend-admin:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      FRONTEND_ROLE: admin
+      NEXT_PUBLIC_BACKEND_URL: http://backend-admin:7860
+    depends_on:
+      - backend-admin
+
+  frontend-player:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      FRONTEND_ROLE: player
+      PORT: "3001"
+      NEXT_PUBLIC_BACKEND_URL: http://backend-player:7861
+    depends_on:
+      - backend-player
+
+volumes:
+  pgdata:

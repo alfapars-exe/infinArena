@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: infinarena
+data:
+  NODE_ENV: "production"
+  BACKEND_PORT: "7860"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  ALLOWED_ORIGINS: "https://infinarena.example.com"
+  LOG_LEVEL: "info"
