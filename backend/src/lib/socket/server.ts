@@ -63,20 +63,35 @@ const socketPlayerJoinSchema = z.object({
   browserClientId: z.string().min(8).max(128),
 });
 
-const socketPlayerRejoinSchema = z.object({
-  pin: z.string().length(6).regex(/^\d{6}$/),
-  playerId: z.number().int().positive(),
-  nickname: z.string().min(1).max(20).trim(),
-  browserClientId: z.string().min(8).max(128),
-});
+const socketPlayerRejoinSchema = z
+  .object({
+    pin: z.string().length(6).regex(/^\d{6}$/),
+    playerId: z.number().int().positive().optional(),
+    nickname: z.string().min(1).max(20).trim().optional(),
+    browserClientId: z.string().min(8).max(128),
+  })
+  .superRefine((data, ctx) => {
+    const hasPlayerId = Number.isInteger(data.playerId);
+    const hasNickname =
+      typeof data.nickname === "string" && data.nickname.trim().length > 0;
+    if (hasPlayerId !== hasNickname) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "playerId and nickname must be provided together",
+      });
+    }
+  });
 
-const socketPlayerAnswerSchema = z.object({
-  questionId: z.number().int().positive(),
-  choiceId: z.number().int().nullable().optional(),
-  choiceIds: z.array(z.number().int()).optional().default([]),
-  orderedChoiceIds: z.array(z.number().int()).optional().default([]),
-  textAnswer: z.string().max(500).optional().default(""),
-});
+const socketPlayerAnswerSchema = z
+  .object({
+    questionId: z.coerce.number().int().positive(),
+    choiceId: z.coerce.number().int().nullable().optional(),
+    choiceIds: z.array(z.coerce.number().int()).optional().default([]),
+    orderedChoiceIds: z.array(z.coerce.number().int()).optional().default([]),
+    textAnswer: z.string().max(500).optional().default(""),
+    responseTimeMs: z.coerce.number().nonnegative().optional(),
+  })
+  .passthrough();
 
 const socketSessionIdSchema = z.object({
   sessionId: z.coerce.number().int().positive(),
@@ -608,20 +623,24 @@ export function setupSocketHandlers(io: TypedServer) {
           }
         }
 
-        const [player] = await db
-          .select()
-          .from(players)
-          .where(
-            and(
-              eq(players.id, playerId),
-              eq(players.sessionId, dbSession.id),
-              eq(players.nickname, nickname)
-            )
-          );
+        const hasIdentity =
+          Number.isInteger(playerId) &&
+          typeof nickname === "string" &&
+          nickname.trim().length > 0;
+        let player: typeof players.$inferSelect | undefined;
 
-        if (!player) {
-          socket.emit("error", { message: "Player not found, join again" });
-          return;
+        if (hasIdentity) {
+          const [matchedPlayer] = await db
+            .select()
+            .from(players)
+            .where(
+              and(
+                eq(players.id, playerId as number),
+                eq(players.sessionId, dbSession.id),
+                eq(players.nickname, nickname as string)
+              )
+            );
+          player = matchedPlayer;
         }
 
         const [browserOwner] = await db
@@ -634,6 +653,15 @@ export function setupSocketHandlers(io: TypedServer) {
             )
           )
           .orderBy(desc(players.id));
+
+        if (!player && browserOwner) {
+          player = browserOwner;
+        }
+
+        if (!player) {
+          socket.emit("error", { message: "Player not found, join again" });
+          return;
+        }
 
         if (browserOwner && browserOwner.id !== player.id) {
           const browserOwnerSocketIsLive =
@@ -674,10 +702,10 @@ export function setupSocketHandlers(io: TypedServer) {
           await db
             .update(players)
             .set(updateValues)
-            .where(eq(players.id, playerId));
+            .where(eq(players.id, player.id));
         }
 
-        registerPlayerSocket(socket.id, playerId, dbSession.id);
+        registerPlayerSocket(socket.id, player.id, dbSession.id);
         socket.join(`session:${dbSession.id}`);
 
         const [quiz] = await db
@@ -786,7 +814,7 @@ export function setupSocketHandlers(io: TypedServer) {
           }
         }
 
-        logger.socket.debug(`Player "${nickname}" rejoined session ${dbSession.id}`);
+        logger.socket.debug(`Player "${player.nickname}" rejoined session ${dbSession.id}`);
       } catch (err) {
         logger.socket.error("player:rejoin error", err);
         socket.emit("error", { message: "Failed to rejoin" });
@@ -919,6 +947,14 @@ export function setupSocketHandlers(io: TypedServer) {
       async (rawData) => {
       const parsed = socketPlayerAnswerSchema.safeParse(rawData);
       if (!parsed.success) {
+        logger.socket.warn("Invalid player:answer payload", {
+          socketId: socket.id,
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            code: issue.code,
+            message: issue.message,
+          })),
+        });
         socket.emit("error", { message: "Invalid answer data" });
         return;
       }

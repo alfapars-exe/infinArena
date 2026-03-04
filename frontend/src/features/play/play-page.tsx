@@ -411,14 +411,16 @@ export default function PlayPage() {
         }
       }
 
-      if (!resolvedPlayerId || !resolvedNickname) return;
       const browserClientId = getBrowserClientId();
-
       targetSocket.emit("player:rejoin", {
         pin,
-        playerId: resolvedPlayerId,
-        nickname: resolvedNickname,
         browserClientId,
+        ...(resolvedPlayerId && resolvedNickname
+          ? {
+              playerId: resolvedPlayerId,
+              nickname: resolvedNickname,
+            }
+          : {}),
       });
       lastRejoinAtRef.current = now;
       lastRejoinSocketIdRef.current = socketId;
@@ -902,10 +904,16 @@ export default function PlayPage() {
       return;
     }
 
+    const questionId = Number(currentQuestion.id);
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+      setError(t("play.answerFailed"));
+      return;
+    }
+
     setSelectedChoice(choiceId);
     const responseTimeMs = Date.now() - questionStartTime.current;
     socket.emit("player:answer", {
-      questionId: currentQuestion.id,
+      questionId,
       choiceId,
       responseTimeMs,
     });
@@ -970,12 +978,17 @@ export default function PlayPage() {
     ) {
       return;
     }
+    const questionId = Number(currentQuestion.id);
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+      setError(t("play.answerFailed"));
+      return;
+    }
     const responseTimeMs = Date.now() - questionStartTime.current;
 
     if (currentQuestion.questionType === "multi_select") {
       if (selectedChoices.length === 0) return;
       socket.emit("player:answer", {
-        questionId: currentQuestion.id,
+        questionId,
         choiceIds: selectedChoices,
         responseTimeMs,
       });
@@ -988,7 +1001,7 @@ export default function PlayPage() {
         return;
       }
       socket.emit("player:answer", {
-        questionId: currentQuestion.id,
+        questionId,
         orderedChoiceIds,
         responseTimeMs,
       });
@@ -997,7 +1010,7 @@ export default function PlayPage() {
     } else if (currentQuestion.questionType === "text_input") {
       if (!textAnswer.trim()) return;
       socket.emit("player:answer", {
-        questionId: currentQuestion.id,
+        questionId,
         textAnswer: textAnswer.trim(),
         responseTimeMs,
       });
@@ -1369,9 +1382,14 @@ export default function PlayPage() {
                   type="button"
                   onClick={() => {
                     if (selectedChoices.length > 0 && timeLeft > 0 && !isSubmittingAnswer && !didSubmit) {
+                      const questionId = Number(currentQuestion.id);
+                      if (!Number.isInteger(questionId) || questionId <= 0) {
+                        setError(t("play.answerFailed"));
+                        return;
+                      }
                       const responseTimeMs = Date.now() - questionStartTime.current;
                       socket?.emit("player:answer", {
-                        questionId: currentQuestion.id,
+                        questionId,
                         choiceIds: selectedChoices,
                         responseTimeMs,
                       });

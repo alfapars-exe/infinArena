@@ -100,8 +100,8 @@ export interface ClientToServerEvents {
   }) => void;
   "player:rejoin": (data: {
     pin: string;
-    playerId: number;
-    nickname: string;
+    playerId?: number;
+    nickname?: string;
     browserClientId: string;
   }) => void;
   "player:answer": (data: {
