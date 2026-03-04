@@ -92,6 +92,7 @@ export default function LiveControlPage() {
   const [podiumStep, setPodiumStep] = useState(0);
   const podiumTimersRef = useRef<number[]>([]);
   const podiumConfettiTriggeredRef = useRef(false);
+  const quizDefaultTitle = t("live.quizDefault");
   const music = useMusicPlayer();
   const {
     autoplayBlocked,
@@ -149,7 +150,7 @@ export default function LiveControlPage() {
         const resolvedSessionId = Number((data as { sessionId?: unknown })?.sessionId);
         if (Number.isInteger(resolvedSessionId) && resolvedSessionId > 0) {
           setSessionId(resolvedSessionId);
-          setQuizTitle((data as { quizTitle?: string })?.quizTitle || t("live.quizDefault"));
+          setQuizTitle((data as { quizTitle?: string })?.quizTitle || quizDefaultTitle);
           setPhase("lobby");
         }
       } catch (err) {
@@ -165,7 +166,7 @@ export default function LiveControlPage() {
       isActive = false;
       controller.abort();
     };
-  }, [pin, t]);
+  }, [pin, quizDefaultTitle]);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -190,7 +191,17 @@ export default function LiveControlPage() {
     });
 
     s.on("session:live", () => {
-      setPhase("lobby");
+      setPhase((prev) => {
+        if (
+          prev === "question" ||
+          prev === "stats" ||
+          prev === "leaderboard" ||
+          prev === "ended"
+        ) {
+          return prev;
+        }
+        return "lobby";
+      });
     });
 
     s.on("lobby:player-joined", ({ playerId, nickname, avatar, playerCount: count }) => {
