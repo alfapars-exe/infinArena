@@ -326,6 +326,173 @@ async function getLiveConnectedPlayerCount(
   ).length;
 }
 
+const sessionRecoveryLocks = new Map<number, Promise<ActiveSession | undefined>>();
+
+async function loadQuestionsWithChoices(
+  quizId: number
+): Promise<
+  Array<{
+    id: number;
+    questionText: string;
+    questionType: QuestionType;
+    timeLimitSeconds: number;
+    mediaUrl: string | null;
+    backgroundUrl: string | null;
+    choices: Array<{ id: number; choiceText: string; orderIndex: number }>;
+    correctChoiceId: number;
+    correctChoiceIds: number[];
+    correctOrderChoiceIds: number[];
+    acceptedAnswers: string[];
+    basePoints: number;
+    deductionPoints: number;
+    deductionInterval: number;
+  }>
+> {
+  const dbQuestions: QuestionRecord[] = await db
+    .select()
+    .from(questions)
+    .where(eq(questions.quizId, quizId))
+    .orderBy(asc(questions.orderIndex));
+
+  return Promise.all(
+    dbQuestions.map(async (q) => {
+      const choices: AnswerChoiceRecord[] = await db
+        .select()
+        .from(answerChoices)
+        .where(eq(answerChoices.questionId, q.id))
+        .orderBy(asc(answerChoices.orderIndex));
+
+      const questionType = q.questionType as QuestionType;
+      const correctChoiceIds = normalizeCorrectChoiceIds(
+        choices.map((c) => ({ id: c.id, isCorrect: c.isCorrect })),
+        questionType
+      );
+
+      logger.socket.info(
+        `[QUIZ-LOAD] Q${q.id} Type=${questionType}: Choices=[${choices
+          .map((c) => `${c.id}(${c.isCorrect ? "ok" : "x"})`)
+          .join(", ")}], CorrectIds=[${correctChoiceIds.join(", ")}]`
+      );
+
+      const correctOrderChoiceIds = [...choices]
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((c) => c.id);
+      const acceptedAnswers = choices.map((c) => normalizeText(c.choiceText));
+
+      return {
+        id: q.id,
+        questionText: q.questionText,
+        questionType,
+        timeLimitSeconds: q.timeLimitSeconds,
+        mediaUrl: q.mediaUrl,
+        backgroundUrl: q.backgroundUrl,
+        choices: choices.map((c) => ({
+          id: c.id,
+          choiceText: c.choiceText,
+          orderIndex: c.orderIndex,
+        })),
+        correctChoiceId: correctChoiceIds[0] || 0,
+        correctChoiceIds,
+        correctOrderChoiceIds,
+        acceptedAnswers,
+        basePoints: q.basePoints,
+        deductionPoints: q.deductionPoints,
+        deductionInterval: q.deductionInterval,
+      };
+    })
+  );
+}
+
+async function recoverActiveSessionIfPossible(
+  io: TypedServer,
+  sessionId: number
+): Promise<ActiveSession | undefined> {
+  const existingSession = getActiveSession(sessionId);
+  if (existingSession) {
+    return existingSession;
+  }
+
+  const existingLock = sessionRecoveryLocks.get(sessionId);
+  if (existingLock) {
+    return existingLock;
+  }
+
+  const recoveryPromise = (async () => {
+    const [dbSession] = await db
+      .select()
+      .from(quizSessions)
+      .where(eq(quizSessions.id, sessionId));
+
+    if (!dbSession || dbSession.status !== "in_progress") {
+      return undefined;
+    }
+
+    const questionsWithChoices = await loadQuestionsWithChoices(dbSession.quizId);
+    if (questionsWithChoices.length === 0) {
+      return undefined;
+    }
+
+    const recovered = createActiveSession(
+      sessionId,
+      dbSession.pin,
+      "",
+      questionsWithChoices
+    );
+
+    const sessionMeta = await redisGetSessionMeta(sessionId);
+    const dbIndex = Number.isInteger(dbSession.currentQuestionIndex)
+      ? Number(dbSession.currentQuestionIndex)
+      : -1;
+    const metaIndex =
+      sessionMeta && Number.isInteger(sessionMeta.currentQuestionIndex)
+        ? Number(sessionMeta.currentQuestionIndex)
+        : -1;
+
+    let recoveredIndex = Math.max(dbIndex, metaIndex, 0);
+    if (recoveredIndex >= recovered.questions.length) {
+      recoveredIndex = recovered.questions.length - 1;
+    }
+
+    recovered.currentQuestionIndex = recoveredIndex;
+    recovered.questionStartTime =
+      sessionMeta && sessionMeta.questionStartTime > 0
+        ? sessionMeta.questionStartTime
+        : Date.now();
+
+    recovered.totalConnectedPlayers = await getLiveConnectedPlayerCount(
+      io,
+      sessionId
+    );
+    syncSessionMeta(recovered);
+
+    const currentQuestion = getCurrentQuestion(recovered);
+    if (currentQuestion) {
+      const elapsedMs = Math.max(0, Date.now() - recovered.questionStartTime);
+      const remainingMs = currentQuestion.timeLimitSeconds * 1000 - elapsedMs;
+      if (remainingMs > 0) {
+        recovered.timer = setTimeout(() => {
+          void handleTimeUp(io, recovered);
+        }, remainingMs);
+        scheduleTimer(recovered.sessionId, remainingMs);
+      } else {
+        recovered.timer = null;
+      }
+    }
+
+    logger.socket.warn(
+      `Recovered active session ${sessionId} (questionIndex=${recovered.currentQuestionIndex})`
+    );
+    return recovered;
+  })();
+
+  sessionRecoveryLocks.set(sessionId, recoveryPromise);
+  try {
+    return await recoveryPromise;
+  } finally {
+    sessionRecoveryLocks.delete(sessionId);
+  }
+}
+
 async function forwardPlayerAnswerToOwningPod(
   io: TypedServer,
   socketId: string,
@@ -366,6 +533,9 @@ async function processPlayerAnswer(
   let session: ActiveSession | undefined;
   try {
     session = getActiveSession(playerInfo.sessionId);
+    if (!session) {
+      session = await recoverActiveSessionIfPossible(io, playerInfo.sessionId);
+    }
     if (!session) {
       emitError("No active session");
       return;
@@ -641,7 +811,10 @@ export function setupSocketHandlers(io: TypedServer) {
           return;
         }
         const { sessionId } = parsed.data;
-        const session = getActiveSession(sessionId);
+        let session = getActiveSession(sessionId);
+        if (!session) {
+          session = await recoverActiveSessionIfPossible(io, sessionId);
+        }
         if (session) {
           updateAdminSocket(session, socket.id);
         }
@@ -1021,7 +1194,10 @@ export function setupSocketHandlers(io: TypedServer) {
           .from(quizzes)
           .where(eq(quizzes.id, dbSession.quizId));
 
-        const session = getActiveSession(dbSession.id);
+        let session = getActiveSession(dbSession.id);
+        if (!session && dbSession.status === "in_progress") {
+          session = await recoverActiveSessionIfPossible(io, dbSession.id);
+        }
         let phase: "lobby" | "question" | "answered" | "leaderboard" | "ended" = "lobby";
         if (dbSession.status === "completed") {
           phase = "ended";
@@ -1147,55 +1323,8 @@ export function setupSocketHandlers(io: TypedServer) {
           socket.emit("error", { message: "Session not in lobby state" });
           return;
         }
-
-        const dbQuestions: QuestionRecord[] = await db
-          .select()
-          .from(questions)
-          .where(eq(questions.quizId, dbSession.quizId))
-          .orderBy(asc(questions.orderIndex));
-
-        const questionsWithChoices = await Promise.all(
-          dbQuestions.map(async (q) => {
-            const choices: AnswerChoiceRecord[] = await db
-              .select()
-              .from(answerChoices)
-              .where(eq(answerChoices.questionId, q.id))
-              .orderBy(asc(answerChoices.orderIndex));
-
-            const questionType = q.questionType as QuestionType;
-            const correctChoiceIds = normalizeCorrectChoiceIds(
-              choices.map((c) => ({ id: c.id, isCorrect: c.isCorrect })),
-              questionType
-            );
-            
-            logger.socket.info(`[QUIZ-LOAD] Q${q.id} Type=${questionType}: Choices=[${choices.map((c) => `${c.id}(${c.isCorrect ? '✓' : '✗'})`).join(', ')}], CorrectIds=[${correctChoiceIds.join(', ')}]`);
-            
-            const correctOrderChoiceIds = [...choices]
-              .sort((a, b) => a.orderIndex - b.orderIndex)
-              .map((c) => c.id);
-            const acceptedAnswers = choices.map((c) => normalizeText(c.choiceText));
-
-            return {
-              id: q.id,
-              questionText: q.questionText,
-              questionType,
-              timeLimitSeconds: q.timeLimitSeconds,
-              mediaUrl: q.mediaUrl,
-              backgroundUrl: q.backgroundUrl,
-              choices: choices.map((c) => ({
-                id: c.id,
-                choiceText: c.choiceText,
-                orderIndex: c.orderIndex,
-              })),
-              correctChoiceId: correctChoiceIds[0] || 0,
-              correctChoiceIds,
-              correctOrderChoiceIds,
-              acceptedAnswers,
-              basePoints: q.basePoints,
-              deductionPoints: q.deductionPoints,
-              deductionInterval: q.deductionInterval,
-            };
-          })
+        const questionsWithChoices = await loadQuestionsWithChoices(
+          dbSession.quizId
         );
 
         if (questionsWithChoices.length === 0) {
@@ -1242,10 +1371,16 @@ export function setupSocketHandlers(io: TypedServer) {
         return;
       }
       const { sessionId } = parsed.data;
-      const session = getActiveSession(sessionId);
+      let session = getActiveSession(sessionId);
+      if (!session) {
+        session = await recoverActiveSessionIfPossible(io, sessionId);
+      }
       if (!session) {
         socket.emit("error", { message: "No active session" });
         return;
+      }
+      if (session.adminSocketId !== socket.id) {
+        updateAdminSocket(session, socket.id);
       }
       await sendNextQuestion(io, session);
     });
@@ -1722,3 +1857,4 @@ export function handleTimerExpiry(sessionId: number): void {
   logger.socket.info(`Distributed timer fired for session ${sessionId} (in-process timer was stale)`);
   handleTimeUp(_io, session);
 }
+
