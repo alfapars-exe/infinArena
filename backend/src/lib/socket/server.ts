@@ -297,6 +297,32 @@ function getActivePlayerSocketMap(
   return playerSocketMap;
 }
 
+function buildQuestionStartPayload(
+  session: ActiveSession,
+  question: ActiveSession["questions"][number]
+) {
+  const publicChoices =
+    question.questionType === "text_input" ? [] : question.choices;
+
+  return {
+    question: {
+      id: question.id,
+      questionText: question.questionText,
+      questionType: question.questionType,
+      timeLimitSeconds: question.timeLimitSeconds,
+      basePoints: question.basePoints,
+      deductionPoints: question.deductionPoints,
+      deductionInterval: question.deductionInterval,
+      mediaUrl: question.mediaUrl,
+      backgroundUrl: question.backgroundUrl,
+      choices: publicChoices,
+    },
+    questionNumber: session.currentQuestionIndex + 1,
+    totalQuestions: session.questions.length,
+    serverStartTime: session.questionStartTime,
+  };
+}
+
 async function getLiveConnectedPlayerCount(
   io: TypedServer,
   sessionId: number
@@ -542,8 +568,24 @@ async function processPlayerAnswer(
     }
 
     const currentQ = getCurrentQuestion(session);
-    if (!currentQ || currentQ.id !== questionId) {
+    if (!currentQ) {
       emitError("Wrong question");
+      return;
+    }
+
+    if (currentQ.id !== questionId) {
+      logger.socket.warn(
+        `Stale answer detected (session=${session.sessionId}, player=${playerInfo.playerId}, submittedQuestionId=${questionId}, currentQuestionId=${currentQ.id}, index=${session.currentQuestionIndex})`
+      );
+
+      if (session.timer && session.questionStartTime > 0) {
+        io.to(socketId).emit(
+          "game:question-start",
+          buildQuestionStartPayload(session, currentQ)
+        );
+      } else {
+        io.to(socketId).emit("game:time-up");
+      }
       return;
     }
 
@@ -1530,26 +1572,7 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
     .set({ currentQuestionIndex: session.currentQuestionIndex })
     .where(eq(quizSessions.id, session.sessionId));
 
-  const publicChoices =
-    question.questionType === "text_input" ? [] : question.choices;
-
-  const questionStartPayload = {
-    question: {
-      id: question.id,
-      questionText: question.questionText,
-      questionType: question.questionType,
-      timeLimitSeconds: question.timeLimitSeconds,
-      basePoints: question.basePoints,
-      deductionPoints: question.deductionPoints,
-      deductionInterval: question.deductionInterval,
-      mediaUrl: question.mediaUrl,
-      backgroundUrl: question.backgroundUrl,
-      choices: publicChoices,
-    },
-    questionNumber: session.currentQuestionIndex + 1,
-    totalQuestions: session.questions.length,
-    serverStartTime: session.questionStartTime,
-  };
+  const questionStartPayload = buildQuestionStartPayload(session, question);
 
   io.to(`session:${session.sessionId}`).emit("game:question-start", questionStartPayload);
 
