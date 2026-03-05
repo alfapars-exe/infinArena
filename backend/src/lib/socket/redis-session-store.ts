@@ -177,6 +177,49 @@ export async function redisSyncSessionMeta(meta: SessionMeta): Promise<void> {
   }
 }
 
+export async function redisGetSessionMeta(
+  sessionId: number
+): Promise<SessionMeta | null> {
+  if (!isRedisEnabled()) return null;
+  try {
+    const client = await getRedisClient();
+    const raw = await client.hgetall(KEY.session(sessionId));
+    if (!raw || Object.keys(raw).length === 0) {
+      return null;
+    }
+
+    const parsedSessionId = Number(raw.sessionId);
+    const currentQuestionIndex = Number(raw.currentQuestionIndex);
+    const questionStartTime = Number(raw.questionStartTime);
+    const totalConnectedPlayers = Number(raw.totalConnectedPlayers);
+    const questionCount = Number(raw.questionCount);
+
+    if (
+      !Number.isInteger(parsedSessionId) ||
+      parsedSessionId <= 0 ||
+      !Number.isInteger(currentQuestionIndex) ||
+      !Number.isInteger(questionStartTime) ||
+      !Number.isInteger(totalConnectedPlayers) ||
+      !Number.isInteger(questionCount)
+    ) {
+      return null;
+    }
+
+    return {
+      sessionId: parsedSessionId,
+      pin: raw.pin || "",
+      adminSocketId: raw.adminSocketId || "",
+      currentQuestionIndex,
+      questionStartTime,
+      totalConnectedPlayers,
+      questionCount,
+      podId: raw.podId || "",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function redisRemoveSession(sessionId: number): Promise<void> {
   if (!isRedisEnabled()) return;
   try {

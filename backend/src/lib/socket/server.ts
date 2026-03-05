@@ -39,6 +39,8 @@ import {
   redisClearAnswered,
   redisSyncChoiceCount,
   redisSyncPendingAnswer,
+  redisGetSessionMeta,
+  POD_ID,
 } from "./redis-session-store";
 import {
   socketConnectionsGauge,
@@ -50,7 +52,15 @@ import {
 import { queueAnswer } from "@/lib/answer-batch-writer";
 import { scheduleTimer, cancelTimer } from "@/lib/timer-worker";
 
-type TypedServer = SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
+interface InterServerEvents {
+  "internal:player-answer": (payload: ProxiedPlayerAnswerPayload) => void;
+}
+
+type TypedServer = SocketIOServer<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents
+>;
 type PlayerAnswerDisplay = string[] | string | null;
 
 // Module-level io reference for timer worker callback
@@ -96,6 +106,23 @@ const socketPlayerAnswerSchema = z
 const socketSessionIdSchema = z.object({
   sessionId: z.coerce.number().int().positive(),
 });
+
+type ParsedPlayerAnswer = z.infer<typeof socketPlayerAnswerSchema>;
+
+type SessionPlayerBinding = {
+  playerId: number;
+  sessionId: number;
+};
+
+const proxiedPlayerAnswerSchema = z.object({
+  targetPodId: z.string().min(1),
+  sessionId: z.coerce.number().int().positive(),
+  playerId: z.coerce.number().int().positive(),
+  socketId: z.string().min(1),
+  answer: socketPlayerAnswerSchema,
+});
+
+type ProxiedPlayerAnswerPayload = z.infer<typeof proxiedPlayerAnswerSchema>;
 
 // --- Socket.IO rate limiting ---
 const ipConnectionCounts = new Map<string, number>();
@@ -299,9 +326,290 @@ async function getLiveConnectedPlayerCount(
   ).length;
 }
 
+async function forwardPlayerAnswerToOwningPod(
+  io: TypedServer,
+  socketId: string,
+  playerInfo: SessionPlayerBinding,
+  answer: ParsedPlayerAnswer
+): Promise<boolean> {
+  try {
+    const sessionMeta = await redisGetSessionMeta(playerInfo.sessionId);
+    if (!sessionMeta?.podId || sessionMeta.podId === POD_ID) {
+      return false;
+    }
+
+    io.serverSideEmit("internal:player-answer", {
+      targetPodId: sessionMeta.podId,
+      sessionId: playerInfo.sessionId,
+      playerId: playerInfo.playerId,
+      socketId,
+      answer,
+    });
+    return true;
+  } catch (err) {
+    logger.socket.warn("Failed to proxy player answer to owning pod", err);
+    return false;
+  }
+}
+
+async function processPlayerAnswer(
+  io: TypedServer,
+  socketId: string,
+  playerInfo: SessionPlayerBinding,
+  answer: ParsedPlayerAnswer
+): Promise<void> {
+  const { questionId, choiceId, choiceIds, orderedChoiceIds, textAnswer } = answer;
+  const emitError = (message: string) => {
+    io.to(socketId).emit("error", { message });
+  };
+
+  let session: ActiveSession | undefined;
+  try {
+    session = getActiveSession(playerInfo.sessionId);
+    if (!session) {
+      emitError("No active session");
+      return;
+    }
+
+    const currentQ = getCurrentQuestion(session);
+    if (!currentQ || currentQ.id !== questionId) {
+      emitError("Wrong question");
+      return;
+    }
+
+    if (session.answeredPlayerIds.has(playerInfo.playerId)) {
+      emitError("Already answered");
+      return;
+    }
+
+    session.answeredPlayerIds.add(playerInfo.playerId);
+    redisSyncAnswered(session.sessionId, playerInfo.playerId);
+    socketEventsReceivedCounter.inc({ event_name: "player:answer" });
+    const rejectAnswer = (message: string) => {
+      session?.answeredPlayerIds.delete(playerInfo.playerId);
+      emitError(message);
+    };
+
+    const serverResponseTime = Date.now() - session.questionStartTime;
+    const actualResponseTime = Math.min(
+      serverResponseTime,
+      currentQ.timeLimitSeconds * 1000
+    );
+    const safeChoiceIds = toIntegerArray(choiceIds);
+    const safeOrderedChoiceIds = toIntegerArray(orderedChoiceIds);
+    const safeTextAnswer = typeof textAnswer === "string" ? textAnswer.trim() : "";
+
+    let isCorrect = false;
+    let persistedChoiceId: number | null = null;
+    let partialRatio = 1;
+
+    if (
+      currentQ.questionType === "multiple_choice" ||
+      currentQ.questionType === "true_false"
+    ) {
+      const normalizedChoiceId = Number(choiceId);
+      if (!Number.isInteger(normalizedChoiceId)) {
+        rejectAnswer("Choice is required");
+        return;
+      }
+      const normalizedCorrectId = Number(currentQ.correctChoiceId);
+      persistedChoiceId = normalizedChoiceId;
+      isCorrect = normalizedChoiceId === normalizedCorrectId;
+
+      logger.socket.info(`[SCORING] Q${questionId}: Player selected=${normalizedChoiceId} (type: ${typeof choiceId}), Correct=${normalizedCorrectId} (type: ${typeof currentQ.correctChoiceId}), isCorrect=${isCorrect}, ChoiceIds in Q: ${currentQ.choices.map(c => c.id).join(',')}`);
+
+      session.choiceCounts[normalizedChoiceId] = (session.choiceCounts[normalizedChoiceId] || 0) + 1;
+      redisSyncChoiceCount(session.sessionId, normalizedChoiceId, session.choiceCounts[normalizedChoiceId]);
+    } else if (currentQ.questionType === "multi_select") {
+      if (safeChoiceIds.length === 0) {
+        rejectAnswer("At least one choice is required");
+        return;
+      }
+      persistedChoiceId = safeChoiceIds[0] || null;
+      const correctSet = new Set(currentQ.correctChoiceIds.map(id => Number(id)));
+      const selectedIds = safeChoiceIds.map(id => Number(id));
+      const selectedCorrect = selectedIds.filter((id) => correctSet.has(id)).length;
+      const selectedWrong = selectedIds.filter((id) => !correctSet.has(id)).length;
+      isCorrect = selectedCorrect > 0 && selectedWrong === 0;
+      partialRatio = isCorrect ? selectedCorrect / correctSet.size : 0;
+      for (const id of selectedIds) {
+        session.choiceCounts[id] = (session.choiceCounts[id] || 0) + 1;
+        redisSyncChoiceCount(session.sessionId, id, session.choiceCounts[id]);
+      }
+    } else if (currentQ.questionType === "ordering") {
+      if (safeOrderedChoiceIds.length !== currentQ.correctOrderChoiceIds.length) {
+        rejectAnswer("Ordering answer is incomplete");
+        return;
+      }
+      persistedChoiceId = safeOrderedChoiceIds[0] || null;
+      const normalizedOrdered = safeOrderedChoiceIds.map(id => Number(id));
+      const normalizedCorrectOrder = currentQ.correctOrderChoiceIds.map(id => Number(id));
+      isCorrect = normalizedOrdered.every(
+        (id, idx) => id === normalizedCorrectOrder[idx]
+      );
+    } else {
+      if (!safeTextAnswer) {
+        rejectAnswer("Answer text is required");
+        return;
+      }
+      const normalized = normalizeText(safeTextAnswer);
+      isCorrect = currentQ.acceptedAnswers.includes(normalized);
+      const matchedChoice = currentQ.choices.find(
+        (choice) => normalizeText(choice.choiceText) === normalized
+      );
+      persistedChoiceId = matchedChoice?.id || null;
+    }
+
+    gameAnswersCounter.inc({ is_correct: String(isCorrect) });
+
+    let currentStreak = session.playerStreaks.get(playerInfo.playerId) || 0;
+    if (isCorrect) {
+      currentStreak++;
+    } else {
+      currentStreak = 0;
+    }
+    session.playerStreaks.set(playerInfo.playerId, currentStreak);
+    redisSyncStreak(session.sessionId, playerInfo.playerId, currentStreak);
+
+    let points = calculateScore(
+      {
+        basePoints: currentQ.basePoints,
+        timeLimitSeconds: currentQ.timeLimitSeconds,
+        deductionPoints: currentQ.deductionPoints,
+        deductionInterval: currentQ.deductionInterval,
+      },
+      actualResponseTime,
+      isCorrect
+    );
+    if (partialRatio < 1 && partialRatio > 0) {
+      points = Math.round(points * partialRatio);
+    }
+
+    let streakBonus = 0;
+    if (isCorrect && currentStreak >= 5) {
+      streakBonus = Math.round(points * 0.2);
+    } else if (isCorrect && currentStreak >= 3) {
+      streakBonus = Math.round(points * 0.1);
+    }
+    points += streakBonus;
+
+    const queued = await queueAnswer({
+      playerId: playerInfo.playerId,
+      questionId,
+      sessionId: playerInfo.sessionId,
+      choiceId: persistedChoiceId,
+      isCorrect,
+      responseTimeMs: actualResponseTime,
+      pointsAwarded: points,
+      answeredAt: new Date().toISOString(),
+    });
+    if (!queued) {
+      // Fallback: direct DB write when Redis is unavailable
+      await db.insert(playerAnswers).values({
+        playerId: playerInfo.playerId,
+        questionId,
+        sessionId: playerInfo.sessionId,
+        choiceId: persistedChoiceId,
+        isCorrect,
+        responseTimeMs: actualResponseTime,
+        pointsAwarded: points,
+        answeredAt: nowSql,
+      });
+    }
+
+    const [player] = await db
+      .select()
+      .from(players)
+      .where(
+        and(
+          eq(players.id, playerInfo.playerId),
+          eq(players.sessionId, playerInfo.sessionId)
+        )
+      );
+
+    if (!player) {
+      rejectAnswer("Player not found");
+      return;
+    }
+
+    const newTotal = player.totalScore + points;
+    await db
+      .update(players)
+      .set({ totalScore: newTotal })
+      .where(eq(players.id, playerInfo.playerId));
+
+    const pendingAnswer = {
+      playerId: playerInfo.playerId,
+      socketId,
+      choiceId: persistedChoiceId,
+      choiceIds: safeChoiceIds,
+      orderedChoiceIds: safeOrderedChoiceIds,
+      textAnswer: safeTextAnswer,
+      isCorrect,
+      points,
+      streakBonus,
+      totalScore: newTotal,
+      streak: currentStreak,
+      responseTimeMs: actualResponseTime,
+    };
+    session.pendingAnswers.set(playerInfo.playerId, pendingAnswer);
+    redisSyncPendingAnswer(session.sessionId, playerInfo.playerId, pendingAnswer);
+
+    io.to(socketId).emit("game:answer-ack", { received: true });
+    session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
+      io,
+      session.sessionId
+    );
+
+    if (session.answeredPlayerIds.size >= session.totalConnectedPlayers) {
+      if (session.timer) {
+        clearTimeout(session.timer);
+        session.timer = null;
+      }
+      cancelTimer(session.sessionId);
+      await handleTimeUp(io, session);
+    }
+  } catch (err) {
+    if (session) {
+      session.answeredPlayerIds.delete(playerInfo.playerId);
+    }
+    logger.socket.error("player:answer error", err);
+    emitError("Failed to process answer");
+  }
+}
+
 export function setupSocketHandlers(io: TypedServer) {
   _io = io;
   // Migrations run at startup in server.ts before this function is called
+
+  io.on("internal:player-answer", async (rawPayload) => {
+    const parsed = proxiedPlayerAnswerSchema.safeParse(rawPayload);
+    if (!parsed.success) {
+      logger.socket.warn("Invalid internal:player-answer payload", {
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          code: issue.code,
+          message: issue.message,
+        })),
+      });
+      return;
+    }
+
+    const payload = parsed.data;
+    if (payload.targetPodId !== POD_ID) {
+      return;
+    }
+
+    await processPlayerAnswer(
+      io,
+      payload.socketId,
+      {
+        playerId: payload.playerId,
+        sessionId: payload.sessionId,
+      },
+      payload.answer
+    );
+  });
 
   io.on("connection", (socket) => {
     logger.socket.debug(`Connected: ${socket.id}`);
@@ -945,232 +1253,39 @@ export function setupSocketHandlers(io: TypedServer) {
     socket.on(
       "player:answer",
       async (rawData) => {
-      const parsed = socketPlayerAnswerSchema.safeParse(rawData);
-      if (!parsed.success) {
-        logger.socket.warn("Invalid player:answer payload", {
-          socketId: socket.id,
-          issues: parsed.error.issues.map((issue) => ({
-            path: issue.path.join("."),
-            code: issue.code,
-            message: issue.message,
-          })),
-        });
-        socket.emit("error", { message: "Invalid answer data" });
-        return;
-      }
-      const { questionId, choiceId, choiceIds, orderedChoiceIds, textAnswer } = parsed.data;
-      let session: ActiveSession | undefined;
-      try {
+        const parsed = socketPlayerAnswerSchema.safeParse(rawData);
+        if (!parsed.success) {
+          logger.socket.warn("Invalid player:answer payload", {
+            socketId: socket.id,
+            issues: parsed.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              code: issue.code,
+              message: issue.message,
+            })),
+          });
+          socket.emit("error", { message: "Invalid answer data" });
+          return;
+        }
+
         const playerInfo = getPlayerBySocket(socket.id);
         if (!playerInfo) {
           socket.emit("error", { message: "Player not found" });
           return;
         }
 
-        session = getActiveSession(playerInfo.sessionId);
-        if (!session) {
-          socket.emit("error", { message: "No active session" });
-          return;
-        }
-
-        const currentQ = getCurrentQuestion(session);
-        if (!currentQ || currentQ.id !== questionId) {
-          socket.emit("error", { message: "Wrong question" });
-          return;
-        }
-
-        if (session.answeredPlayerIds.has(playerInfo.playerId)) {
-          socket.emit("error", { message: "Already answered" });
-          return;
-        }
-
-        session.answeredPlayerIds.add(playerInfo.playerId);
-        redisSyncAnswered(session.sessionId, playerInfo.playerId);
-        socketEventsReceivedCounter.inc({ event_name: "player:answer" });
-        const rejectAnswer = (message: string) => {
-          session?.answeredPlayerIds.delete(playerInfo.playerId);
-          socket.emit("error", { message });
-        };
-
-        const serverResponseTime = Date.now() - session.questionStartTime;
-        const actualResponseTime = Math.min(
-          serverResponseTime,
-          currentQ.timeLimitSeconds * 1000
-        );
-        const safeChoiceIds = toIntegerArray(choiceIds);
-        const safeOrderedChoiceIds = toIntegerArray(orderedChoiceIds);
-        const safeTextAnswer = typeof textAnswer === "string" ? textAnswer.trim() : "";
-
-        let isCorrect = false;
-        let persistedChoiceId: number | null = null;
-        let partialRatio = 1;
-
-        if (
-          currentQ.questionType === "multiple_choice" ||
-          currentQ.questionType === "true_false"
-        ) {
-          const normalizedChoiceId = Number(choiceId);
-          if (!Number.isInteger(normalizedChoiceId)) {
-            rejectAnswer("Choice is required");
-            return;
-          }
-          const normalizedCorrectId = Number(currentQ.correctChoiceId);
-          persistedChoiceId = normalizedChoiceId;
-          isCorrect = normalizedChoiceId === normalizedCorrectId;
-          
-          logger.socket.info(`[SCORING] Q${questionId}: Player selected=${normalizedChoiceId} (type: ${typeof choiceId}), Correct=${normalizedCorrectId} (type: ${typeof currentQ.correctChoiceId}), isCorrect=${isCorrect}, ChoiceIds in Q: ${currentQ.choices.map(c => c.id).join(',')}`);
-          
-          session.choiceCounts[normalizedChoiceId] = (session.choiceCounts[normalizedChoiceId] || 0) + 1;
-          redisSyncChoiceCount(session.sessionId, normalizedChoiceId, session.choiceCounts[normalizedChoiceId]);
-        } else if (currentQ.questionType === "multi_select") {
-          if (safeChoiceIds.length === 0) {
-            rejectAnswer("At least one choice is required");
-            return;
-          }
-          persistedChoiceId = safeChoiceIds[0] || null;
-          const correctSet = new Set(currentQ.correctChoiceIds.map(id => Number(id)));
-          const selectedIds = safeChoiceIds.map(id => Number(id));
-          const selectedCorrect = selectedIds.filter((id) => correctSet.has(id)).length;
-          const selectedWrong = selectedIds.filter((id) => !correctSet.has(id)).length;
-          isCorrect = selectedCorrect > 0 && selectedWrong === 0;
-          partialRatio = isCorrect ? selectedCorrect / correctSet.size : 0;
-          for (const id of selectedIds) {
-            session.choiceCounts[id] = (session.choiceCounts[id] || 0) + 1;
-            redisSyncChoiceCount(session.sessionId, id, session.choiceCounts[id]);
-          }
-        } else if (currentQ.questionType === "ordering") {
-          if (safeOrderedChoiceIds.length !== currentQ.correctOrderChoiceIds.length) {
-            rejectAnswer("Ordering answer is incomplete");
-            return;
-          }
-          persistedChoiceId = safeOrderedChoiceIds[0] || null;
-          const normalizedOrdered = safeOrderedChoiceIds.map(id => Number(id));
-          const normalizedCorrectOrder = currentQ.correctOrderChoiceIds.map(id => Number(id));
-          isCorrect = normalizedOrdered.every(
-            (id, idx) => id === normalizedCorrectOrder[idx]
+        if (!getActiveSession(playerInfo.sessionId)) {
+          const forwarded = await forwardPlayerAnswerToOwningPod(
+            io,
+            socket.id,
+            playerInfo,
+            parsed.data
           );
-        } else {
-          if (!safeTextAnswer) {
-            rejectAnswer("Answer text is required");
+          if (forwarded) {
             return;
           }
-          const normalized = normalizeText(safeTextAnswer);
-          isCorrect = currentQ.acceptedAnswers.includes(normalized);
-          const matchedChoice = currentQ.choices.find(
-            (choice) => normalizeText(choice.choiceText) === normalized
-          );
-          persistedChoiceId = matchedChoice?.id || null;
         }
 
-        gameAnswersCounter.inc({ is_correct: String(isCorrect) });
-
-        let currentStreak = session.playerStreaks.get(playerInfo.playerId) || 0;
-        if (isCorrect) {
-          currentStreak++;
-        } else {
-          currentStreak = 0;
-        }
-        session.playerStreaks.set(playerInfo.playerId, currentStreak);
-        redisSyncStreak(session.sessionId, playerInfo.playerId, currentStreak);
-
-        let points = calculateScore(
-          {
-            basePoints: currentQ.basePoints,
-            timeLimitSeconds: currentQ.timeLimitSeconds,
-            deductionPoints: currentQ.deductionPoints,
-            deductionInterval: currentQ.deductionInterval,
-          },
-          actualResponseTime,
-          isCorrect
-        );
-        if (partialRatio < 1 && partialRatio > 0) {
-          points = Math.round(points * partialRatio);
-        }
-
-        let streakBonus = 0;
-        if (isCorrect && currentStreak >= 5) {
-          streakBonus = Math.round(points * 0.2);
-        } else if (isCorrect && currentStreak >= 3) {
-          streakBonus = Math.round(points * 0.1);
-        }
-        points += streakBonus;
-
-        const queued = await queueAnswer({
-          playerId: playerInfo.playerId,
-          questionId,
-          sessionId: playerInfo.sessionId,
-          choiceId: persistedChoiceId,
-          isCorrect,
-          responseTimeMs: actualResponseTime,
-          pointsAwarded: points,
-          answeredAt: new Date().toISOString(),
-        });
-        if (!queued) {
-          // Fallback: direct DB write when Redis is unavailable
-          await db.insert(playerAnswers).values({
-            playerId: playerInfo.playerId,
-            questionId,
-            sessionId: playerInfo.sessionId,
-            choiceId: persistedChoiceId,
-            isCorrect,
-            responseTimeMs: actualResponseTime,
-            pointsAwarded: points,
-            answeredAt: nowSql,
-          });
-        }
-
-        const [player] = await db
-          .select()
-          .from(players)
-          .where(eq(players.id, playerInfo.playerId));
-
-        const newTotal = (player?.totalScore || 0) + points;
-        await db
-          .update(players)
-          .set({ totalScore: newTotal })
-          .where(eq(players.id, playerInfo.playerId));
-
-        const pendingAnswer = {
-          playerId: playerInfo.playerId,
-          socketId: socket.id,
-          choiceId: persistedChoiceId,
-          choiceIds: safeChoiceIds,
-          orderedChoiceIds: safeOrderedChoiceIds,
-          textAnswer: safeTextAnswer,
-          isCorrect,
-          points,
-          streakBonus,
-          totalScore: newTotal,
-          streak: currentStreak,
-          responseTimeMs: actualResponseTime,
-        };
-        session.pendingAnswers.set(playerInfo.playerId, pendingAnswer);
-        redisSyncPendingAnswer(session.sessionId, playerInfo.playerId, pendingAnswer);
-
-        socket.emit("game:answer-ack", { received: true });
-        session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
-          io,
-          session.sessionId
-        );
-
-        if (session.answeredPlayerIds.size >= session.totalConnectedPlayers) {
-          if (session.timer) {
-            clearTimeout(session.timer);
-            session.timer = null;
-          }
-          cancelTimer(session.sessionId);
-          await handleTimeUp(io, session);
-        }
-      } catch (err) {
-        if (session) {
-          const playerInfo = getPlayerBySocket(socket.id);
-          if (playerInfo) {
-            session.answeredPlayerIds.delete(playerInfo.playerId);
-          }
-        }
-        logger.socket.error("player:answer error", err);
-        socket.emit("error", { message: "Failed to process answer" });
-      }
+        await processPlayerAnswer(io, socket.id, playerInfo, parsed.data);
       }
     );
 
