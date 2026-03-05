@@ -547,20 +547,30 @@ export default function PlayPage() {
     });
 
     s.on("error", ({ message }) => {
-      clearSubmitWatchdog();
+      const isAnswerError =
+        message === "Already answered" ||
+        message === "Invalid answer data" ||
+        message === "Player not found" ||
+        message === "Failed to process answer" ||
+        message === "Question not active" ||
+        message === "Not in a session";
       if (message === "Already answered") {
+        clearSubmitWatchdog();
         setIsSubmittingAnswer(false);
         isSubmittingAnswerRef.current = false;
         setDidSubmit(true);
         setPhase("answered");
-      } else if (isSubmittingAnswerRef.current) {
+      } else if (isAnswerError && isSubmittingAnswerRef.current) {
+        clearSubmitWatchdog();
         setIsSubmittingAnswer(false);
         isSubmittingAnswerRef.current = false;
         setDidSubmit(false);
         setSelectedChoice(null);
         setPhase("question");
+        setError(message);
+      } else if (!isSubmittingAnswerRef.current) {
+        setError(message);
       }
-      setError(message);
     });
 
     s.on("lobby:player-joined", ({ playerCount: count }) => {

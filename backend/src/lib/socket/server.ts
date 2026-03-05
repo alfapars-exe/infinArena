@@ -76,7 +76,7 @@ const socketPlayerJoinSchema = z.object({
 const socketPlayerRejoinSchema = z
   .object({
     pin: z.string().length(6).regex(/^\d{6}$/),
-    playerId: z.number().int().positive().optional(),
+    playerId: z.coerce.number().int().positive().optional(),
     nickname: z.string().min(1).max(20).trim().optional(),
     browserClientId: z.string().min(8).max(128),
   })
@@ -1109,7 +1109,14 @@ export function setupSocketHandlers(io: TypedServer) {
     socket.on("player:rejoin", async (rawData) => {
       const parsed = socketPlayerRejoinSchema.safeParse(rawData);
       if (!parsed.success) {
-        socket.emit("error", { message: "Invalid rejoin data" });
+        logger.socket.warn("Invalid player:rejoin payload", {
+          socketId: socket.id,
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            code: issue.code,
+            message: issue.message,
+          })),
+        });
         return;
       }
       const { pin, playerId, nickname, browserClientId } = parsed.data;

@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { useI18n, useTranslation } from "@/lib/i18n";
 import { MusicProvider } from "@/lib/music-context";
 import { QueryProvider } from "@/lib/query-client";
+import { AdminCommandPalette } from "@/components/admin-command-palette";
 import {
   fetchCurrentAdmin,
   logoutAdmin,
@@ -134,6 +135,9 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
                   >
                     {t("nav.dashboard")}
                   </Link>
+                  <kbd className="hidden lg:inline-flex items-center gap-1 bg-white/10 text-white/40 text-[10px] px-1.5 py-0.5 rounded font-mono">
+                    Ctrl+K
+                  </kbd>
                 </div>
 
                 <Link href="/infinarenapanel" className="justify-self-center">
@@ -167,6 +171,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
             {children}
           </main>
         </div>
+        <AdminCommandPalette />
       </MusicProvider>
     </QueryProvider>
   );
