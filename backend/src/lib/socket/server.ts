@@ -1840,50 +1840,69 @@ export function setupSocketHandlers(io: TypedServer) {
                 sync: buildSessionSyncMeta(session),
               });
             }
-          } else if (phase === "leaderboard") {
-            // First send batch results for this player if they answered
+          } else if (phase === "stats" || phase === "leaderboard") {
+            // Send batch results for this player if they answered
             const playerAnswer = session.pendingAnswers.get(player.id);
-            if (playerAnswer && currentQ) {
-              const playerAnswerDisplay = buildPlayerAnswerDisplay(currentQ, playerAnswer);
+            if (currentQ) {
+              if (playerAnswer) {
+                const playerAnswerDisplay = buildPlayerAnswerDisplay(currentQ, playerAnswer);
 
-              socket.emit("game:batch-results", {
-                questionId: currentQ.id,
-                isCorrect: playerAnswer.isCorrect,
-                pointsAwarded: playerAnswer.points,
-                streakBonus: playerAnswer.streakBonus,
-                totalScore: playerAnswer.totalScore,
-                correctChoiceId: currentQ.correctChoiceId,
-                correctChoiceIds: currentQ.correctChoiceIds,
-                streak: playerAnswer.streak,
-                playerAnswer: playerAnswerDisplay,
-                correctAnswerText: buildCorrectAnswerText(currentQ),
+                socket.emit("game:batch-results", {
+                  questionId: currentQ.id,
+                  isCorrect: playerAnswer.isCorrect,
+                  pointsAwarded: playerAnswer.points,
+                  streakBonus: playerAnswer.streakBonus,
+                  totalScore: playerAnswer.totalScore,
+                  correctChoiceId: currentQ.correctChoiceId,
+                  correctChoiceIds: currentQ.correctChoiceIds,
+                  streak: playerAnswer.streak,
+                  playerAnswer: playerAnswerDisplay,
+                  correctAnswerText: buildCorrectAnswerText(currentQ),
+                  sync: buildSessionSyncMeta(session),
+                });
+              } else {
+                // Send empty result to unanswered player on rejoin
+                socket.emit("game:batch-results", {
+                  questionId: currentQ.id,
+                  isCorrect: false,
+                  pointsAwarded: 0,
+                  streakBonus: 0,
+                  totalScore: player.totalScore,
+                  correctChoiceId: currentQ.correctChoiceId,
+                  correctChoiceIds: currentQ.correctChoiceIds,
+                  streak: 0,
+                  playerAnswer: null,
+                  correctAnswerText: buildCorrectAnswerText(currentQ),
+                  sync: buildSessionSyncMeta(session),
+                });
+              }
+            }
+
+            // Send leaderboard if we're in leaderboard phase
+            if (phase === "leaderboard") {
+              const allPlayers = (await db
+                .select()
+                .from(players)
+                .where(eq(players.sessionId, session.sessionId))
+                .orderBy(desc(players.totalScore)));
+
+              const rankings: PlayerRanking[] = allPlayers.map(
+                (p, i: number) => ({
+                  playerId: p.id,
+                  nickname: p.nickname,
+                  avatar: p.avatar || "🎮",
+                  totalScore: p.totalScore,
+                  rank: i + 1,
+                  streak: session.playerStreaks.get(p.id) || 0,
+                })
+              );
+
+              socket.emit("game:leaderboard", {
+                questionId: currentQ?.id ?? null,
+                rankings,
                 sync: buildSessionSyncMeta(session),
               });
             }
-
-            // Then send leaderboard
-            const allPlayers = (await db
-              .select()
-              .from(players)
-              .where(eq(players.sessionId, session.sessionId))
-              .orderBy(desc(players.totalScore)));
-
-            const rankings: PlayerRanking[] = allPlayers.map(
-              (p, i: number) => ({
-                playerId: p.id,
-                nickname: p.nickname,
-                avatar: p.avatar || "🎮",
-                totalScore: p.totalScore,
-                rank: i + 1,
-                streak: session.playerStreaks.get(p.id) || 0,
-              })
-            );
-
-            socket.emit("game:leaderboard", {
-              questionId: currentQ?.id ?? null,
-              rankings,
-              sync: buildSessionSyncMeta(session),
-            });
           }
         }
 
@@ -2359,24 +2378,43 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     })
   );
 
+  const questionStatsPayload = {
+    questionId: currentQ.id,
+    choiceSelections,
+    unansweredPlayers,
+    answeredPlayers,
+    choiceCounts: session.choiceCounts,
+    correctChoiceId: currentQ.correctChoiceId,
+    correctChoiceIds: currentQ.correctChoiceIds,
+    totalPlayers: allPlayersInSession.length,
+    correctCount,
+    answeredCount: answeredPlayers.length,
+    questionNumber: session.currentQuestionIndex + 1,
+    totalQuestions: session.questions.length,
+    remainingQuestions:
+      session.questions.length - (session.currentQuestionIndex + 1),
+    sync: buildSessionSyncMeta(session),
+  };
+
+  // Send question stats to entire room (admin + all players) for sync
+  io.to(`session:${session.sessionId}`).emit("game:question-stats", questionStatsPayload);
+
+  // Also send directly to admin socket in case it's not in room yet
   if (session.adminSocketId) {
-    io.to(session.adminSocketId).emit("game:question-stats", {
-      questionId: currentQ.id,
-      choiceSelections,
-      unansweredPlayers,
-      answeredPlayers,
-      choiceCounts: session.choiceCounts,
-      correctChoiceId: currentQ.correctChoiceId,
-      correctChoiceIds: currentQ.correctChoiceIds,
-      totalPlayers: allPlayersInSession.length,
-      correctCount,
-      answeredCount: answeredPlayers.length,
-      questionNumber: session.currentQuestionIndex + 1,
-      totalQuestions: session.questions.length,
-      remainingQuestions:
-        session.questions.length - (session.currentQuestionIndex + 1),
-      sync: buildSessionSyncMeta(session),
-    });
+    io.to(session.adminSocketId).emit("game:question-stats", questionStatsPayload);
+  }
+
+  // Wait before sending leaderboard so players can see their results.
+  // Guard: if admin advances to next question during this wait, skip leaderboard.
+  const preWaitQuestionIndex = session.currentQuestionIndex;
+  await sleep(2000);
+
+  // If admin already moved to the next question during the wait, skip leaderboard
+  if (session.currentQuestionIndex !== preWaitQuestionIndex || session.currentPhase === "question") {
+    logger.socket.info(
+      `Skipping leaderboard for session ${session.sessionId} (admin advanced during result display)`
+    );
+    return;
   }
 
   await sendLeaderboard(io, session);

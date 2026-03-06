@@ -954,9 +954,13 @@ export default function PlayPage() {
       isSubmittingAnswerRef.current = false;
       pendingAnswerQuestionTypeRef.current = null;
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
-      // Move to "answered" phase so player sees waiting screen instead of being stuck
-      if (phaseRef.current === "question") {
-        setDidSubmit(false);
+      // Move to "answered" phase so player sees waiting screen instead of being stuck.
+      // Only transition from question/answered phases - don't interrupt result/leaderboard.
+      const currentPhase = phaseRef.current;
+      if (currentPhase === "question" || currentPhase === "answered") {
+        if (currentPhase === "question") {
+          setDidSubmit(false);
+        }
         setPhase("answered");
       }
     });
@@ -1012,7 +1016,12 @@ export default function PlayPage() {
         return;
       }
       setQuestionStats(stats);
-      setPhase("stats");
+      // If player is currently viewing their result, don't interrupt with stats phase.
+      // The result screen is more relevant to the player; stats are mainly for admin.
+      // Leaderboard will come from the server after a delay.
+      if (phaseRef.current !== "result") {
+        setPhase("stats");
+      }
     });
 
     s.on("game:leaderboard", ({ questionId, rankings, sync }) => {
@@ -1034,16 +1043,17 @@ export default function PlayPage() {
         window.clearTimeout(leaderboardDelayTimerRef.current);
         leaderboardDelayTimerRef.current = null;
       }
-      if (phaseRef.current !== "result") {
-        setPhase("leaderboard");
+      // If player is viewing their result, ensure minimum display time before switching to leaderboard
+      if (phaseRef.current === "result" || phaseRef.current === "stats") {
+        const elapsedSinceResultMs = Date.now() - lastBatchResultAtRef.current;
+        const waitMs = Math.max(0, 2000 - elapsedSinceResultMs);
+        leaderboardDelayTimerRef.current = window.setTimeout(() => {
+          setPhase("leaderboard");
+          leaderboardDelayTimerRef.current = null;
+        }, waitMs);
         return;
       }
-      const elapsedSinceResultMs = Date.now() - lastBatchResultAtRef.current;
-      const waitMs = Math.max(0, 1500 - elapsedSinceResultMs);
-      leaderboardDelayTimerRef.current = window.setTimeout(() => {
-        setPhase("leaderboard");
-        leaderboardDelayTimerRef.current = null;
-      }, waitMs);
+      setPhase("leaderboard");
     });
 
     s.on("game:quiz-ended", ({ finalRankings: fr, sync }) => {

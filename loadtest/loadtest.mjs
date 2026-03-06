@@ -1,6 +1,6 @@
 import { io } from "socket.io-client";
 
-const SERVER_URL = "https://argeinfina-infinarena.hf.space";
+const SERVER_URL = process.env.SERVER_URL || "https://argeinfina-infinarena.hf.space";
 const PIN = process.argv[2];
 const NUM_PLAYERS = parseInt(process.argv[3] || "50", 10);
 
@@ -40,20 +40,29 @@ function createPlayer(index) {
         console.log(`✅ [${joinedCount}/${NUM_PLAYERS}] ${nickname} joined successfully`);
     });
 
+    // Debug ALL events for the first bot only to avoid spam
+    if (index === 1) {
+        socket.onAny((eventName, ...args) => {
+            console.log(`[DEBUG TestBot_1] Received event: ${eventName}`);
+        });
+    }
+
     socket.on("game:question-start", (data) => {
         const question = data.question;
         console.log(`🎯 Question started for ${nickname}. Choices: ${question.choices.length}`);
 
         // Pick a random choice ID and simulate human thinking time
         const randomChoice = question.choices[Math.floor(Math.random() * question.choices.length)];
-        const delayMs = Math.floor(Math.random() * 8000) + 1000; // Between 1s and 9s
+        const delayMs = Math.floor(Math.random() * 1500) + 500; // Between 0.5s and 2s
 
         setTimeout(() => {
-            socket.emit("player:answer", {
+            const answerPayload = {
                 questionId: question.id,
                 choiceId: randomChoice.id,
                 responseTimeMs: delayMs,
-            });
+            };
+            if (index === 1) console.log(`[DEBUG TestBot_1] Sending answer for Q${question.id}`);
+            socket.emit("player:answer", answerPayload);
         }, delayMs);
     });
 
