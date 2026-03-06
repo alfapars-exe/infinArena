@@ -92,6 +92,18 @@ export interface BatchAnswerResult {
   correctAnswerText?: string[];
 }
 
+export type SocketErrorCode =
+  | "answer_already_answered"
+  | "answer_invalid_payload"
+  | "answer_session_unavailable"
+  | "answer_validation_failed"
+  | "answer_processing_failed";
+
+export interface SocketErrorPayload {
+  message: string;
+  code?: SocketErrorCode;
+}
+
 export interface ClientToServerEvents {
   "player:join": (data: {
     pin: string;
@@ -161,5 +173,5 @@ export interface ServerToClientEvents {
   }) => void;
   "session:admin-disconnected": () => void;
   "session:live": () => void;
-  error: (data: { message: string }) => void;
+  error: (data: SocketErrorPayload) => void;
 }

@@ -4,6 +4,8 @@ import type {
   ClientToServerEvents,
   ServerToClientEvents,
   PlayerRanking,
+  SocketErrorCode,
+  SocketErrorPayload,
 } from "@/types";
 import { isRedisEnabled, getRedisClient } from "@/lib/redis";
 import { db, nowSql } from "@/lib/db";
@@ -62,6 +64,42 @@ type TypedServer = SocketIOServer<
   InterServerEvents
 >;
 type PlayerAnswerDisplay = string[] | string | null;
+type LoadedQuestion = ActiveSession["questions"][number];
+
+type AnswerPreflightResult =
+  | {
+      kind: "accepted";
+      normalizedChoiceId: number | null;
+      safeChoiceIds: number[];
+      safeOrderedChoiceIds: number[];
+      safeTextAnswer: string;
+    }
+  | {
+      kind: "error";
+      error: SocketErrorPayload;
+    }
+  | {
+      kind: "resync";
+      event: "game:question-start";
+      payload: ReturnType<typeof buildQuestionStartPayload>;
+    }
+  | {
+      kind: "resync";
+      event: "game:time-up";
+    };
+
+const ANSWER_ERROR_MESSAGES = {
+  alreadyAnswered: "Already answered",
+  invalidPayload: "Invalid answer data",
+  noActiveSession: "No active session",
+  playerNotFound: "Player not found",
+  choiceRequired: "Choice is required",
+  multiSelectRequired: "At least one choice is required",
+  orderingIncomplete: "Ordering answer is incomplete",
+  textRequired: "Answer text is required",
+  processingFailed: "Failed to process answer",
+  wrongQuestion: "Wrong question",
+} as const;
 
 // Module-level io reference for timer worker callback
 let _io: TypedServer | null = null;
@@ -186,6 +224,207 @@ function normalizeCorrectChoiceIds(
   return [];
 }
 
+function createSocketErrorPayload(
+  message: string,
+  code?: SocketErrorCode
+): SocketErrorPayload {
+  return code ? { message, code } : { message };
+}
+
+function emitSocketError(
+  io: Pick<TypedServer, "to">,
+  socketId: string,
+  payload: SocketErrorPayload
+): void {
+  io.to(socketId).emit("error", payload);
+}
+
+function normalizeLoadedQuestion(
+  q: QuestionRecord,
+  choices: AnswerChoiceRecord[]
+): LoadedQuestion {
+  const questionType = q.questionType as QuestionType;
+  const normalizedChoices = choices.map((choice) => ({
+    id: Number(choice.id),
+    choiceText: choice.choiceText,
+    orderIndex: Number(choice.orderIndex),
+    isCorrect: choice.isCorrect,
+  }));
+  const correctChoiceIds = normalizeCorrectChoiceIds(
+    normalizedChoices.map((choice) => ({
+      id: choice.id,
+      isCorrect: choice.isCorrect,
+    })),
+    questionType
+  );
+  const correctOrderChoiceIds = [...normalizedChoices]
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+    .map((choice) => choice.id);
+
+  return {
+    id: Number(q.id),
+    questionText: q.questionText,
+    questionType,
+    timeLimitSeconds: Number(q.timeLimitSeconds),
+    mediaUrl: q.mediaUrl ?? null,
+    backgroundUrl: q.backgroundUrl ?? null,
+    choices: normalizedChoices.map((choice) => ({
+      id: choice.id,
+      choiceText: choice.choiceText,
+      orderIndex: choice.orderIndex,
+    })),
+    correctChoiceId: correctChoiceIds[0] || 0,
+    correctChoiceIds,
+    correctOrderChoiceIds,
+    acceptedAnswers: normalizedChoices.map((choice) => normalizeText(choice.choiceText)),
+    basePoints: Number(q.basePoints),
+    deductionPoints: Number(q.deductionPoints),
+    deductionInterval: Number(q.deductionInterval),
+  };
+}
+
+function preflightPlayerAnswerSubmission(
+  session: ActiveSession,
+  currentQ: LoadedQuestion | undefined,
+  playerId: number,
+  answer: ParsedPlayerAnswer
+): AnswerPreflightResult {
+  if (!currentQ) {
+    return {
+      kind: "error",
+      error: createSocketErrorPayload(
+        ANSWER_ERROR_MESSAGES.wrongQuestion,
+        "answer_session_unavailable"
+      ),
+    };
+  }
+
+  if (currentQ.id !== answer.questionId) {
+    if (session.timer && session.questionStartTime > 0) {
+      return {
+        kind: "resync",
+        event: "game:question-start",
+        payload: buildQuestionStartPayload(session, currentQ),
+      };
+    }
+
+    return {
+      kind: "resync",
+      event: "game:time-up",
+    };
+  }
+
+  if (session.answeredPlayerIds.has(playerId)) {
+    return {
+      kind: "error",
+      error: createSocketErrorPayload(
+        ANSWER_ERROR_MESSAGES.alreadyAnswered,
+        "answer_already_answered"
+      ),
+    };
+  }
+
+  const validChoiceIds = new Set(currentQ.choices.map((choice) => Number(choice.id)));
+  const safeChoiceIds = Array.from(new Set(toIntegerArray(answer.choiceIds)));
+  const safeOrderedChoiceIds = toIntegerArray(answer.orderedChoiceIds);
+  const safeTextAnswer =
+    typeof answer.textAnswer === "string" ? answer.textAnswer.trim() : "";
+
+  if (
+    currentQ.questionType === "multiple_choice" ||
+    currentQ.questionType === "true_false"
+  ) {
+    const normalizedChoiceId = Number(answer.choiceId);
+    if (
+      !Number.isInteger(normalizedChoiceId) ||
+      !validChoiceIds.has(normalizedChoiceId)
+    ) {
+      return {
+        kind: "error",
+        error: createSocketErrorPayload(
+          ANSWER_ERROR_MESSAGES.choiceRequired,
+          "answer_validation_failed"
+        ),
+      };
+    }
+
+    return {
+      kind: "accepted",
+      normalizedChoiceId,
+      safeChoiceIds: [],
+      safeOrderedChoiceIds: [],
+      safeTextAnswer: "",
+    };
+  }
+
+  if (currentQ.questionType === "multi_select") {
+    const areChoiceIdsValid =
+      safeChoiceIds.length > 0 &&
+      safeChoiceIds.every((choiceId) => validChoiceIds.has(choiceId));
+    if (!areChoiceIdsValid) {
+      return {
+        kind: "error",
+        error: createSocketErrorPayload(
+          ANSWER_ERROR_MESSAGES.multiSelectRequired,
+          "answer_validation_failed"
+        ),
+      };
+    }
+
+    return {
+      kind: "accepted",
+      normalizedChoiceId: null,
+      safeChoiceIds,
+      safeOrderedChoiceIds: [],
+      safeTextAnswer: "",
+    };
+  }
+
+  if (currentQ.questionType === "ordering") {
+    const orderedChoiceIdSet = new Set(safeOrderedChoiceIds);
+    const hasValidOrdering =
+      safeOrderedChoiceIds.length === currentQ.correctOrderChoiceIds.length &&
+      orderedChoiceIdSet.size === safeOrderedChoiceIds.length &&
+      safeOrderedChoiceIds.every((choiceId) => validChoiceIds.has(choiceId));
+
+    if (!hasValidOrdering) {
+      return {
+        kind: "error",
+        error: createSocketErrorPayload(
+          ANSWER_ERROR_MESSAGES.orderingIncomplete,
+          "answer_validation_failed"
+        ),
+      };
+    }
+
+    return {
+      kind: "accepted",
+      normalizedChoiceId: null,
+      safeChoiceIds: [],
+      safeOrderedChoiceIds,
+      safeTextAnswer: "",
+    };
+  }
+
+  if (!safeTextAnswer) {
+    return {
+      kind: "error",
+      error: createSocketErrorPayload(
+        ANSWER_ERROR_MESSAGES.textRequired,
+        "answer_validation_failed"
+      ),
+    };
+  }
+
+  return {
+    kind: "accepted",
+    normalizedChoiceId: null,
+    safeChoiceIds: [],
+    safeOrderedChoiceIds: [],
+    safeTextAnswer,
+  };
+}
+
 function buildPlayerAnswerDisplay(
   question: {
     questionType: "multiple_choice" | "true_false" | "multi_select" | "text_input" | "ordering";
@@ -299,7 +538,7 @@ function getActivePlayerSocketMap(
 
 function buildQuestionStartPayload(
   session: ActiveSession,
-  question: ActiveSession["questions"][number]
+  question: LoadedQuestion
 ) {
   const publicChoices =
     question.questionType === "text_input" ? [] : question.choices;
@@ -356,24 +595,7 @@ const sessionRecoveryLocks = new Map<number, Promise<ActiveSession | undefined>>
 
 async function loadQuestionsWithChoices(
   quizId: number
-): Promise<
-  Array<{
-    id: number;
-    questionText: string;
-    questionType: QuestionType;
-    timeLimitSeconds: number;
-    mediaUrl: string | null;
-    backgroundUrl: string | null;
-    choices: Array<{ id: number; choiceText: string; orderIndex: number }>;
-    correctChoiceId: number;
-    correctChoiceIds: number[];
-    correctOrderChoiceIds: number[];
-    acceptedAnswers: string[];
-    basePoints: number;
-    deductionPoints: number;
-    deductionInterval: number;
-  }>
-> {
+): Promise<LoadedQuestion[]> {
   const dbQuestions: QuestionRecord[] = await db
     .select()
     .from(questions)
@@ -387,44 +609,15 @@ async function loadQuestionsWithChoices(
         .from(answerChoices)
         .where(eq(answerChoices.questionId, q.id))
         .orderBy(asc(answerChoices.orderIndex));
-
-      const questionType = q.questionType as QuestionType;
-      const correctChoiceIds = normalizeCorrectChoiceIds(
-        choices.map((c) => ({ id: c.id, isCorrect: c.isCorrect })),
-        questionType
-      );
+      const normalizedQuestion = normalizeLoadedQuestion(q, choices);
 
       logger.socket.info(
-        `[QUIZ-LOAD] Q${q.id} Type=${questionType}: Choices=[${choices
+        `[QUIZ-LOAD] Q${q.id} Type=${normalizedQuestion.questionType}: Choices=[${choices
           .map((c) => `${c.id}(${c.isCorrect ? "ok" : "x"})`)
-          .join(", ")}], CorrectIds=[${correctChoiceIds.join(", ")}]`
+          .join(", ")}], CorrectIds=[${normalizedQuestion.correctChoiceIds.join(", ")}]`
       );
 
-      const correctOrderChoiceIds = [...choices]
-        .sort((a, b) => a.orderIndex - b.orderIndex)
-        .map((c) => c.id);
-      const acceptedAnswers = choices.map((c) => normalizeText(c.choiceText));
-
-      return {
-        id: q.id,
-        questionText: q.questionText,
-        questionType,
-        timeLimitSeconds: q.timeLimitSeconds,
-        mediaUrl: q.mediaUrl,
-        backgroundUrl: q.backgroundUrl,
-        choices: choices.map((c) => ({
-          id: c.id,
-          choiceText: c.choiceText,
-          orderIndex: c.orderIndex,
-        })),
-        correctChoiceId: correctChoiceIds[0] || 0,
-        correctChoiceIds,
-        correctOrderChoiceIds,
-        acceptedAnswers,
-        basePoints: q.basePoints,
-        deductionPoints: q.deductionPoints,
-        deductionInterval: q.deductionInterval,
-      };
+      return normalizedQuestion;
     })
   );
 }
@@ -551,10 +744,7 @@ async function processPlayerAnswer(
   playerInfo: SessionPlayerBinding,
   answer: ParsedPlayerAnswer
 ): Promise<void> {
-  const { questionId, choiceId, choiceIds, orderedChoiceIds, textAnswer } = answer;
-  const emitError = (message: string) => {
-    io.to(socketId).emit("error", { message });
-  };
+  const { questionId } = answer;
 
   let session: ActiveSession | undefined;
   try {
@@ -563,82 +753,94 @@ async function processPlayerAnswer(
       session = await recoverActiveSessionIfPossible(io, playerInfo.sessionId);
     }
     if (!session) {
-      emitError("No active session");
+      emitSocketError(
+        io,
+        socketId,
+        createSocketErrorPayload(
+          ANSWER_ERROR_MESSAGES.noActiveSession,
+          "answer_session_unavailable"
+        )
+      );
       return;
     }
 
     const currentQ = getCurrentQuestion(session);
-    if (!currentQ) {
-      emitError("Wrong question");
-      return;
-    }
+    const preflight = preflightPlayerAnswerSubmission(
+      session,
+      currentQ,
+      playerInfo.playerId,
+      answer
+    );
 
-    if (currentQ.id !== questionId) {
+    if (preflight.kind === "resync") {
       logger.socket.warn(
-        `Stale answer detected (session=${session.sessionId}, player=${playerInfo.playerId}, submittedQuestionId=${questionId}, currentQuestionId=${currentQ.id}, index=${session.currentQuestionIndex})`
+        `Stale answer detected (session=${session.sessionId}, player=${playerInfo.playerId}, submittedQuestionId=${questionId}, currentQuestionId=${currentQ?.id ?? "none"}, index=${session.currentQuestionIndex})`
       );
-
-      if (session.timer && session.questionStartTime > 0) {
-        io.to(socketId).emit(
-          "game:question-start",
-          buildQuestionStartPayload(session, currentQ)
-        );
+      if (preflight.event === "game:question-start") {
+        io.to(socketId).emit(preflight.event, preflight.payload);
       } else {
-        io.to(socketId).emit("game:time-up");
+        io.to(socketId).emit(preflight.event);
       }
       return;
     }
 
-    if (session.answeredPlayerIds.has(playerInfo.playerId)) {
-      emitError("Already answered");
+    if (preflight.kind === "error") {
+      emitSocketError(io, socketId, preflight.error);
       return;
     }
 
-    session.answeredPlayerIds.add(playerInfo.playerId);
-    redisSyncAnswered(session.sessionId, playerInfo.playerId);
     socketEventsReceivedCounter.inc({ event_name: "player:answer" });
-    const rejectAnswer = (message: string) => {
+    const rollbackAnsweredPlayer = (errorPayload?: SocketErrorPayload) => {
       session?.answeredPlayerIds.delete(playerInfo.playerId);
-      emitError(message);
+      if (errorPayload) {
+        emitSocketError(io, socketId, errorPayload);
+      }
     };
 
+    session.answeredPlayerIds.add(playerInfo.playerId);
+    redisSyncAnswered(session.sessionId, playerInfo.playerId);
+
+    const currentQuestion = currentQ as LoadedQuestion;
     const serverResponseTime = Date.now() - session.questionStartTime;
     const actualResponseTime = Math.min(
       serverResponseTime,
-      currentQ.timeLimitSeconds * 1000
+      currentQuestion.timeLimitSeconds * 1000
     );
-    const safeChoiceIds = toIntegerArray(choiceIds);
-    const safeOrderedChoiceIds = toIntegerArray(orderedChoiceIds);
-    const safeTextAnswer = typeof textAnswer === "string" ? textAnswer.trim() : "";
+    const {
+      normalizedChoiceId,
+      safeChoiceIds,
+      safeOrderedChoiceIds,
+      safeTextAnswer,
+    } = preflight;
 
     let isCorrect = false;
     let persistedChoiceId: number | null = null;
     let partialRatio = 1;
 
     if (
-      currentQ.questionType === "multiple_choice" ||
-      currentQ.questionType === "true_false"
+      currentQuestion.questionType === "multiple_choice" ||
+      currentQuestion.questionType === "true_false"
     ) {
-      const normalizedChoiceId = Number(choiceId);
-      if (!Number.isInteger(normalizedChoiceId)) {
-        rejectAnswer("Choice is required");
+      if (normalizedChoiceId === null) {
+        rollbackAnsweredPlayer(
+          createSocketErrorPayload(
+            ANSWER_ERROR_MESSAGES.choiceRequired,
+            "answer_validation_failed"
+          )
+        );
         return;
       }
-      const normalizedCorrectId = Number(currentQ.correctChoiceId);
+      const normalizedCorrectId = Number(currentQuestion.correctChoiceId);
       persistedChoiceId = normalizedChoiceId;
       isCorrect = normalizedChoiceId === normalizedCorrectId;
 
-      logger.socket.info(`[SCORING] Q${questionId}: Player selected=${normalizedChoiceId} (type: ${typeof choiceId}), Correct=${normalizedCorrectId} (type: ${typeof currentQ.correctChoiceId}), isCorrect=${isCorrect}, ChoiceIds in Q: ${currentQ.choices.map(c => c.id).join(',')}`);
+      logger.socket.info(`[SCORING] Q${questionId}: Player selected=${normalizedChoiceId} (type: ${typeof normalizedChoiceId}), Correct=${normalizedCorrectId} (type: ${typeof currentQuestion.correctChoiceId}), isCorrect=${isCorrect}, ChoiceIds in Q: ${currentQuestion.choices.map(c => c.id).join(',')}`);
 
       session.choiceCounts[normalizedChoiceId] = (session.choiceCounts[normalizedChoiceId] || 0) + 1;
       redisSyncChoiceCount(session.sessionId, normalizedChoiceId, session.choiceCounts[normalizedChoiceId]);
-    } else if (currentQ.questionType === "multi_select") {
-      if (safeChoiceIds.length === 0) {
-        rejectAnswer("At least one choice is required");
-        return;
-      }
+    } else if (currentQuestion.questionType === "multi_select") {
       persistedChoiceId = safeChoiceIds[0] || null;
-      const correctSet = new Set(currentQ.correctChoiceIds.map(id => Number(id)));
+      const correctSet = new Set(currentQuestion.correctChoiceIds.map(id => Number(id)));
       const selectedIds = safeChoiceIds.map(id => Number(id));
       const selectedCorrect = selectedIds.filter((id) => correctSet.has(id)).length;
       const selectedWrong = selectedIds.filter((id) => !correctSet.has(id)).length;
@@ -648,25 +850,17 @@ async function processPlayerAnswer(
         session.choiceCounts[id] = (session.choiceCounts[id] || 0) + 1;
         redisSyncChoiceCount(session.sessionId, id, session.choiceCounts[id]);
       }
-    } else if (currentQ.questionType === "ordering") {
-      if (safeOrderedChoiceIds.length !== currentQ.correctOrderChoiceIds.length) {
-        rejectAnswer("Ordering answer is incomplete");
-        return;
-      }
+    } else if (currentQuestion.questionType === "ordering") {
       persistedChoiceId = safeOrderedChoiceIds[0] || null;
       const normalizedOrdered = safeOrderedChoiceIds.map(id => Number(id));
-      const normalizedCorrectOrder = currentQ.correctOrderChoiceIds.map(id => Number(id));
+      const normalizedCorrectOrder = currentQuestion.correctOrderChoiceIds.map(id => Number(id));
       isCorrect = normalizedOrdered.every(
         (id, idx) => id === normalizedCorrectOrder[idx]
       );
     } else {
-      if (!safeTextAnswer) {
-        rejectAnswer("Answer text is required");
-        return;
-      }
       const normalized = normalizeText(safeTextAnswer);
-      isCorrect = currentQ.acceptedAnswers.includes(normalized);
-      const matchedChoice = currentQ.choices.find(
+      isCorrect = currentQuestion.acceptedAnswers.includes(normalized);
+      const matchedChoice = currentQuestion.choices.find(
         (choice) => normalizeText(choice.choiceText) === normalized
       );
       persistedChoiceId = matchedChoice?.id || null;
@@ -685,10 +879,10 @@ async function processPlayerAnswer(
 
     let points = calculateScore(
       {
-        basePoints: currentQ.basePoints,
-        timeLimitSeconds: currentQ.timeLimitSeconds,
-        deductionPoints: currentQ.deductionPoints,
-        deductionInterval: currentQ.deductionInterval,
+        basePoints: currentQuestion.basePoints,
+        timeLimitSeconds: currentQuestion.timeLimitSeconds,
+        deductionPoints: currentQuestion.deductionPoints,
+        deductionInterval: currentQuestion.deductionInterval,
       },
       actualResponseTime,
       isCorrect
@@ -740,7 +934,12 @@ async function processPlayerAnswer(
       );
 
     if (!player) {
-      rejectAnswer("Player not found");
+      rollbackAnsweredPlayer(
+        createSocketErrorPayload(
+          ANSWER_ERROR_MESSAGES.playerNotFound,
+          "answer_session_unavailable"
+        )
+      );
       return;
     }
 
@@ -786,7 +985,14 @@ async function processPlayerAnswer(
       session.answeredPlayerIds.delete(playerInfo.playerId);
     }
     logger.socket.error("player:answer error", err);
-    emitError("Failed to process answer");
+    emitSocketError(
+      io,
+      socketId,
+      createSocketErrorPayload(
+        ANSWER_ERROR_MESSAGES.processingFailed,
+        "answer_processing_failed"
+      )
+    );
   }
 }
 
@@ -1447,13 +1653,19 @@ export function setupSocketHandlers(io: TypedServer) {
               message: issue.message,
             })),
           });
-          socket.emit("error", { message: "Invalid answer data" });
+          socket.emit("error", {
+            message: ANSWER_ERROR_MESSAGES.invalidPayload,
+            code: "answer_invalid_payload",
+          });
           return;
         }
 
         const playerInfo = getPlayerBySocket(socket.id);
         if (!playerInfo) {
-          socket.emit("error", { message: "Player not found" });
+          socket.emit("error", {
+            message: ANSWER_ERROR_MESSAGES.playerNotFound,
+            code: "answer_session_unavailable",
+          });
           return;
         }
 
@@ -1888,3 +2100,8 @@ export function handleTimerExpiry(sessionId: number): void {
   handleTimeUp(_io, session);
 }
 
+export const __test__ = {
+  createSocketErrorPayload,
+  normalizeLoadedQuestion,
+  preflightPlayerAnswerSubmission,
+};

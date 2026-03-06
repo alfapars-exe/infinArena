@@ -15,9 +15,11 @@ import type {
   PlayerRanking,
   BatchAnswerResult,
   QuestionStats,
+  SocketErrorCode,
 } from "@/types";
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+type PlayerAnswerPayload = Parameters<ClientToServerEvents["player:answer"]>[0];
 
 const CHOICE_COLORS = [
   "bg-inf-red hover:bg-red-700",
@@ -227,6 +229,12 @@ function getMotivationalMessage(language: string): string {
   return messages[Math.floor(Math.random() * messages.length)];
 }
 
+function isSingleAnswerType(
+  questionType: QuestionPayload["questionType"] | null | undefined
+): boolean {
+  return questionType === "multiple_choice" || questionType === "true_false";
+}
+
 type Phase =
   | "nickname"
   | "lobby"
@@ -282,6 +290,7 @@ export default function PlayPage() {
   const isSubmittingAnswerRef = useRef(false);
   const phaseRef = useRef<Phase>("nickname");
   const submitWatchdogRef = useRef<number | NodeJS.Timeout | null>(null);
+  const pendingAnswerQuestionTypeRef = useRef<QuestionPayload["questionType"] | null>(null);
   const lastQuestionIdRef = useRef<number | null>(null);
   const currentQuestionMetaRef = useRef<{ id: number | null; serverStartTime: number }>({
     id: null,
@@ -434,21 +443,62 @@ export default function PlayPage() {
     }
   }, []);
 
+  const releaseAnswerSubmission = useCallback((options?: {
+    clearSingleSelection?: boolean;
+    didSubmit?: boolean;
+    errorMessage?: string;
+    nextPhase?: Phase;
+  }) => {
+    clearSubmitWatchdog();
+    setIsSubmittingAnswer(false);
+    isSubmittingAnswerRef.current = false;
+    setDidSubmit(options?.didSubmit === true);
+    if (options?.clearSingleSelection) {
+      setSelectedChoice(null);
+    }
+    pendingAnswerQuestionTypeRef.current = null;
+    if (options?.nextPhase) {
+      setPhase(options.nextPhase);
+    }
+    if (options?.errorMessage !== undefined) {
+      setError(options.errorMessage);
+    }
+  }, [clearSubmitWatchdog]);
+
   const armSubmitWatchdog = useCallback((targetSocket: TypedSocket | null) => {
     clearSubmitWatchdog();
     submitWatchdogRef.current = window.setTimeout(() => {
       if (!isSubmittingAnswerRef.current) return;
-      setIsSubmittingAnswer(false);
-      isSubmittingAnswerRef.current = false;
-      if (phaseRef.current === "answered") {
-        setDidSubmit(false);
-        setPhase("question");
-      }
+      const shouldClearSingleSelection = isSingleAnswerType(
+        pendingAnswerQuestionTypeRef.current
+      );
+      releaseAnswerSubmission({
+        clearSingleSelection: shouldClearSingleSelection,
+        nextPhase: "question",
+      });
       if (targetSocket?.connected) {
         emitRejoinFromCache(targetSocket);
       }
     }, 2500);
-  }, [clearSubmitWatchdog, emitRejoinFromCache]);
+  }, [clearSubmitWatchdog, emitRejoinFromCache, releaseAnswerSubmission]);
+
+  const beginAnswerSubmission = useCallback((payload: PlayerAnswerPayload, options?: {
+    selectedChoiceId?: number;
+  }) => {
+    if (!socket || !currentQuestion) {
+      return false;
+    }
+    if (options?.selectedChoiceId !== undefined) {
+      setSelectedChoice(options.selectedChoiceId);
+    }
+    pendingAnswerQuestionTypeRef.current = currentQuestion.questionType;
+    socket.emit("player:answer", payload);
+    setError("");
+    setIsSubmittingAnswer(true);
+    isSubmittingAnswerRef.current = true;
+    armSubmitWatchdog(socket);
+    return true;
+  }, [armSubmitWatchdog, currentQuestion, socket]);
 
   useEffect(() => {
     isSubmittingAnswerRef.current = isSubmittingAnswer;
@@ -546,28 +596,43 @@ export default function PlayPage() {
       }
     });
 
-    s.on("error", ({ message }) => {
-      const isAnswerError =
+    s.on("error", ({ message, code }) => {
+      const isAnswerErrorCode = Boolean(
+        code &&
+          [
+            "answer_already_answered",
+            "answer_invalid_payload",
+            "answer_session_unavailable",
+            "answer_validation_failed",
+            "answer_processing_failed",
+          ].includes(code as SocketErrorCode)
+      );
+      const isLegacyAnswerError =
         message === "Already answered" ||
         message === "Invalid answer data" ||
         message === "Player not found" ||
         message === "Failed to process answer" ||
         message === "Question not active" ||
-        message === "Not in a session";
-      if (message === "Already answered") {
-        clearSubmitWatchdog();
-        setIsSubmittingAnswer(false);
-        isSubmittingAnswerRef.current = false;
-        setDidSubmit(true);
-        setPhase("answered");
-      } else if (isAnswerError && isSubmittingAnswerRef.current) {
-        clearSubmitWatchdog();
-        setIsSubmittingAnswer(false);
-        isSubmittingAnswerRef.current = false;
-        setDidSubmit(false);
-        setSelectedChoice(null);
-        setPhase("question");
-        setError(message);
+        message === "Not in a session" ||
+        message === "No active session" ||
+        message === "Wrong question" ||
+        message === "Choice is required" ||
+        message === "At least one choice is required" ||
+        message === "Ordering answer is incomplete" ||
+        message === "Answer text is required";
+      if (code === "answer_already_answered" || message === "Already answered") {
+        releaseAnswerSubmission({
+          didSubmit: true,
+          nextPhase: "answered",
+        });
+      } else if ((isAnswerErrorCode || isLegacyAnswerError) && isSubmittingAnswerRef.current) {
+        releaseAnswerSubmission({
+          clearSingleSelection: isSingleAnswerType(
+            pendingAnswerQuestionTypeRef.current
+          ),
+          errorMessage: message,
+          nextPhase: "question",
+        });
       } else if (!isSubmittingAnswerRef.current) {
         setError(message);
       }
@@ -637,6 +702,7 @@ export default function PlayPage() {
         setDidSubmit(false);
         setIsSubmittingAnswer(false);
         isSubmittingAnswerRef.current = false;
+        pendingAnswerQuestionTypeRef.current = null;
         clearSubmitWatchdog();
         setBatchResult(null);
         setError("");
@@ -657,11 +723,10 @@ export default function PlayPage() {
     );
 
     s.on("game:answer-ack", () => {
-      clearSubmitWatchdog();
-      setIsSubmittingAnswer(false);
-      isSubmittingAnswerRef.current = false;
-      setDidSubmit(true);
-      setPhase("answered");
+      releaseAnswerSubmission({
+        didSubmit: true,
+        nextPhase: "answered",
+      });
     });
 
     s.on("game:time-up", () => {
@@ -670,6 +735,7 @@ export default function PlayPage() {
       setTimeProgress(0);
       setIsSubmittingAnswer(false);
       isSubmittingAnswerRef.current = false;
+      pendingAnswerQuestionTypeRef.current = null;
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
     });
 
@@ -769,7 +835,17 @@ export default function PlayPage() {
       }
       s.disconnect();
     };
-  }, [hasValidPin, pin]);
+  }, [
+    clearSubmitWatchdog,
+    emitRejoinFromCache,
+    hasValidPin,
+    pin,
+    readCachedSession,
+    releaseAnswerSubmission,
+    saveSession,
+    sessionCacheKey,
+    startSyncedTimer,
+  ]);
 
   useEffect(() => {
     if (!socket) return;
@@ -898,6 +974,7 @@ export default function PlayPage() {
     setDidSubmit(false);
     setIsSubmittingAnswer(false);
     isSubmittingAnswerRef.current = false;
+    pendingAnswerQuestionTypeRef.current = null;
     clearSubmitWatchdog();
   }, [currentQuestion, clearSubmitWatchdog]);
 
@@ -907,7 +984,6 @@ export default function PlayPage() {
       !currentQuestion ||
       phase !== "question" ||
       timeLeft <= 0 ||
-      selectedChoice !== null ||
       isSubmittingAnswerRef.current ||
       didSubmit
     ) {
@@ -920,17 +996,14 @@ export default function PlayPage() {
       return;
     }
 
-    setSelectedChoice(choiceId);
     const responseTimeMs = Date.now() - questionStartTime.current;
-    socket.emit("player:answer", {
+    beginAnswerSubmission({
       questionId,
       choiceId,
       responseTimeMs,
+    }, {
+      selectedChoiceId: choiceId,
     });
-    setError("");
-    setIsSubmittingAnswer(true);
-    isSubmittingAnswerRef.current = true;
-    armSubmitWatchdog(socket);
   };
 
   const selectMultiChoice = (choiceId: number) => {
@@ -973,16 +1046,16 @@ export default function PlayPage() {
       !isSubmittingAnswer &&
       !didSubmit
     ) {
-      submitAdvancedAnswer();
+      submitAdvancedAnswer({ allowAfterTimeUp: true });
     }
   }, [timeLeft, phase, currentQuestion, orderedChoices, didSubmit, isSubmittingAnswer]);
 
-  const submitAdvancedAnswer = () => {
+  const submitAdvancedAnswer = (options?: { allowAfterTimeUp?: boolean }) => {
     if (
       !socket ||
       !currentQuestion ||
       phase !== "question" ||
-      timeLeft <= 0 ||
+      (!options?.allowAfterTimeUp && timeLeft <= 0) ||
       isSubmittingAnswerRef.current ||
       didSubmit
     ) {
@@ -997,11 +1070,12 @@ export default function PlayPage() {
 
     if (currentQuestion.questionType === "multi_select") {
       if (selectedChoices.length === 0) return;
-      socket.emit("player:answer", {
+      beginAnswerSubmission({
         questionId,
         choiceIds: selectedChoices,
         responseTimeMs,
       });
+      return;
     } else if (currentQuestion.questionType === "ordering") {
       const orderedChoiceIds = orderedChoices
         .map((c) => Number(c.id))
@@ -1010,28 +1084,23 @@ export default function PlayPage() {
         setError(t("play.answerFailed"));
         return;
       }
-      socket.emit("player:answer", {
+      beginAnswerSubmission({
         questionId,
         orderedChoiceIds,
         responseTimeMs,
       });
-      setDidSubmit(true);
-      setPhase("answered");
+      return;
     } else if (currentQuestion.questionType === "text_input") {
       if (!textAnswer.trim()) return;
-      socket.emit("player:answer", {
+      beginAnswerSubmission({
         questionId,
         textAnswer: textAnswer.trim(),
         responseTimeMs,
       });
+      return;
     } else {
       return;
     }
-
-    setError("");
-    setIsSubmittingAnswer(true);
-    isSubmittingAnswerRef.current = true;
-    armSubmitWatchdog(socket);
   };
 
   const pageBackgroundStyle =
@@ -1320,7 +1389,7 @@ export default function PlayPage() {
                   const isDisabled =
                     phase !== "question" ||
                     timeLeft <= 0 ||
-                    selectedChoice !== null ||
+                    isSubmittingAnswer ||
                     didSubmit;
                   
                   return (
@@ -1362,7 +1431,11 @@ export default function PlayPage() {
                   {currentQuestion.choices.map((choice, i) => {
                     const choiceId = Number(choice.id);
                     const active = selectedChoices.includes(choiceId);
-                    const isDisabled = phase !== "question" || timeLeft <= 0 || didSubmit;
+                    const isDisabled =
+                      phase !== "question" ||
+                      timeLeft <= 0 ||
+                      isSubmittingAnswer ||
+                      didSubmit;
                     return (
                       <button
                         type="button"
@@ -1390,25 +1463,7 @@ export default function PlayPage() {
                 
                 <button
                   type="button"
-                  onClick={() => {
-                    if (selectedChoices.length > 0 && timeLeft > 0 && !isSubmittingAnswer && !didSubmit) {
-                      const questionId = Number(currentQuestion.id);
-                      if (!Number.isInteger(questionId) || questionId <= 0) {
-                        setError(t("play.answerFailed"));
-                        return;
-                      }
-                      const responseTimeMs = Date.now() - questionStartTime.current;
-                      socket?.emit("player:answer", {
-                        questionId,
-                        choiceIds: selectedChoices,
-                        responseTimeMs,
-                      });
-                      setError("");
-                      setIsSubmittingAnswer(true);
-                      isSubmittingAnswerRef.current = true;
-                      armSubmitWatchdog(socket);
-                    }
-                  }}
+                  onClick={() => submitAdvancedAnswer()}
                   disabled={selectedChoices.length === 0 || timeLeft <= 0 || isSubmittingAnswer || didSubmit}
                   className="w-full bg-inf-green hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors"
                 >
@@ -1461,7 +1516,7 @@ export default function PlayPage() {
                 {!didSubmit && (
                   <button
                     type="button"
-                    onClick={submitAdvancedAnswer}
+                    onClick={() => submitAdvancedAnswer()}
                     disabled={orderedChoices.length === 0 || timeLeft <= 0 || isSubmittingAnswer}
                     className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
                   >
@@ -1483,7 +1538,7 @@ export default function PlayPage() {
                 />
                 <button
                   type="button"
-                  onClick={submitAdvancedAnswer}
+                  onClick={() => submitAdvancedAnswer()}
                   disabled={!textAnswer.trim() || timeLeft <= 0 || isSubmittingAnswer}
                   className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
                 >
