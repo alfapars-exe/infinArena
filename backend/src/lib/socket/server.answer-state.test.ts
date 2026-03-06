@@ -240,6 +240,7 @@ test("buildPlayerRejoinSnapshot returns leaderboard metadata after time-up", () 
   );
   const session = createSession(question);
   session.timer = null;
+  session.currentPhase = "leaderboard";
   session.pendingAnswers.set(77, createPendingAnswer(77));
 
   const snapshot = __test__.buildPlayerRejoinSnapshot(

@@ -84,6 +84,7 @@ export default function LiveControlPage() {
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   const [stats, setStats] = useState<QuestionStats | null>(null);
+  const [answerProgress, setAnswerProgress] = useState<{ answered: number; total: number } | null>(null);
   const [leaderboard, setLeaderboard] = useState<PlayerRanking[]>([]);
   const [finalRankings, setFinalRankings] = useState<PlayerRanking[]>([]);
   const [quizTitle, setQuizTitle] = useState(t("live.quizDefault"));
@@ -110,7 +111,7 @@ export default function LiveControlPage() {
 
   const pushNotification = (message: string) => {
     const id = Date.now();
-    setNotifications((prev) => [ { id, message }, ...prev ].slice(0, 5));
+    setNotifications((prev) => [{ id, message }, ...prev].slice(0, 5));
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     }, 5000);
@@ -248,12 +249,17 @@ export default function LiveControlPage() {
       setTotalQuestions(tq);
       setPhase("question");
       setStats(null);
+      setAnswerProgress(null);
       startSyncedTimer(serverStartTime, question.timeLimitSeconds);
     });
 
     s.on("game:time-up", () => {
       setTimeLeft(0);
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
+    });
+
+    s.on("game:answer-progress", ({ answeredCount, totalParticipants }) => {
+      setAnswerProgress({ answered: answeredCount, total: totalParticipants });
     });
 
     s.on("game:question-stats", (data) => {
@@ -419,10 +425,10 @@ export default function LiveControlPage() {
   const questionBackgroundStyle =
     phase === "question" && currentQuestion?.backgroundUrl
       ? {
-          backgroundImage: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.6)), url(${currentQuestion.backgroundUrl})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }
+        backgroundImage: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.6)), url(${currentQuestion.backgroundUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }
       : undefined;
 
   const correctPlayers = stats?.answeredPlayers?.filter((player) => player.isCorrect) ?? [];
@@ -434,10 +440,10 @@ export default function LiveControlPage() {
     podiumStep >= 3
       ? "from-yellow-300/20 via-rose-500/15 to-green-500/20"
       : podiumStep >= 2
-      ? "from-slate-100/15 via-fuchsia-400/10 to-amber-500/20"
-      : podiumStep >= 1
-      ? "from-amber-700/20 via-red-500/10 to-violet-500/20"
-      : "from-white/10 via-white/0 to-white/0";
+        ? "from-slate-100/15 via-fuchsia-400/10 to-amber-500/20"
+        : podiumStep >= 1
+          ? "from-amber-700/20 via-red-500/10 to-violet-500/20"
+          : "from-white/10 via-white/0 to-white/0";
 
   return (
     <div
@@ -445,7 +451,7 @@ export default function LiveControlPage() {
       style={questionBackgroundStyle}
     >
       <div className="app-container px-0">
-        
+
         <div className="text-center mb-8">
           <h1 className="text-3xl font-black text-white">{quizTitle}</h1>
           <div className="flex flex-col md:flex-row items-center justify-center gap-4 mt-2">
@@ -463,11 +469,10 @@ export default function LiveControlPage() {
                 <button
                   onClick={music.togglePlay}
                   disabled={!music.youtubeVideoId}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
-                    music.isPlaying
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${music.isPlaying
                       ? "bg-gradient-to-br from-inf-red to-rose-600 text-white hover:from-red-700 hover:to-rose-700"
                       : "bg-gradient-to-br from-inf-turquoise to-cyan-500 text-white hover:from-teal-600 hover:to-cyan-600"
-                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
                   aria-label={music.isPlaying ? t("live.pause") : t("live.play")}
                   title={music.isPlaying ? t("live.pause") : t("live.play")}
                 >
@@ -485,11 +490,10 @@ export default function LiveControlPage() {
                 <button
                   onClick={music.toggleRepeat}
                   disabled={!music.youtubeVideoId}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
-                    music.isRepeat
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${music.isRepeat
                       ? "bg-gradient-to-br from-inf-yellow to-amber-500 text-white hover:from-yellow-500 hover:to-amber-600"
                       : "bg-white/20 text-white/70 hover:bg-white/30 hover:text-white"
-                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
                   aria-label={t("live.loop")}
                   title={t("live.loop")}
                 >
@@ -635,7 +639,7 @@ export default function LiveControlPage() {
           </motion.div>
         )}
 
-        
+
         {phase === "countdown" && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -652,13 +656,12 @@ export default function LiveControlPage() {
                 className="text-center"
               >
                 <div
-                  className={`text-[14rem] font-black leading-none ${
-                    countdownNumber === 3
+                  className={`text-[14rem] font-black leading-none ${countdownNumber === 3
                       ? "text-inf-red"
                       : countdownNumber === 2
-                      ? "text-inf-yellow"
-                      : "text-inf-green"
-                  }`}
+                        ? "text-inf-yellow"
+                        : "text-inf-green"
+                    }`}
                 >
                   {countdownNumber}
                 </div>
@@ -667,7 +670,7 @@ export default function LiveControlPage() {
           </motion.div>
         )}
 
-        
+
         {phase === "question" && currentQuestion && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -678,18 +681,22 @@ export default function LiveControlPage() {
               <span className="text-white/60 text-sm">
                 {t("live.questionOf", { current: questionNumber, total: totalQuestions })}
               </span>
+              {answerProgress && (
+                <span className="ml-3 bg-white/20 text-white px-3 py-1 rounded-full text-sm font-medium">
+                  {answerProgress.answered}/{answerProgress.total} {t("play.answered")}
+                </span>
+              )}
             </div>
 
-            
+
             <div className="flex justify-center mb-6">
               <motion.div
-                className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl font-black border-4 ${
-                  timeLeft > 10
+                className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl font-black border-4 ${timeLeft > 10
                     ? "border-green-400 text-green-400"
                     : timeLeft > 5
-                    ? "border-yellow-400 text-yellow-400"
-                    : "border-red-400 text-red-400"
-                }`}
+                      ? "border-yellow-400 text-yellow-400"
+                      : "border-red-400 text-red-400"
+                  }`}
                 animate={timeLeft <= 5 ? { scale: [1, 1.1, 1] } : {}}
                 transition={{ repeat: Infinity, duration: 0.5 }}
               >
@@ -697,7 +704,7 @@ export default function LiveControlPage() {
               </motion.div>
             </div>
 
-            
+
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 mb-6 text-center">
               {currentQuestion.mediaUrl && (
                 <img
@@ -711,7 +718,7 @@ export default function LiveControlPage() {
               </h2>
             </div>
 
-            
+
             <div className="grid grid-cols-2 gap-4">
               {currentQuestion.choices.map((c, i) => (
                 <div
@@ -727,7 +734,7 @@ export default function LiveControlPage() {
           </motion.div>
         )}
 
-        
+
         {phase === "stats" && stats && currentQuestion && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
             <h2 className="text-2xl font-bold text-white mb-6">{t("live.answerDistribution")}</h2>
@@ -760,11 +767,10 @@ export default function LiveControlPage() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.08 }}
-                      className={`rounded-xl border p-3 ${
-                        isCorrect
+                      className={`rounded-xl border p-3 ${isCorrect
                           ? "bg-green-500/20 border-green-400/50"
                           : "bg-white/5 border-white/10"
-                      }`}
+                        }`}
                     >
                       <p className={`text-3xl font-black ${isCorrect ? "text-green-300" : "text-white"}`}>
                         {count}
@@ -881,11 +887,10 @@ export default function LiveControlPage() {
                     return (
                       <div
                         key={choice.id}
-                        className={`rounded-xl p-3 border ${
-                          isCorrect
+                        className={`rounded-xl p-3 border ${isCorrect
                             ? "bg-green-500/20 border-green-400/50"
                             : "bg-white/5 border-white/10"
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <p className={`font-semibold text-sm ${isCorrect ? "text-green-200" : "text-white"}`}>
@@ -950,12 +955,12 @@ export default function LiveControlPage() {
           </motion.div>
         )}
 
-        
+
         {phase === "leaderboard" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
             <h2 className="text-2xl font-bold text-white mb-6">{t("live.leaderboard")}</h2>
 
-            
+
             {stats && currentQuestion && (
               <motion.div
                 initial={{ opacity: 0, y: -20 }}
@@ -965,15 +970,15 @@ export default function LiveControlPage() {
                 <h3 className="text-xl font-bold text-white mb-4">
                   {t("live.answerDistribution")}
                 </h3>
-                
-                
+
+
                 <div className="bg-white/5 rounded-lg p-3 mb-4">
                   <p className="text-white/90 text-sm font-semibold">
                     {currentQuestion.questionText}
                   </p>
                 </div>
 
-                
+
                 <div className="space-y-3 mb-4">
                   {stats.choiceSelections.map((selection, idx) => {
                     const isCorrect = isCorrectChoice(stats, selection.choiceId);
@@ -988,26 +993,23 @@ export default function LiveControlPage() {
                     return (
                       <div
                         key={selection.choiceId}
-                        className={`relative overflow-hidden rounded-xl border-2 ${
-                          isCorrect 
-                            ? "border-green-500 bg-green-500/20" 
+                        className={`relative overflow-hidden rounded-xl border-2 ${isCorrect
+                            ? "border-green-500 bg-green-500/20"
                             : "border-white/20 bg-white/5"
-                        }`}
-                      >
-                        
-                        <div
-                          className={`absolute inset-y-0 left-0 transition-all duration-500 ${
-                            isCorrect ? "bg-green-500/30" : "bg-white/10"
                           }`}
+                      >
+
+                        <div
+                          className={`absolute inset-y-0 left-0 transition-all duration-500 ${isCorrect ? "bg-green-500/30" : "bg-white/10"
+                            }`}
                           style={{ width: `${percentage}%` }}
                         />
 
-                        
+
                         <div className="relative flex items-center justify-between p-3">
                           <div className="flex items-center gap-3 flex-1">
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white ${
-                              getChoiceColor(idx)
-                            }`}>
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white ${getChoiceColor(idx)
+                              }`}>
                               {getChoiceShape(idx)}
                             </div>
                             <span className="text-white font-medium flex-1 text-left">
@@ -1031,7 +1033,7 @@ export default function LiveControlPage() {
                   })}
                 </div>
 
-                
+
                 <div
                   className="grid grid-cols-3 gap-3 mb-4"
                   style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
@@ -1064,7 +1066,7 @@ export default function LiveControlPage() {
               </motion.div>
             )}
 
-            
+
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-6 max-w-lg mx-auto">
               {leaderboard.slice(0, 5).map((p, i) => (
                 <motion.div
@@ -1077,15 +1079,14 @@ export default function LiveControlPage() {
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                        i === 0
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${i === 0
                           ? "bg-yellow-500 text-black"
                           : i === 1
-                          ? "bg-gray-400 text-black"
-                          : i === 2
-                          ? "bg-amber-700 text-white"
-                          : "bg-white/20 text-white"
-                      }`}
+                            ? "bg-gray-400 text-black"
+                            : i === 2
+                              ? "bg-amber-700 text-white"
+                              : "bg-white/20 text-white"
+                        }`}
                     >
                       {p.rank}
                     </span>
@@ -1113,7 +1114,7 @@ export default function LiveControlPage() {
           </motion.div>
         )}
 
-        
+
         {phase === "ended" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
             <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/20 p-4 md:p-8">

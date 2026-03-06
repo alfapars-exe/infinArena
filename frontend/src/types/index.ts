@@ -2,11 +2,11 @@
   id: number;
   questionText: string;
   questionType:
-    | "multiple_choice"
-    | "true_false"
-    | "multi_select"
-    | "text_input"
-    | "ordering";
+  | "multiple_choice"
+  | "true_false"
+  | "multi_select"
+  | "text_input"
+  | "ordering";
   timeLimitSeconds: number;
   basePoints: number;
   deductionPoints: number;
@@ -179,6 +179,11 @@ export interface ServerToClientEvents {
   }) => void;
   "game:answer-ack": (data: AnswerAck & { sync?: SessionSyncMeta }) => void;
   "game:time-up": (data?: { sync?: SessionSyncMeta }) => void;
+  "game:answer-progress": (data: {
+    answeredCount: number;
+    totalParticipants: number;
+    sync?: SessionSyncMeta;
+  }) => void;
   "game:batch-results": (data: BatchAnswerResult & { sync?: SessionSyncMeta }) => void;
   "game:answer-result": (data: AnswerResult) => void;
   "game:question-stats": (data: QuestionStats & { sync?: SessionSyncMeta }) => void;

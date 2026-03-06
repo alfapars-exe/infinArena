@@ -110,7 +110,7 @@ function playTick() {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.08);
-  } catch {}
+  } catch { }
 }
 
 function playTock() {
@@ -125,7 +125,7 @@ function playTock() {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.08);
-  } catch {}
+  } catch { }
 }
 
 function playCorrectSound() {
@@ -143,7 +143,7 @@ function playCorrectSound() {
     osc.frequency.setValueAtTime(784, ctx.currentTime + 0.2);
     gain.gain.setValueAtTime(0, ctx.currentTime + 0.4);
     osc.stop(ctx.currentTime + 0.4);
-  } catch {}
+  } catch { }
 }
 
 function playWrongSound() {
@@ -160,7 +160,7 @@ function playWrongSound() {
     osc.frequency.setValueAtTime(150, ctx.currentTime + 0.15);
     gain.gain.setValueAtTime(0, ctx.currentTime + 0.35);
     osc.stop(ctx.currentTime + 0.35);
-  } catch {}
+  } catch { }
 }
 
 function playDrumroll() {
@@ -178,7 +178,7 @@ function playDrumroll() {
       osc.start(t);
       osc.stop(t + 0.06);
     }
-  } catch {}
+  } catch { }
 }
 
 function playFanfare() {
@@ -199,7 +199,7 @@ function playFanfare() {
       gain.gain.linearRampToValueAtTime(0, t + 0.4);
       osc.stop(t + 0.4);
     });
-  } catch {}
+  } catch { }
 }
 
 const MOTIVATIONAL_MESSAGES_EN = [
@@ -365,6 +365,7 @@ export default function PlayPage() {
   const [motivationalMsg, setMotivationalMsg] = useState("");
   const [availablePoints, setAvailablePoints] = useState(0);
   const scoringRef = useRef({ basePoints: 1000, deductionPoints: 50, deductionInterval: 1 });
+  const [answerProgress, setAnswerProgress] = useState<{ answered: number; total: number } | null>(null);
 
   const [podiumStep, setPodiumStep] = useState(0);
 
@@ -448,7 +449,7 @@ export default function PlayPage() {
       if (sessionCacheKey !== LEGACY_EMPTY_PIN_SESSION_CACHE_KEY) {
         localStorage.removeItem(LEGACY_EMPTY_PIN_SESSION_CACHE_KEY);
       }
-    } catch {}
+    } catch { }
   }, [hasValidPin, sessionCacheKey]);
 
   const emitRejoinFromCache = useCallback((targetSocket: TypedSocket, options?: { force?: boolean }) => {
@@ -490,14 +491,14 @@ export default function PlayPage() {
         browserClientId,
         ...(resolvedPlayerId && resolvedNickname
           ? {
-              playerId: resolvedPlayerId,
-              nickname: resolvedNickname,
-            }
+            playerId: resolvedPlayerId,
+            nickname: resolvedNickname,
+          }
           : {}),
       });
       lastRejoinAtRef.current = now;
       lastRejoinSocketIdRef.current = socketId;
-    } catch {}
+    } catch { }
   }, [getBrowserClientId, hasValidPin, pin, readCachedSession]);
 
   const clearSubmitWatchdog = useCallback(() => {
@@ -534,7 +535,7 @@ export default function PlayPage() {
     awaitingQuestionSyncRef.current = {
       questionId:
         Number.isInteger(snapshot.phaseQuestionId) &&
-        Number(snapshot.phaseQuestionId) > 0
+          Number(snapshot.phaseQuestionId) > 0
           ? Number(snapshot.phaseQuestionId)
           : null,
       serverStartTime: normalizedServerStartTime,
@@ -702,7 +703,7 @@ export default function PlayPage() {
         normalizedPhaseQuestionServerStartTime !== null &&
         currentQuestionMeta.serverStartTime > 0 &&
         normalizedPhaseQuestionServerStartTime ===
-          currentQuestionMeta.serverStartTime &&
+        currentQuestionMeta.serverStartTime &&
         (normalizedPhaseQuestionId === null ||
           currentQuestionMeta.id === null ||
           normalizedPhaseQuestionId === currentQuestionMeta.id);
@@ -799,13 +800,13 @@ export default function PlayPage() {
     s.on("error", ({ message, code }) => {
       const isAnswerErrorCode = Boolean(
         code &&
-          [
-            "answer_already_answered",
-            "answer_invalid_payload",
-            "answer_session_unavailable",
-            "answer_validation_failed",
-            "answer_processing_failed",
-          ].includes(code as SocketErrorCode)
+        [
+          "answer_already_answered",
+          "answer_invalid_payload",
+          "answer_session_unavailable",
+          "answer_validation_failed",
+          "answer_processing_failed",
+        ].includes(code as SocketErrorCode)
       );
       const isLegacyAnswerError =
         message === "Already answered" ||
@@ -875,6 +876,7 @@ export default function PlayPage() {
         clearAwaitingQuestionSync();
         setLeaderboard([]);
         setQuestionStats(null);
+        setAnswerProgress(null);
 
         const isDuplicateQuestionStart =
           currentQuestionMetaRef.current.id === question.id &&
@@ -952,6 +954,16 @@ export default function PlayPage() {
       isSubmittingAnswerRef.current = false;
       pendingAnswerQuestionTypeRef.current = null;
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
+      // Move to "answered" phase so player sees waiting screen instead of being stuck
+      if (phaseRef.current === "question") {
+        setDidSubmit(false);
+        setPhase("answered");
+      }
+    });
+
+    s.on("game:answer-progress", (data) => {
+      if (!shouldApplySyncEvent(data?.sync)) return;
+      setAnswerProgress({ answered: data.answeredCount, total: data.totalParticipants });
     });
 
     s.on("game:batch-results", (result) => {
@@ -1027,7 +1039,7 @@ export default function PlayPage() {
         return;
       }
       const elapsedSinceResultMs = Date.now() - lastBatchResultAtRef.current;
-      const waitMs = Math.max(0, 2000 - elapsedSinceResultMs);
+      const waitMs = Math.max(0, 1500 - elapsedSinceResultMs);
       leaderboardDelayTimerRef.current = window.setTimeout(() => {
         setPhase("leaderboard");
         leaderboardDelayTimerRef.current = null;
@@ -1045,7 +1057,7 @@ export default function PlayPage() {
       }
       setFinalRankings(fr);
       setPhase("ended");
-      try { localStorage.removeItem(sessionCacheKey); } catch {}
+      try { localStorage.removeItem(sessionCacheKey); } catch { }
 
       setPodiumStep(0);
       playDrumroll();
@@ -1127,7 +1139,7 @@ export default function PlayPage() {
     const interval = window.setInterval(() => {
       if (!socket.connected) return;
       emitRejoinFromCache(socket, { force: true });
-    }, 3000);
+    }, 10000); // Reduced: server events handle sync, this is safety fallback only
 
     return () => {
       window.clearInterval(interval);
@@ -1356,10 +1368,10 @@ export default function PlayPage() {
   const pageBackgroundStyle =
     phase === "question" && currentQuestion?.backgroundUrl
       ? {
-          backgroundImage: `linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.6)), url(${currentQuestion.backgroundUrl})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }
+        backgroundImage: `linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.6)), url(${currentQuestion.backgroundUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }
       : undefined;
 
   return (
@@ -1389,952 +1401,942 @@ export default function PlayPage() {
           )}
         </AnimatePresence>
 
-                <ConnectionStatusOverlay
+        <ConnectionStatusOverlay
           isVisible={!isConnected || isPending}
           title={
             isPending
               ? t("common.pleaseWait")
               : isPageInitialLoadRef.current || !socketConnectedAtLeastOnceRef.current
-              ? t("common.reconnecting")
-              : t("play.maintenanceMode")
+                ? t("common.reconnecting")
+                : t("play.maintenanceMode")
           }
           subtitle={
             isPending
               ? t("common.pageLoading")
               : isPageInitialLoadRef.current || !socketConnectedAtLeastOnceRef.current
-              ? t("common.connecting")
-              : t("play.reconnecting")
+                ? t("common.connecting")
+                : t("play.reconnecting")
           }
           hint={t("play.pleaseWait")}
         />
-      <AnimatePresence mode="wait">
-        
-        {phase === "nickname" && (
-          <motion.div
-            key="nickname"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex items-center justify-center p-4"
-          >
+        <AnimatePresence mode="wait">
+
+          {phase === "nickname" && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="w-full max-w-sm"
+              key="nickname"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center p-4"
             >
-              <div className="text-center mb-8">
-                <h1 className="text-4xl font-black text-white mb-2">
-                  infin<span className="text-inf-yellow">Arena</span>
-                </h1>
-                <p className="text-white/60">{t("live.pinCode")}: {pin}</p>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 shadow-2xl">
-                <form onSubmit={joinGame}>
-                  <input
-                    type="text"
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                    className="w-full text-center text-2xl font-bold text-gray-800 py-4 px-4 rounded-xl border-2 border-gray-200 focus:border-inf-red focus:outline-none transition-colors placeholder-gray-300"
-                    placeholder={t("play.yourNickname")}
-                    maxLength={20}
-                    autoFocus
-                  />
-
-                  {error && (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-inf-red text-sm mt-2 text-center font-medium"
-                    >
-                      {error}
-                    </motion.p>
-                  )}
-
-                  <motion.button
-                    type="submit"
-                    disabled={!nickname.trim()}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="w-full mt-4 bg-inf-red hover:bg-red-700 text-white font-bold py-4 rounded-xl text-xl disabled:opacity-50 transition-all"
-                  >
-                    {t("play.join")}
-                  </motion.button>
-                </form>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
-        
-        {phase === "lobby" && (
-          <motion.div
-            key="lobby"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="text-center"
-            >
-              {avatar && (
-                <motion.div
-                  animate={{ y: [0, -10, 0] }}
-                  transition={{ repeat: Infinity, duration: 2 }}
-                  className="text-7xl mb-4"
-                >
-                  {avatar}
-                </motion.div>
-              )}
-              <h2 className="text-3xl font-bold text-white mb-1">
-                {t("play.youAreIn")}
-              </h2>
-              <p className="text-white/80 text-lg font-medium mb-1">
-                {avatar && <span className="mr-1">{avatar}</span>}
-                {nickname}
-              </p>
-              <p className="text-white/60 text-xl mb-2">{quizTitle}</p>
-              <p className="text-white/40">
-                {t("play.waitingHost")}
-              </p>
-              <div className="mt-6 bg-white/10 rounded-full px-6 py-2 inline-block">
-                <span className="text-white/70">
-                  {t("play.playersJoined", { count: playerCount })}
-                </span>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
-        
-        {phase === "countdown" && (
-          <motion.div
-            key="countdown"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex items-center justify-center p-4"
-          >
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={countdownNumber}
-                initial={{ scale: 3, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.5, opacity: 0 }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-                className="text-center"
-              >
-                <div
-                  className={`text-[12rem] font-black leading-none ${
-                    countdownNumber === 3
-                      ? "text-inf-red"
-                      : countdownNumber === 2
-                      ? "text-inf-yellow"
-                      : "text-inf-green"
-                  }`}
-                >
-                  {countdownNumber}
-                </div>
-                <p className="text-white/60 text-xl mt-4">{t("play.getReady")}</p>
-              </motion.div>
-            </AnimatePresence>
-          </motion.div>
-        )}
-
-        
-        {phase === "question" && currentQuestion && (
-          <motion.div
-            key="question"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col p-2 md:p-4 overflow-x-hidden"
-          >
-            <div className="w-full max-w-5xl mx-auto min-w-0">
-            
-            <div className="flex items-center justify-between mb-3 md:mb-4">
-              <span className="text-white/60 text-sm">
-                {questionNumber}/{totalQuestions}
-              </span>
-              <motion.div
-                className={`w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center text-xl md:text-2xl font-black border-4 ${
-                  timeLeft > 10
-                    ? "border-green-400 text-green-400"
-                    : timeLeft > 5
-                    ? "border-yellow-400 text-yellow-400"
-                    : "border-red-400 text-red-400"
-                }`}
-                animate={timeLeft <= 5 ? { scale: [1, 1.15, 1] } : {}}
-                transition={{ repeat: Infinity, duration: 0.5 }}
-              >
-                {timeLeft}
-              </motion.div>
-              <div className="text-right">
-                <motion.span
-                  key={availablePoints}
-                  initial={{ scale: 1.2, color: "#facc15" }}
-                  animate={{ scale: 1, color: availablePoints > scoringRef.current.basePoints * 0.5 ? "#4ade80" : availablePoints > scoringRef.current.basePoints * 0.25 ? "#facc15" : "#f87171" }}
-                  className="text-sm font-bold block"
-                >
-                  {availablePoints} {t("play.pts")}
-                </motion.span>
-                {currentStreak >= 3 && (
-                  <div className="text-xs text-orange-400 font-bold">
-                    🔥 {currentStreak} {t("play.streak")}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            
-            <div className="w-full bg-white/10 rounded-full h-2 mb-4 md:mb-6">
-              <div
-                className="bg-inf-yellow h-2 rounded-full transition-none"
-                style={{ width: `${Math.max(0, Math.min(100, timeProgress))}%` }}
-              />
-            </div>
-
-            
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 md:p-6 mb-4 md:mb-6 text-center">
-              {currentQuestion.mediaUrl && (
-                <div className="flex justify-center mb-4 md:mb-6 bg-black/30 rounded-lg p-2 md:p-4">
-                  <img
-                    src={currentQuestion.mediaUrl}
-                    alt="Question media"
-                    className="max-w-full max-h-48 md:max-h-96 rounded-lg object-contain"
-                  />
-                </div>
-              )}
-              <h2 className="text-lg md:text-2xl font-bold text-white break-words whitespace-normal leading-snug">
-                {currentQuestion.questionText}
-              </h2>
-            </div>
-
-            {error && (
-              <p className="text-center text-sm text-inf-red mb-3">{error}</p>
-            )}
-
-            {isWaitingNextQuestion && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="w-full mb-4 rounded-xl border border-white/25 bg-white/10 px-4 py-4 text-center"
-              >
-                <p className="text-white/90 text-base md:text-lg font-semibold">
-                  {t("play.waitingNextQuestion")}
-                </p>
-              </motion.div>
-            )}
-
-            
-            {(currentQuestion.questionType === "multiple_choice" ||
-              currentQuestion.questionType === "true_false") && !isWaitingNextQuestion && (
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
-                {currentQuestion.choices.map((choice, i) => {
-                  const choiceId = Number(choice.id);
-                  const isSelected = selectedChoice === choiceId;
-                  const isDisabled =
-                    phase !== "question" ||
-                    timeLeft <= 0 ||
-                    isSubmittingAnswer ||
-                    didSubmit;
-                  
-                  return (
-                    <motion.button
-                      key={choice.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      whileHover={!isDisabled ? { scale: 1.02 } : {}}
-                      whileTap={!isDisabled ? { scale: 0.95 } : {}}
-                      onClick={() => {
-                        if (!isDisabled && Number.isInteger(choiceId)) {
-                          submitAnswer(choiceId);
-                        }
-                      }}
-                      disabled={isDisabled}
-                      className={`${ANSWER_BUTTON_BASE_CLASSES} ${getChoiceColor(i)} ${
-                        isSelected ? "ring-4 ring-white scale-105" : ""
-                      } ${isDisabled && !isSelected ? "opacity-50 cursor-not-allowed" : ""}`}
-                    >
-                      <span className="inline-flex h-8 w-8 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-lg bg-black/20 text-base md:text-lg font-black">
-                        {getChoiceSymbol(i)}
-                      </span>
-                      <span className="w-full break-words whitespace-normal leading-snug text-left">
-                        {choice.choiceText}
-                      </span>
-                    </motion.button>
-                  );
-                })}
-              </div>
-            )}
-
-            {currentQuestion.questionType === "multi_select" && !isWaitingNextQuestion && (
-              <div className="w-full">
-                <p className="text-center text-white/70 text-sm mb-3">
-                  {t("play.multiSelectInstruction")}
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 mb-4">
-                  {currentQuestion.choices.map((choice, i) => {
-                    const choiceId = Number(choice.id);
-                    const active = selectedChoices.includes(choiceId);
-                    const isDisabled =
-                      phase !== "question" ||
-                      timeLeft <= 0 ||
-                      isSubmittingAnswer ||
-                      didSubmit;
-                    return (
-                      <button
-                        type="button"
-                        key={choice.id}
-                        onClick={() => {
-                          if (!isDisabled && Number.isInteger(choiceId)) {
-                            selectMultiChoice(choiceId);
-                          }
-                        }}
-                        disabled={isDisabled}
-                        className={`${ANSWER_BUTTON_BASE_CLASSES} ${getChoiceColor(i)} ${
-                          active ? "ring-4 ring-white" : "opacity-90"
-                        } ${isDisabled && !active ? "cursor-not-allowed opacity-50" : ""}`}
-                      >
-                        <span className="inline-flex h-8 w-8 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-lg bg-black/20 text-base md:text-lg font-black">
-                          {getChoiceSymbol(i)}
-                        </span>
-                        <span className="w-full break-words whitespace-normal leading-snug text-left">
-                          {choice.choiceText}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                
-                <button
-                  type="button"
-                  onClick={() => submitAdvancedAnswer()}
-                  disabled={selectedChoices.length === 0 || timeLeft <= 0 || isSubmittingAnswer || didSubmit}
-                  className="w-full bg-inf-green hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors"
-                >
-                  {isSubmittingAnswer ? t("play.submit") + "..." : t("play.submit")}
-                </button>
-              </div>
-            )}
-
-            {currentQuestion.questionType === "ordering" && !isWaitingNextQuestion && (
-              <div className="w-full">
-                <p className="text-center text-white/70 text-sm mb-3">
-                  {t("play.orderingInstruction")}
-                </p>
-                <div className="space-y-2 w-full">
-                  {orderedChoices.map((choice, i) => {
-                    const colorClass = getStableChoiceColor(choice.choiceText);
-                    return (
-                      <div
-                        key={choice.id}
-                        className={`w-full min-w-0 rounded-xl p-3 flex items-center gap-3 ${colorClass} transition-all duration-200`}
-                      >
-                        <span className="text-sm font-bold text-white bg-black/25 rounded px-2 py-1 shrink-0">
-                          {i + 1}
-                        </span>
-                        <span className="text-white font-semibold flex-1 break-words whitespace-normal">
-                          {choice.choiceText}
-                        </span>
-                        <div className="flex gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => moveOrderedChoice(i, -1)}
-                            disabled={didSubmit || isSubmittingAnswer || timeLeft <= 0 || i === 0}
-                            className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveOrderedChoice(i, 1)}
-                            disabled={didSubmit || isSubmittingAnswer || timeLeft <= 0 || i === orderedChoices.length - 1}
-                            className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {!didSubmit && (
-                  <button
-                    type="button"
-                    onClick={() => submitAdvancedAnswer()}
-                    disabled={orderedChoices.length === 0 || timeLeft <= 0 || isSubmittingAnswer}
-                    className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
-                  >
-                    {t("play.submit")}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {currentQuestion.questionType === "text_input" && !isWaitingNextQuestion && (
-              <div className="max-w-xl mx-auto w-full">
-                <input
-                  type="text"
-                  value={textAnswer}
-                  onChange={(e) => setTextAnswer(e.target.value)}
-                  disabled={timeLeft <= 0 || isSubmittingAnswer}
-                  className="w-full text-center text-xl md:text-2xl font-bold text-gray-800 py-3 md:py-4 px-4 rounded-xl border-2 border-gray-200 focus:border-inf-red focus:outline-none"
-                  placeholder={t("play.textInputPlaceholder")}
-                />
-                <button
-                  type="button"
-                  onClick={() => submitAdvancedAnswer()}
-                  disabled={!textAnswer.trim() || timeLeft <= 0 || isSubmittingAnswer}
-                  className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
-                >
-                  {t("play.submit")}
-                </button>
-              </div>
-            )}
-            </div>
-          </motion.div>
-        )}
-
-        
-        {phase === "answered" && (
-          <motion.div
-            key="answered"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="text-center"
-            >
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                className="text-6xl mb-4 inline-block"
-              >
-                ⏳
-              </motion.div>
-              <h2 className="text-2xl font-bold text-white">
-                {t("play.answerSubmitted")}
-              </h2>
-              <p className="text-white/60 mt-2">
-                {t("play.waitingEveryone")}
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-
-        
-        {phase === "result" && (
-          <motion.div
-            key="result"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="text-center w-full max-w-lg"
-            >
-              {batchResult?.isCorrect ? (
-                <>
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 300 }}
-                    className="text-8xl mb-4"
-                  >
-                    🎉
-                  </motion.div>
-                  <h2 className="text-3xl font-black text-green-400 mb-2">
-                    {t("play.correct")}
-                  </h2>
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="text-5xl font-black text-white"
-                  >
-                    +{batchResult.pointsAwarded}
-                  </motion.div>
-
-                  
-                  {batchResult.streakBonus > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.5 }}
-                      className="text-orange-400 font-bold text-lg mt-2"
-                    >
-                      🔥 {t("play.streakBonus", { bonus: batchResult.streakBonus })}
-                    </motion.div>
-                  )}
-
-                  
-                  {batchResult.streak >= 3 && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 0.7, type: "spring" }}
-                      className="mt-3 inline-flex items-center gap-2 bg-orange-500/20 border border-orange-500/40 rounded-full px-4 py-2"
-                    >
-                      <span className="text-2xl animate-[streakFire_0.5s_ease-in-out_infinite]">
-                        🔥
-                      </span>
-                      <span className="text-orange-300 font-black text-xl">
-                        {batchResult.streak} {t("play.streak")}!
-                      </span>
-                    </motion.div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 300 }}
-                    className="text-8xl mb-4"
-                  >
-                    😢
-                  </motion.div>
-                  <h2 className="text-3xl font-black text-red-400 mb-2">
-                    {didSubmit ? t("play.wrong") : t("play.timesUp")}
-                  </h2>
-                  <p className="text-white/60 text-lg">
-                    {t("play.betterLuck")}
-                  </p>
-                </>
-              )}
-
-              
-              {batchResult && (
-                <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
-                  <p className="text-white/80 text-sm font-semibold mb-2">
-                    {t("play.yourAnswer")}:
-                  </p>
-                  {renderPlayerAnswerContent(batchResult.playerAnswer ?? null)}
-                </div>
-              )}
-
-              
-              {motivationalMsg && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 1 }}
-                  className="mt-4 text-inf-yellow font-semibold text-lg italic"
-                >
-                  {motivationalMsg}
-                </motion.div>
-              )}
-
-              <div className="mt-6 bg-white/10 rounded-full px-6 py-2 inline-block">
-                <span className="text-white font-bold">
-                  {t("play.total", { score: totalScore.toLocaleString() })}
-                </span>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
-        
-        {phase === "stats" && questionStats && currentQuestion && (
-          <motion.div
-            key="stats"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="w-full max-w-2xl"
-            >
-              <h2 className="text-2xl md:text-3xl font-bold text-white mb-4 text-center">
-                {t("play.answerDistribution")}
-              </h2>
-
-              
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 mb-6 text-center">
-                <p className="text-white text-lg font-semibold">
-                  {currentQuestion.questionText}
-                </p>
-              </div>
-
-              
-              <div className="space-y-3">
-                {questionStats.choiceSelections.map((selection, idx) => {
-                  const isCorrect = 
-                    selection.choiceId === questionStats.correctChoiceId ||
-                    (questionStats.correctChoiceIds && questionStats.correctChoiceIds.includes(selection.choiceId));
-                  const percentage = questionStats.totalPlayers > 0
-                    ? Math.round((selection.count / questionStats.totalPlayers) * 100)
-                    : 0;
-
-                  return (
-                    <motion.div
-                      key={selection.choiceId}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.1 }}
-                      className={`relative overflow-hidden rounded-xl border-2 ${
-                        isCorrect 
-                          ? "border-green-500 bg-green-500/20" 
-                          : "border-white/20 bg-white/5"
-                      }`}
-                    >
-                      
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${percentage}%` }}
-                        transition={{ duration: 0.8, delay: idx * 0.1 + 0.3 }}
-                        className={`absolute inset-y-0 left-0 ${
-                          isCorrect ? "bg-green-500/30" : "bg-white/10"
-                        }`}
-                      />
-
-                      
-                      <div className="relative flex items-center justify-between p-4">
-                        <div className="flex items-center gap-3 flex-1">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white ${
-                            getChoiceColor(idx).split(" ")[0]
-                          }`}>
-                            {String.fromCharCode(65 + idx)}
-                          </div>
-                          <span className="text-white font-medium flex-1">
-                            {selection.choiceText}
-                          </span>
-                          {isCorrect && (
-                            <span className="text-green-400 text-xl">✓</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-white/70 text-sm font-medium">
-                            {selection.count} {selection.count === 1 ? t("play.player") : t("play.players")}
-                          </span>
-                          <span className="text-white font-bold text-lg min-w-[3rem] text-right">
-                            {percentage}%
-                          </span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-
-              
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-                className="mt-6 grid grid-cols-3 gap-3"
+                className="w-full max-w-sm"
               >
-                <div className="bg-white/10 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-white">
-                    {questionStats.answeredCount}
-                  </div>
-                  <div className="text-white/60 text-sm">
-                    {t("play.answered")}
-                  </div>
+                <div className="text-center mb-8">
+                  <h1 className="text-4xl font-black text-white mb-2">
+                    infin<span className="text-inf-yellow">Arena</span>
+                  </h1>
+                  <p className="text-white/60">{t("live.pinCode")}: {pin}</p>
                 </div>
-                <div className="bg-green-500/20 border border-green-500/40 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-green-400">
-                    {questionStats.correctCount}
-                  </div>
-                  <div className="text-white/60 text-sm">
-                    {t("play.correct")}
-                  </div>
-                </div>
-                <div className="bg-white/10 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-white">
-                    {questionStats.totalPlayers}
-                  </div>
-                  <div className="text-white/60 text-sm">
-                    {t("play.totalPlayers")}
-                  </div>
+
+                <div className="bg-white rounded-2xl p-6 shadow-2xl">
+                  <form onSubmit={joinGame}>
+                    <input
+                      type="text"
+                      value={nickname}
+                      onChange={(e) => setNickname(e.target.value)}
+                      className="w-full text-center text-2xl font-bold text-gray-800 py-4 px-4 rounded-xl border-2 border-gray-200 focus:border-inf-red focus:outline-none transition-colors placeholder-gray-300"
+                      placeholder={t("play.yourNickname")}
+                      maxLength={20}
+                      autoFocus
+                    />
+
+                    {error && (
+                      <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-inf-red text-sm mt-2 text-center font-medium"
+                      >
+                        {error}
+                      </motion.p>
+                    )}
+
+                    <motion.button
+                      type="submit"
+                      disabled={!nickname.trim()}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="w-full mt-4 bg-inf-red hover:bg-red-700 text-white font-bold py-4 rounded-xl text-xl disabled:opacity-50 transition-all"
+                    >
+                      {t("play.join")}
+                    </motion.button>
+                  </form>
                 </div>
               </motion.div>
             </motion.div>
-          </motion.div>
-        )}
+          )}
 
-        
-        {phase === "leaderboard" && (
-          <motion.div
-            key="leaderboard"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex items-center justify-center p-4"
-          >
+
+          {phase === "lobby" && (
             <motion.div
+              key="lobby"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="w-full max-w-md text-center"
+              exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center p-4"
             >
-              <h2 className="text-2xl font-bold text-white mb-6">
-                {t("play.leaderboard")}
-              </h2>
-
-              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4">
-                {leaderboard.slice(0, 5).map((p, i) => (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center"
+              >
+                {avatar && (
                   <motion.div
-                    key={p.playerId}
-                    layout
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    className={`flex items-center justify-between p-3 rounded-lg mb-1 ${
-                      p.playerId === playerId
-                        ? "bg-inf-red/30 border border-inf-red"
-                        : ""
-                    }`}
+                    animate={{ y: [0, -10, 0] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                    className="text-7xl mb-4"
                   >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                          i === 0
-                            ? "bg-yellow-500 text-black"
-                            : i === 1
-                            ? "bg-gray-400 text-black"
-                            : i === 2
-                            ? "bg-amber-700 text-white"
-                            : "bg-white/20 text-white"
-                        }`}
-                      >
-                        {p.rank}
-                      </span>
-                      <span className="text-xl mr-1">{p.avatar}</span>
-                      <span className="text-white font-medium">
-                        {p.nickname}
-                        {p.playerId === playerId && ` ${t("play.youTag")}`}
-                      </span>
-                      {(p.streak || 0) >= 3 && (
-                        <span className="text-sm text-orange-400">
-                          🔥{p.streak}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-white font-bold">
-                      {p.totalScore.toLocaleString()}
-                    </span>
+                    {avatar}
                   </motion.div>
-                ))}
+                )}
+                <h2 className="text-3xl font-bold text-white mb-1">
+                  {t("play.youAreIn")}
+                </h2>
+                <p className="text-white/80 text-lg font-medium mb-1">
+                  {avatar && <span className="mr-1">{avatar}</span>}
+                  {nickname}
+                </p>
+                <p className="text-white/60 text-xl mb-2">{quizTitle}</p>
+                <p className="text-white/40">
+                  {t("play.waitingHost")}
+                </p>
+                <div className="mt-6 bg-white/10 rounded-full px-6 py-2 inline-block">
+                  <span className="text-white/70">
+                    {t("play.playersJoined", { count: playerCount })}
+                  </span>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
 
-                {myRank > 5 && (
-                  <div className="mt-2 p-3 bg-inf-red/20 rounded-lg border border-inf-red text-center">
-                    <span className="text-white">
-                      {t("play.yourRank", { rank: myRank })}
-                    </span>
+
+          {phase === "countdown" && (
+            <motion.div
+              key="countdown"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center p-4"
+            >
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={countdownNumber}
+                  initial={{ scale: 3, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.5, opacity: 0 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                  className="text-center"
+                >
+                  <div
+                    className={`text-[12rem] font-black leading-none ${countdownNumber === 3
+                        ? "text-inf-red"
+                        : countdownNumber === 2
+                          ? "text-inf-yellow"
+                          : "text-inf-green"
+                      }`}
+                  >
+                    {countdownNumber}
+                  </div>
+                  <p className="text-white/60 text-xl mt-4">{t("play.getReady")}</p>
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
+          )}
+
+
+          {phase === "question" && currentQuestion && (
+            <motion.div
+              key="question"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex flex-col p-2 md:p-4 overflow-x-hidden"
+            >
+              <div className="w-full max-w-5xl mx-auto min-w-0">
+
+                <div className="flex items-center justify-between mb-3 md:mb-4">
+                  <span className="text-white/60 text-sm">
+                    {questionNumber}/{totalQuestions}
+                  </span>
+                  <motion.div
+                    className={`w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center text-xl md:text-2xl font-black border-4 ${timeLeft > 10
+                        ? "border-green-400 text-green-400"
+                        : timeLeft > 5
+                          ? "border-yellow-400 text-yellow-400"
+                          : "border-red-400 text-red-400"
+                      }`}
+                    animate={timeLeft <= 5 ? { scale: [1, 1.15, 1] } : {}}
+                    transition={{ repeat: Infinity, duration: 0.5 }}
+                  >
+                    {timeLeft}
+                  </motion.div>
+                  <div className="text-right">
+                    <motion.span
+                      key={availablePoints}
+                      initial={{ scale: 1.2, color: "#facc15" }}
+                      animate={{ scale: 1, color: availablePoints > scoringRef.current.basePoints * 0.5 ? "#4ade80" : availablePoints > scoringRef.current.basePoints * 0.25 ? "#facc15" : "#f87171" }}
+                      className="text-sm font-bold block"
+                    >
+                      {availablePoints} {t("play.pts")}
+                    </motion.span>
+                    {currentStreak >= 3 && (
+                      <div className="text-xs text-orange-400 font-bold">
+                        🔥 {currentStreak} {t("play.streak")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+
+                <div className="w-full bg-white/10 rounded-full h-2 mb-4 md:mb-6">
+                  <div
+                    className="bg-inf-yellow h-2 rounded-full transition-none"
+                    style={{ width: `${Math.max(0, Math.min(100, timeProgress))}%` }}
+                  />
+                </div>
+
+
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 md:p-6 mb-4 md:mb-6 text-center">
+                  {currentQuestion.mediaUrl && (
+                    <div className="flex justify-center mb-4 md:mb-6 bg-black/30 rounded-lg p-2 md:p-4">
+                      <img
+                        src={currentQuestion.mediaUrl}
+                        alt="Question media"
+                        className="max-w-full max-h-48 md:max-h-96 rounded-lg object-contain"
+                      />
+                    </div>
+                  )}
+                  <h2 className="text-lg md:text-2xl font-bold text-white break-words whitespace-normal leading-snug">
+                    {currentQuestion.questionText}
+                  </h2>
+                </div>
+
+                {error && (
+                  <p className="text-center text-sm text-inf-red mb-3">{error}</p>
+                )}
+
+                {isWaitingNextQuestion && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="w-full mb-4 rounded-xl border border-white/25 bg-white/10 px-4 py-4 text-center"
+                  >
+                    <p className="text-white/90 text-base md:text-lg font-semibold">
+                      {t("play.waitingNextQuestion")}
+                    </p>
+                  </motion.div>
+                )}
+
+
+                {(currentQuestion.questionType === "multiple_choice" ||
+                  currentQuestion.questionType === "true_false") && !isWaitingNextQuestion && (
+                    <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
+                      {currentQuestion.choices.map((choice, i) => {
+                        const choiceId = Number(choice.id);
+                        const isSelected = selectedChoice === choiceId;
+                        const isDisabled =
+                          phase !== "question" ||
+                          timeLeft <= 0 ||
+                          isSubmittingAnswer ||
+                          didSubmit;
+
+                        return (
+                          <motion.button
+                            key={choice.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.1 }}
+                            whileHover={!isDisabled ? { scale: 1.02 } : {}}
+                            whileTap={!isDisabled ? { scale: 0.95 } : {}}
+                            onClick={() => {
+                              if (!isDisabled && Number.isInteger(choiceId)) {
+                                submitAnswer(choiceId);
+                              }
+                            }}
+                            disabled={isDisabled}
+                            className={`${ANSWER_BUTTON_BASE_CLASSES} ${getChoiceColor(i)} ${isSelected ? "ring-4 ring-white scale-105" : ""
+                              } ${isDisabled && !isSelected ? "opacity-50 cursor-not-allowed" : ""}`}
+                          >
+                            <span className="inline-flex h-8 w-8 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-lg bg-black/20 text-base md:text-lg font-black">
+                              {getChoiceSymbol(i)}
+                            </span>
+                            <span className="w-full break-words whitespace-normal leading-snug text-left">
+                              {choice.choiceText}
+                            </span>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                {currentQuestion.questionType === "multi_select" && !isWaitingNextQuestion && (
+                  <div className="w-full">
+                    <p className="text-center text-white/70 text-sm mb-3">
+                      {t("play.multiSelectInstruction")}
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 mb-4">
+                      {currentQuestion.choices.map((choice, i) => {
+                        const choiceId = Number(choice.id);
+                        const active = selectedChoices.includes(choiceId);
+                        const isDisabled =
+                          phase !== "question" ||
+                          timeLeft <= 0 ||
+                          isSubmittingAnswer ||
+                          didSubmit;
+                        return (
+                          <button
+                            type="button"
+                            key={choice.id}
+                            onClick={() => {
+                              if (!isDisabled && Number.isInteger(choiceId)) {
+                                selectMultiChoice(choiceId);
+                              }
+                            }}
+                            disabled={isDisabled}
+                            className={`${ANSWER_BUTTON_BASE_CLASSES} ${getChoiceColor(i)} ${active ? "ring-4 ring-white" : "opacity-90"
+                              } ${isDisabled && !active ? "cursor-not-allowed opacity-50" : ""}`}
+                          >
+                            <span className="inline-flex h-8 w-8 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-lg bg-black/20 text-base md:text-lg font-black">
+                              {getChoiceSymbol(i)}
+                            </span>
+                            <span className="w-full break-words whitespace-normal leading-snug text-left">
+                              {choice.choiceText}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => submitAdvancedAnswer()}
+                      disabled={selectedChoices.length === 0 || timeLeft <= 0 || isSubmittingAnswer || didSubmit}
+                      className="w-full bg-inf-green hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors"
+                    >
+                      {isSubmittingAnswer ? t("play.submit") + "..." : t("play.submit")}
+                    </button>
+                  </div>
+                )}
+
+                {currentQuestion.questionType === "ordering" && !isWaitingNextQuestion && (
+                  <div className="w-full">
+                    <p className="text-center text-white/70 text-sm mb-3">
+                      {t("play.orderingInstruction")}
+                    </p>
+                    <div className="space-y-2 w-full">
+                      {orderedChoices.map((choice, i) => {
+                        const colorClass = getStableChoiceColor(choice.choiceText);
+                        return (
+                          <div
+                            key={choice.id}
+                            className={`w-full min-w-0 rounded-xl p-3 flex items-center gap-3 ${colorClass} transition-all duration-200`}
+                          >
+                            <span className="text-sm font-bold text-white bg-black/25 rounded px-2 py-1 shrink-0">
+                              {i + 1}
+                            </span>
+                            <span className="text-white font-semibold flex-1 break-words whitespace-normal">
+                              {choice.choiceText}
+                            </span>
+                            <div className="flex gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => moveOrderedChoice(i, -1)}
+                                disabled={didSubmit || isSubmittingAnswer || timeLeft <= 0 || i === 0}
+                                className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveOrderedChoice(i, 1)}
+                                disabled={didSubmit || isSubmittingAnswer || timeLeft <= 0 || i === orderedChoices.length - 1}
+                                className="px-3 py-1 rounded font-bold text-white disabled:opacity-40 hover:bg-black/20 transition-colors bg-black/10"
+                              >
+                                ↓
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {!didSubmit && (
+                      <button
+                        type="button"
+                        onClick={() => submitAdvancedAnswer()}
+                        disabled={orderedChoices.length === 0 || timeLeft <= 0 || isSubmittingAnswer}
+                        className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
+                      >
+                        {t("play.submit")}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {currentQuestion.questionType === "text_input" && !isWaitingNextQuestion && (
+                  <div className="max-w-xl mx-auto w-full">
+                    <input
+                      type="text"
+                      value={textAnswer}
+                      onChange={(e) => setTextAnswer(e.target.value)}
+                      disabled={timeLeft <= 0 || isSubmittingAnswer}
+                      className="w-full text-center text-xl md:text-2xl font-bold text-gray-800 py-3 md:py-4 px-4 rounded-xl border-2 border-gray-200 focus:border-inf-red focus:outline-none"
+                      placeholder={t("play.textInputPlaceholder")}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => submitAdvancedAnswer()}
+                      disabled={!textAnswer.trim() || timeLeft <= 0 || isSubmittingAnswer}
+                      className="w-full mt-4 bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl disabled:opacity-50"
+                    >
+                      {t("play.submit")}
+                    </button>
                   </div>
                 )}
               </div>
+            </motion.div>
+          )}
 
-              
-              {batchResult && (
+
+          {phase === "answered" && (
+            <motion.div
+              key="answered"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center"
+              >
                 <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="mt-4 bg-white/10 border border-white/20 rounded-xl p-3 text-left"
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                  className="text-6xl mb-4 inline-block"
                 >
-                  <p className="text-white/70 text-xs font-medium mb-2">{t("play.yourAnswer")}</p>
-                  {renderPlayerAnswerContent(batchResult.playerAnswer ?? null)}
+                  ⏳
                 </motion.div>
-              )}
+                <h2 className="text-2xl font-bold text-white">
+                  {t("play.answerSubmitted")}
+                </h2>
+                <p className="text-white/60 mt-2">
+                  {t("play.waitingEveryone")}
+                </p>
+              </motion.div>
+            </motion.div>
+          )}
 
-              {batchResult?.correctAnswerText && batchResult.correctAnswerText.length > 0 && (
+
+          {phase === "result" && (
+            <motion.div
+              key="result"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center w-full max-w-lg"
+              >
+                {batchResult?.isCorrect ? (
+                  <>
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 300 }}
+                      className="text-8xl mb-4"
+                    >
+                      🎉
+                    </motion.div>
+                    <h2 className="text-3xl font-black text-green-400 mb-2">
+                      {t("play.correct")}
+                    </h2>
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                      className="text-5xl font-black text-white"
+                    >
+                      +{batchResult.pointsAwarded}
+                    </motion.div>
+
+
+                    {batchResult.streakBonus > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5 }}
+                        className="text-orange-400 font-bold text-lg mt-2"
+                      >
+                        🔥 {t("play.streakBonus", { bonus: batchResult.streakBonus })}
+                      </motion.div>
+                    )}
+
+
+                    {batchResult.streak >= 3 && (
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: 0.7, type: "spring" }}
+                        className="mt-3 inline-flex items-center gap-2 bg-orange-500/20 border border-orange-500/40 rounded-full px-4 py-2"
+                      >
+                        <span className="text-2xl animate-[streakFire_0.5s_ease-in-out_infinite]">
+                          🔥
+                        </span>
+                        <span className="text-orange-300 font-black text-xl">
+                          {batchResult.streak} {t("play.streak")}!
+                        </span>
+                      </motion.div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 300 }}
+                      className="text-8xl mb-4"
+                    >
+                      😢
+                    </motion.div>
+                    <h2 className="text-3xl font-black text-red-400 mb-2">
+                      {didSubmit ? t("play.wrong") : t("play.timesUp")}
+                    </h2>
+                    <p className="text-white/60 text-lg">
+                      {t("play.betterLuck")}
+                    </p>
+                  </>
+                )}
+
+
+                {batchResult && (
+                  <div className="mt-4 bg-white/10 rounded-lg p-4 text-left">
+                    <p className="text-white/80 text-sm font-semibold mb-2">
+                      {t("play.yourAnswer")}:
+                    </p>
+                    {renderPlayerAnswerContent(batchResult.playerAnswer ?? null)}
+                  </div>
+                )}
+
+
+                {motivationalMsg && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 1 }}
+                    className="mt-4 text-inf-yellow font-semibold text-lg italic"
+                  >
+                    {motivationalMsg}
+                  </motion.div>
+                )}
+
+                <div className="mt-6 bg-white/10 rounded-full px-6 py-2 inline-block">
+                  <span className="text-white font-bold">
+                    {t("play.total", { score: totalScore.toLocaleString() })}
+                  </span>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+
+
+          {phase === "stats" && questionStats && currentQuestion && (
+            <motion.div
+              key="stats"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="w-full max-w-2xl"
+              >
+                <h2 className="text-2xl md:text-3xl font-bold text-white mb-4 text-center">
+                  {t("play.answerDistribution")}
+                </h2>
+
+
+                <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 mb-6 text-center">
+                  <p className="text-white text-lg font-semibold">
+                    {currentQuestion.questionText}
+                  </p>
+                </div>
+
+
+                <div className="space-y-3">
+                  {questionStats.choiceSelections.map((selection, idx) => {
+                    const isCorrect =
+                      selection.choiceId === questionStats.correctChoiceId ||
+                      (questionStats.correctChoiceIds && questionStats.correctChoiceIds.includes(selection.choiceId));
+                    const percentage = questionStats.totalPlayers > 0
+                      ? Math.round((selection.count / questionStats.totalPlayers) * 100)
+                      : 0;
+
+                    return (
+                      <motion.div
+                        key={selection.choiceId}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className={`relative overflow-hidden rounded-xl border-2 ${isCorrect
+                            ? "border-green-500 bg-green-500/20"
+                            : "border-white/20 bg-white/5"
+                          }`}
+                      >
+
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${percentage}%` }}
+                          transition={{ duration: 0.8, delay: idx * 0.1 + 0.3 }}
+                          className={`absolute inset-y-0 left-0 ${isCorrect ? "bg-green-500/30" : "bg-white/10"
+                            }`}
+                        />
+
+
+                        <div className="relative flex items-center justify-between p-4">
+                          <div className="flex items-center gap-3 flex-1">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white ${getChoiceColor(idx).split(" ")[0]
+                              }`}>
+                              {String.fromCharCode(65 + idx)}
+                            </div>
+                            <span className="text-white font-medium flex-1">
+                              {selection.choiceText}
+                            </span>
+                            {isCorrect && (
+                              <span className="text-green-400 text-xl">✓</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-white/70 text-sm font-medium">
+                              {selection.count} {selection.count === 1 ? t("play.player") : t("play.players")}
+                            </span>
+                            <span className="text-white font-bold text-lg min-w-[3rem] text-right">
+                              {percentage}%
+                            </span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+
                 <motion.div
-                  initial={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.5 }}
-                  className="mt-4 bg-green-500/20 border border-green-500/40 rounded-xl p-3"
+                  className="mt-6 grid grid-cols-3 gap-3"
                 >
-                  <p className="text-green-400 text-xs font-medium mb-1">{t("play.correctAnswer")}</p>
-                  <p className="text-white font-bold text-sm">
-                    {batchResult.correctAnswerText.join(", ")}
-                  </p>
+                  <div className="bg-white/10 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-white">
+                      {questionStats.answeredCount}
+                    </div>
+                    <div className="text-white/60 text-sm">
+                      {t("play.answered")}
+                    </div>
+                  </div>
+                  <div className="bg-green-500/20 border border-green-500/40 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-green-400">
+                      {questionStats.correctCount}
+                    </div>
+                    <div className="text-white/60 text-sm">
+                      {t("play.correct")}
+                    </div>
+                  </div>
+                  <div className="bg-white/10 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-white">
+                      {questionStats.totalPlayers}
+                    </div>
+                    <div className="text-white/60 text-sm">
+                      {t("play.totalPlayers")}
+                    </div>
+                  </div>
                 </motion.div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-
-        
-        {phase === "ended" && (
-          <motion.div
-            key="ended"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="w-full max-w-md text-center"
-            >
-              <motion.h2
-                initial={{ y: -20 }}
-                animate={{ y: 0 }}
-                className="text-4xl font-black text-white mb-2"
-              >
-                {t("play.gameOver")}
-              </motion.h2>
-
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.3, type: "spring" }}
-                className="mb-6"
-              >
-                {myRank === 1 ? (
-                  <div className="text-7xl">🥇</div>
-                ) : myRank === 2 ? (
-                  <div className="text-7xl">🥈</div>
-                ) : myRank === 3 ? (
-                  <div className="text-7xl">🥉</div>
-                ) : (
-                  <div className="text-5xl">⭐</div>
-                )}
               </motion.div>
+            </motion.div>
+          )}
 
-              <p className="text-white/60 text-xl mb-1">{t("play.youFinished")}</p>
-              <p className="text-4xl font-black text-inf-yellow mb-2">
-                #{myRank}
-              </p>
-              <p className="text-white text-2xl font-bold">
-                {t("play.points", { score: totalScore.toLocaleString() })}
-              </p>
 
-              
-              {finalRankings.length >= 3 && (
-                <div className="flex items-end justify-center gap-3 mt-8 mb-6">
-                  
-                  <AnimatePresence>
-                    {podiumStep >= 1 && finalRankings[2] && (
-                      <motion.div
-                        initial={{ y: 100, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ type: "spring", stiffness: 200 }}
-                        className="text-center"
-                      >
-                        <div className="text-2xl mb-1">{finalRankings[2].avatar}</div>
-                        <div className="text-white text-xs font-bold mb-1 truncate max-w-[80px]">
-                          {finalRankings[2].nickname}
-                        </div>
-                        <div className="bg-amber-700 w-20 md:w-24 rounded-t-lg p-2 h-16 flex items-center justify-center">
-                          <div>
-                            <div className="text-lg font-black text-white">🥉</div>
-                            <div className="text-white/70 text-xs font-bold">
-                              {finalRankings[2].totalScore.toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+          {phase === "leaderboard" && (
+            <motion.div
+              key="leaderboard"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="w-full max-w-md text-center"
+              >
+                <h2 className="text-2xl font-bold text-white mb-6">
+                  {t("play.leaderboard")}
+                </h2>
 
-                  
-                  <AnimatePresence>
-                    {podiumStep >= 3 && finalRankings[0] && (
-                      <motion.div
-                        initial={{ y: 100, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ type: "spring", stiffness: 200 }}
-                        className="text-center"
-                        style={{
-                          background: podiumStep >= 3 ? "radial-gradient(circle at 50% 0%, rgba(251,182,21,0.3) 0%, transparent 70%)" : undefined,
-                          borderRadius: "1rem",
-                          padding: "0.5rem",
-                        }}
-                      >
-                        <div className="text-3xl mb-1">{finalRankings[0].avatar}</div>
-                        <div className="text-white text-xs font-bold mb-1 truncate max-w-[90px]">
-                          {finalRankings[0].nickname}
-                        </div>
-                        <div className="bg-yellow-500 w-24 md:w-28 rounded-t-lg p-2 h-28 flex items-center justify-center">
-                          <div>
-                            <div className="text-2xl font-black text-black">🥇</div>
-                            <div className="text-black/70 text-sm font-bold">
-                              {finalRankings[0].totalScore.toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  
-                  <AnimatePresence>
-                    {podiumStep >= 2 && finalRankings[1] && (
-                      <motion.div
-                        initial={{ y: 100, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ type: "spring", stiffness: 200 }}
-                        className="text-center"
-                      >
-                        <div className="text-2xl mb-1">{finalRankings[1].avatar}</div>
-                        <div className="text-white text-xs font-bold mb-1 truncate max-w-[80px]">
-                          {finalRankings[1].nickname}
-                        </div>
-                        <div className="bg-gray-400 w-20 md:w-24 rounded-t-lg p-2 h-20 flex items-center justify-center">
-                          <div>
-                            <div className="text-lg font-black text-black">🥈</div>
-                            <div className="text-black/70 text-xs font-bold">
-                              {finalRankings[1].totalScore.toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-
-              <div className="mt-4 bg-white/10 backdrop-blur-sm rounded-2xl p-4">
-                {finalRankings.slice(0, 5).map((p, i) => (
-                  <motion.div
-                    key={p.playerId}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 5 + i * 0.1 }}
-                    className={`flex items-center justify-between p-3 rounded-lg mb-1 ${
-                      p.playerId === playerId
-                        ? "bg-inf-red/30 border border-inf-red"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-white/60 font-bold w-6">
-                        {p.rank}
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4">
+                  {leaderboard.slice(0, 5).map((p, i) => (
+                    <motion.div
+                      key={p.playerId}
+                      layout
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      className={`flex items-center justify-between p-3 rounded-lg mb-1 ${p.playerId === playerId
+                          ? "bg-inf-red/30 border border-inf-red"
+                          : ""
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${i === 0
+                              ? "bg-yellow-500 text-black"
+                              : i === 1
+                                ? "bg-gray-400 text-black"
+                                : i === 2
+                                  ? "bg-amber-700 text-white"
+                                  : "bg-white/20 text-white"
+                            }`}
+                        >
+                          {p.rank}
+                        </span>
+                        <span className="text-xl mr-1">{p.avatar}</span>
+                        <span className="text-white font-medium">
+                          {p.nickname}
+                          {p.playerId === playerId && ` ${t("play.youTag")}`}
+                        </span>
+                        {(p.streak || 0) >= 3 && (
+                          <span className="text-sm text-orange-400">
+                            🔥{p.streak}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-white font-bold">
+                        {p.totalScore.toLocaleString()}
                       </span>
-                      <span className="text-xl">{p.avatar}</span>
-                      <span className="text-white font-medium">
-                        {p.nickname}
-                        {p.playerId === playerId && ` ${t("play.youTag")}`}
+                    </motion.div>
+                  ))}
+
+                  {myRank > 5 && (
+                    <div className="mt-2 p-3 bg-inf-red/20 rounded-lg border border-inf-red text-center">
+                      <span className="text-white">
+                        {t("play.yourRank", { rank: myRank })}
                       </span>
                     </div>
-                    <span className="text-white font-bold">
-                      {p.totalScore.toLocaleString()}
-                    </span>
+                  )}
+                </div>
+
+
+                {batchResult && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4 }}
+                    className="mt-4 bg-white/10 border border-white/20 rounded-xl p-3 text-left"
+                  >
+                    <p className="text-white/70 text-xs font-medium mb-2">{t("play.yourAnswer")}</p>
+                    {renderPlayerAnswerContent(batchResult.playerAnswer ?? null)}
                   </motion.div>
-                ))}
-              </div>
+                )}
+
+                {batchResult?.correctAnswerText && batchResult.correctAnswerText.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                    className="mt-4 bg-green-500/20 border border-green-500/40 rounded-xl p-3"
+                  >
+                    <p className="text-green-400 text-xs font-medium mb-1">{t("play.correctAnswer")}</p>
+                    <p className="text-white font-bold text-sm">
+                      {batchResult.correctAnswerText.join(", ")}
+                    </p>
+                  </motion.div>
+                )}
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+
+
+          {phase === "ended" && (
+            <motion.div
+              key="ended"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="w-full max-w-md text-center"
+              >
+                <motion.h2
+                  initial={{ y: -20 }}
+                  animate={{ y: 0 }}
+                  className="text-4xl font-black text-white mb-2"
+                >
+                  {t("play.gameOver")}
+                </motion.h2>
+
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.3, type: "spring" }}
+                  className="mb-6"
+                >
+                  {myRank === 1 ? (
+                    <div className="text-7xl">🥇</div>
+                  ) : myRank === 2 ? (
+                    <div className="text-7xl">🥈</div>
+                  ) : myRank === 3 ? (
+                    <div className="text-7xl">🥉</div>
+                  ) : (
+                    <div className="text-5xl">⭐</div>
+                  )}
+                </motion.div>
+
+                <p className="text-white/60 text-xl mb-1">{t("play.youFinished")}</p>
+                <p className="text-4xl font-black text-inf-yellow mb-2">
+                  #{myRank}
+                </p>
+                <p className="text-white text-2xl font-bold">
+                  {t("play.points", { score: totalScore.toLocaleString() })}
+                </p>
+
+
+                {finalRankings.length >= 3 && (
+                  <div className="flex items-end justify-center gap-3 mt-8 mb-6">
+
+                    <AnimatePresence>
+                      {podiumStep >= 1 && finalRankings[2] && (
+                        <motion.div
+                          initial={{ y: 100, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          transition={{ type: "spring", stiffness: 200 }}
+                          className="text-center"
+                        >
+                          <div className="text-2xl mb-1">{finalRankings[2].avatar}</div>
+                          <div className="text-white text-xs font-bold mb-1 truncate max-w-[80px]">
+                            {finalRankings[2].nickname}
+                          </div>
+                          <div className="bg-amber-700 w-20 md:w-24 rounded-t-lg p-2 h-16 flex items-center justify-center">
+                            <div>
+                              <div className="text-lg font-black text-white">🥉</div>
+                              <div className="text-white/70 text-xs font-bold">
+                                {finalRankings[2].totalScore.toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+
+                    <AnimatePresence>
+                      {podiumStep >= 3 && finalRankings[0] && (
+                        <motion.div
+                          initial={{ y: 100, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          transition={{ type: "spring", stiffness: 200 }}
+                          className="text-center"
+                          style={{
+                            background: podiumStep >= 3 ? "radial-gradient(circle at 50% 0%, rgba(251,182,21,0.3) 0%, transparent 70%)" : undefined,
+                            borderRadius: "1rem",
+                            padding: "0.5rem",
+                          }}
+                        >
+                          <div className="text-3xl mb-1">{finalRankings[0].avatar}</div>
+                          <div className="text-white text-xs font-bold mb-1 truncate max-w-[90px]">
+                            {finalRankings[0].nickname}
+                          </div>
+                          <div className="bg-yellow-500 w-24 md:w-28 rounded-t-lg p-2 h-28 flex items-center justify-center">
+                            <div>
+                              <div className="text-2xl font-black text-black">🥇</div>
+                              <div className="text-black/70 text-sm font-bold">
+                                {finalRankings[0].totalScore.toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+
+                    <AnimatePresence>
+                      {podiumStep >= 2 && finalRankings[1] && (
+                        <motion.div
+                          initial={{ y: 100, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          transition={{ type: "spring", stiffness: 200 }}
+                          className="text-center"
+                        >
+                          <div className="text-2xl mb-1">{finalRankings[1].avatar}</div>
+                          <div className="text-white text-xs font-bold mb-1 truncate max-w-[80px]">
+                            {finalRankings[1].nickname}
+                          </div>
+                          <div className="bg-gray-400 w-20 md:w-24 rounded-t-lg p-2 h-20 flex items-center justify-center">
+                            <div>
+                              <div className="text-lg font-black text-black">🥈</div>
+                              <div className="text-black/70 text-xs font-bold">
+                                {finalRankings[1].totalScore.toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                <div className="mt-4 bg-white/10 backdrop-blur-sm rounded-2xl p-4">
+                  {finalRankings.slice(0, 5).map((p, i) => (
+                    <motion.div
+                      key={p.playerId}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 5 + i * 0.1 }}
+                      className={`flex items-center justify-between p-3 rounded-lg mb-1 ${p.playerId === playerId
+                          ? "bg-inf-red/30 border border-inf-red"
+                          : ""
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-white/60 font-bold w-6">
+                          {p.rank}
+                        </span>
+                        <span className="text-xl">{p.avatar}</span>
+                        <span className="text-white font-medium">
+                          {p.nickname}
+                          {p.playerId === playerId && ` ${t("play.youTag")}`}
+                        </span>
+                      </div>
+                      <span className="text-white font-bold">
+                        {p.totalScore.toLocaleString()}
+                      </span>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

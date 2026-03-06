@@ -72,25 +72,25 @@ type LoadedQuestion = ActiveSession["questions"][number];
 
 type AnswerPreflightResult =
   | {
-      kind: "accepted";
-      normalizedChoiceId: number | null;
-      safeChoiceIds: number[];
-      safeOrderedChoiceIds: number[];
-      safeTextAnswer: string;
-    }
+    kind: "accepted";
+    normalizedChoiceId: number | null;
+    safeChoiceIds: number[];
+    safeOrderedChoiceIds: number[];
+    safeTextAnswer: string;
+  }
   | {
-      kind: "error";
-      error: SocketErrorPayload;
-    }
+    kind: "error";
+    error: SocketErrorPayload;
+  }
   | {
-      kind: "resync";
-      event: "game:question-start";
-      payload: ReturnType<typeof buildQuestionStartPayload>;
-    }
+    kind: "resync";
+    event: "game:question-start";
+    payload: ReturnType<typeof buildQuestionStartPayload>;
+  }
   | {
-      kind: "resync";
-      event: "game:time-up";
-    };
+    kind: "resync";
+    event: "game:time-up";
+  };
 
 type PlayerRejoinSnapshot = {
   phase: SessionPhase;
@@ -313,7 +313,8 @@ function buildPlayerRejoinSnapshot(
     };
   }
 
-  if (!session.timer) {
+  // Use authoritative phase instead of session.timer heuristic
+  if (session.currentPhase === "leaderboard") {
     return {
       phase: "leaderboard",
       phaseQuestionId,
@@ -321,8 +322,17 @@ function buildPlayerRejoinSnapshot(
     };
   }
 
+  if (session.currentPhase === "question") {
+    return {
+      phase: hasAcceptedAnswer(session, playerId) ? "answered" : "question",
+      phaseQuestionId,
+      phaseQuestionServerStartTime,
+    };
+  }
+
+  // Fallback: use the authoritative phase directly
   return {
-    phase: hasAcceptedAnswer(session, playerId) ? "answered" : "question",
+    phase: session.currentPhase,
     phaseQuestionId,
     phaseQuestionServerStartTime,
   };
@@ -553,18 +563,18 @@ function buildPlayerAnswerDisplay(
   const selectedIds =
     question.questionType === "multi_select"
       ? Array.from(
-          new Set(
-            [
-              ...answer.choiceIds.map((id) => Number(id)),
-              ...(Number.isInteger(answer.choiceId) ? [Number(answer.choiceId)] : []),
-            ].filter((id) => Number.isInteger(id))
-          )
+        new Set(
+          [
+            ...answer.choiceIds.map((id) => Number(id)),
+            ...(Number.isInteger(answer.choiceId) ? [Number(answer.choiceId)] : []),
+          ].filter((id) => Number.isInteger(id))
         )
+      )
       : [
-          Number.isInteger(answer.choiceId)
-            ? Number(answer.choiceId)
-            : Number(answer.choiceIds[0]),
-        ].filter((id) => Number.isInteger(id));
+        Number.isInteger(answer.choiceId)
+          ? Number(answer.choiceId)
+          : Number(answer.choiceIds[0]),
+      ].filter((id) => Number.isInteger(id));
 
   const selectedTexts = selectedIds
     .map((choiceId) => question.choices.find((c) => Number(c.id) === choiceId)?.choiceText)
@@ -602,8 +612,8 @@ function buildCorrectAnswerText(question: {
     question.correctChoiceIds.length > 0
       ? question.correctChoiceIds
       : Number.isInteger(question.correctChoiceId) && question.correctChoiceId > 0
-      ? [question.correctChoiceId]
-      : [];
+        ? [question.correctChoiceId]
+        : [];
 
   if (normalizedCorrectIds.length === 0) {
     return [];
@@ -926,7 +936,7 @@ async function recoverActiveSessionIfPossible(
         : recovered.questionStartTime;
     recovered.phaseDeadlineAt =
       sessionMeta?.phaseDeadlineAt === null ||
-      sessionMeta?.phaseDeadlineAt === undefined
+        sessionMeta?.phaseDeadlineAt === undefined
         ? null
         : Number(sessionMeta.phaseDeadlineAt);
     recovered.totalParticipants = await getTotalParticipantCount(sessionId);
@@ -1258,6 +1268,13 @@ async function processPlayerAnswer(
     acceptedAnswerCommitted = true;
     io.to(socketId).emit("game:answer-ack", {
       received: true,
+      sync: buildSessionSyncMeta(session),
+    });
+
+    // Broadcast answer progress to entire room for real-time tracking
+    io.to(`session:${session.sessionId}`).emit("game:answer-progress", {
+      answeredCount: session.pendingAnswers.size,
+      totalParticipants: session.totalParticipants,
       sync: buildSessionSyncMeta(session),
     });
 
@@ -2148,6 +2165,8 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
 
 async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   if (!session) return;
+  // Idempotent: only process if we're still in question phase
+  if (session.currentPhase !== "question") return;
 
   const currentQ = getCurrentQuestion(session);
   if (!currentQ) return;
@@ -2445,18 +2464,20 @@ async function endQuiz(io: TypedServer, sessionId: number) {
 /**
  * Called by the distributed timer worker when a Redis timer expires.
  * Acts as a fallback — if the in-process setTimeout already fired,
- * handleTimeUp is a no-op (session.timer === null, question already advanced).
+ * handleTimeUp is idempotent (phase already advanced past "question").
  */
 export function handleTimerExpiry(sessionId: number): void {
   if (!_io) return;
   const session = getActiveSession(sessionId);
   if (!session) return;
 
-  // If the in-process timer already fired, session.timer is null → skip
-  if (!session.timer) return;
+  // Idempotent: skip if already past question phase
+  if (session.currentPhase !== "question") return;
 
-  clearTimeout(session.timer);
-  session.timer = null;
+  if (session.timer) {
+    clearTimeout(session.timer);
+    session.timer = null;
+  }
 
   logger.socket.info(`Distributed timer fired for session ${sessionId} (in-process timer was stale)`);
   handleTimeUp(_io, session);
