@@ -242,38 +242,34 @@ export async function redisSyncStreak(
   sessionId: number,
   playerId: number,
   streak: number
-): Promise<void> {
-  if (!isRedisEnabled()) return;
+): Promise<boolean> {
+  if (!isRedisEnabled()) return true;
   try {
     const client = await getRedisClient();
     await client.hset(KEY.streaks(sessionId), String(playerId), String(streak));
+    return true;
   } catch (err) {
     log.warn("Failed to sync streak to Redis", err);
+    return false;
   }
 }
 
-// ---------- Answered Players ----------
-
-export async function redisSyncAnswered(
-  sessionId: number,
-  playerId: number
-): Promise<void> {
-  if (!isRedisEnabled()) return;
+export async function redisGetStreaks(sessionId: number): Promise<Map<number, number>> {
+  if (!isRedisEnabled()) return new Map();
   try {
     const client = await getRedisClient();
-    await client.sadd(KEY.answered(sessionId), String(playerId));
+    const raw = await client.hgetall(KEY.streaks(sessionId));
+    return new Map(
+      Object.entries(raw)
+        .map(([playerId, streak]) => [Number(playerId), Number(streak)] as const)
+        .filter(
+          ([playerId, streak]) =>
+            Number.isInteger(playerId) && playerId > 0 && Number.isInteger(streak)
+        )
+    );
   } catch (err) {
-    log.warn("Failed to sync answered player to Redis", err);
-  }
-}
-
-export async function redisClearAnswered(sessionId: number): Promise<void> {
-  if (!isRedisEnabled()) return;
-  try {
-    const client = await getRedisClient();
-    await client.del(KEY.answered(sessionId), KEY.choices(sessionId), KEY.pending(sessionId));
-  } catch (err) {
-    log.warn("Failed to clear answered data from Redis", err);
+    log.warn("Failed to read streaks from Redis", err);
+    return new Map();
   }
 }
 
@@ -283,13 +279,36 @@ export async function redisSyncChoiceCount(
   sessionId: number,
   choiceId: number,
   count: number
-): Promise<void> {
-  if (!isRedisEnabled()) return;
+): Promise<boolean> {
+  if (!isRedisEnabled()) return true;
   try {
     const client = await getRedisClient();
     await client.hset(KEY.choices(sessionId), String(choiceId), String(count));
+    return true;
   } catch (err) {
     log.warn("Failed to sync choice count to Redis", err);
+    return false;
+  }
+}
+
+export async function redisGetChoiceCounts(
+  sessionId: number
+): Promise<Record<number, number>> {
+  if (!isRedisEnabled()) return {};
+  try {
+    const client = await getRedisClient();
+    const raw = await client.hgetall(KEY.choices(sessionId));
+    return Object.fromEntries(
+      Object.entries(raw)
+        .map(([choiceId, count]) => [Number(choiceId), Number(count)] as const)
+        .filter(
+          ([choiceId, count]) =>
+            Number.isInteger(choiceId) && choiceId > 0 && Number.isInteger(count)
+        )
+    );
+  } catch (err) {
+    log.warn("Failed to read choice counts from Redis", err);
+    return {};
   }
 }
 
@@ -299,13 +318,55 @@ export async function redisSyncPendingAnswer(
   sessionId: number,
   playerId: number,
   answer: PlayerAnswer
-): Promise<void> {
-  if (!isRedisEnabled()) return;
+): Promise<boolean> {
+  if (!isRedisEnabled()) return true;
   try {
     const client = await getRedisClient();
     await client.hset(KEY.pending(sessionId), String(playerId), JSON.stringify(answer));
+    return true;
   } catch (err) {
     log.warn("Failed to sync pending answer to Redis", err);
+    return false;
+  }
+}
+
+export async function redisGetPendingAnswers(
+  sessionId: number
+): Promise<Map<number, PlayerAnswer>> {
+  if (!isRedisEnabled()) return new Map();
+  try {
+    const client = await getRedisClient();
+    const raw = await client.hgetall(KEY.pending(sessionId));
+    return new Map(
+      Object.entries(raw)
+        .map(([playerId, answer]) => {
+          try {
+            const parsedPlayerId = Number(playerId);
+            if (!Number.isInteger(parsedPlayerId) || parsedPlayerId <= 0) {
+              return null;
+            }
+            return [parsedPlayerId, JSON.parse(answer) as PlayerAnswer] as const;
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (entry): entry is readonly [number, PlayerAnswer] => entry !== null
+        )
+    );
+  } catch (err) {
+    log.warn("Failed to read pending answers from Redis", err);
+    return new Map();
+  }
+}
+
+export async function redisClearQuestionState(sessionId: number): Promise<void> {
+  if (!isRedisEnabled()) return;
+  try {
+    const client = await getRedisClient();
+    await client.del(KEY.answered(sessionId), KEY.choices(sessionId), KEY.pending(sessionId));
+  } catch (err) {
+    log.warn("Failed to clear question state from Redis", err);
   }
 }
 

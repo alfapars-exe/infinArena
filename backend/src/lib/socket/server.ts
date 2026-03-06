@@ -37,8 +37,10 @@ import {
 } from "./session-manager";
 import {
   redisSyncStreak,
-  redisSyncAnswered,
-  redisClearAnswered,
+  redisGetChoiceCounts,
+  redisGetPendingAnswers,
+  redisGetStreaks,
+  redisClearQuestionState,
   redisSyncChoiceCount,
   redisSyncPendingAnswer,
   redisGetSessionMeta,
@@ -231,6 +233,28 @@ function createSocketErrorPayload(
   return code ? { message, code } : { message };
 }
 
+function hasAcceptedAnswer(session: ActiveSession, playerId: number): boolean {
+  return session.pendingAnswers.has(playerId);
+}
+
+function isAnswerProcessing(session: ActiveSession, playerId: number): boolean {
+  return session.processingPlayerIds.has(playerId);
+}
+
+function resetQuestionRuntimeState(session: ActiveSession): void {
+  session.answeredPlayerIds.clear();
+  session.processingPlayerIds.clear();
+  session.choiceCounts = {};
+  session.pendingAnswers.clear();
+}
+
+function syncAnsweredPlayersFromPendingAnswers(session: ActiveSession): void {
+  session.answeredPlayerIds.clear();
+  for (const playerId of session.pendingAnswers.keys()) {
+    session.answeredPlayerIds.add(playerId);
+  }
+}
+
 function emitSocketError(
   io: Pick<TypedServer, "to">,
   socketId: string,
@@ -314,7 +338,7 @@ function preflightPlayerAnswerSubmission(
     };
   }
 
-  if (session.answeredPlayerIds.has(playerId)) {
+  if (hasAcceptedAnswer(session, playerId) || isAnswerProcessing(session, playerId)) {
     return {
       kind: "error",
       error: createSocketErrorPayload(
@@ -591,6 +615,42 @@ async function getLiveConnectedPlayerCount(
   ).length;
 }
 
+async function getTotalParticipantCount(sessionId: number): Promise<number> {
+  const allPlayers = await db
+    .select({ id: players.id })
+    .from(players)
+    .where(eq(players.sessionId, sessionId));
+
+  return allPlayers.length;
+}
+
+async function syncPendingAnswerWithRetry(
+  sessionId: number,
+  playerId: number,
+  answer: ActiveSession["pendingAnswers"] extends Map<number, infer TValue> ? TValue : never,
+  retries = 3
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const synced = await redisSyncPendingAnswer(sessionId, playerId, answer);
+    if (synced) {
+      return true;
+    }
+    if (attempt < retries) {
+      await sleep(100);
+    }
+  }
+  return false;
+}
+
+function applyChoiceCountDeltas(
+  session: ActiveSession,
+  deltas: Map<number, number>
+): void {
+  for (const [choiceId, increment] of deltas) {
+    session.choiceCounts[choiceId] = (session.choiceCounts[choiceId] || 0) + increment;
+  }
+}
+
 const sessionRecoveryLocks = new Map<number, Promise<ActiveSession | undefined>>();
 
 async function loadQuestionsWithChoices(
@@ -677,15 +737,34 @@ async function recoverActiveSessionIfPossible(
       sessionMeta && sessionMeta.questionStartTime > 0
         ? sessionMeta.questionStartTime
         : Date.now();
+    recovered.totalParticipants = await getTotalParticipantCount(sessionId);
+    recovered.pendingAnswers = await redisGetPendingAnswers(sessionId);
+    recovered.choiceCounts = await redisGetChoiceCounts(sessionId);
+    recovered.playerStreaks = await redisGetStreaks(sessionId);
+    syncAnsweredPlayersFromPendingAnswers(recovered);
 
     recovered.totalConnectedPlayers = await getLiveConnectedPlayerCount(
       io,
       sessionId
     );
+    logger.socket.info(
+      `Recovered active session ${sessionId} (questionIndex=${recovered.currentQuestionIndex}, totalParticipants=${recovered.totalParticipants}, recoveredPendingAnswerCount=${recovered.pendingAnswers.size}, recoveredChoiceCountEntries=${Object.keys(recovered.choiceCounts).length})`
+    );
     syncSessionMeta(recovered);
 
     const currentQuestion = getCurrentQuestion(recovered);
     if (currentQuestion) {
+      if (
+        recovered.totalParticipants > 0 &&
+        recovered.pendingAnswers.size >= recovered.totalParticipants
+      ) {
+        logger.socket.info(
+          `Recovered session ${sessionId} already has all accepted answers (${recovered.pendingAnswers.size}/${recovered.totalParticipants}); completing question immediately`
+        );
+        await handleTimeUp(io, recovered);
+        return recovered;
+      }
+
       const elapsedMs = Math.max(0, Date.now() - recovered.questionStartTime);
       const remainingMs = currentQuestion.timeLimitSeconds * 1000 - elapsedMs;
       if (remainingMs > 0) {
@@ -698,9 +777,6 @@ async function recoverActiveSessionIfPossible(
       }
     }
 
-    logger.socket.warn(
-      `Recovered active session ${sessionId} (questionIndex=${recovered.currentQuestionIndex})`
-    );
     return recovered;
   })();
 
@@ -747,6 +823,7 @@ async function processPlayerAnswer(
   const { questionId } = answer;
 
   let session: ActiveSession | undefined;
+  let acceptedAnswerCommitted = false;
   try {
     session = getActiveSession(playerInfo.sessionId);
     if (!session) {
@@ -762,6 +839,9 @@ async function processPlayerAnswer(
         )
       );
       return;
+    }
+    if (session.totalParticipants <= 0) {
+      session.totalParticipants = await getTotalParticipantCount(session.sessionId);
     }
 
     const currentQ = getCurrentQuestion(session);
@@ -790,15 +870,7 @@ async function processPlayerAnswer(
     }
 
     socketEventsReceivedCounter.inc({ event_name: "player:answer" });
-    const rollbackAnsweredPlayer = (errorPayload?: SocketErrorPayload) => {
-      session?.answeredPlayerIds.delete(playerInfo.playerId);
-      if (errorPayload) {
-        emitSocketError(io, socketId, errorPayload);
-      }
-    };
-
-    session.answeredPlayerIds.add(playerInfo.playerId);
-    redisSyncAnswered(session.sessionId, playerInfo.playerId);
+    session.processingPlayerIds.add(playerInfo.playerId);
 
     const currentQuestion = currentQ as LoadedQuestion;
     const serverResponseTime = Date.now() - session.questionStartTime;
@@ -816,13 +888,16 @@ async function processPlayerAnswer(
     let isCorrect = false;
     let persistedChoiceId: number | null = null;
     let partialRatio = 1;
+    const choiceCountDeltas = new Map<number, number>();
 
     if (
       currentQuestion.questionType === "multiple_choice" ||
       currentQuestion.questionType === "true_false"
     ) {
       if (normalizedChoiceId === null) {
-        rollbackAnsweredPlayer(
+        emitSocketError(
+          io,
+          socketId,
           createSocketErrorPayload(
             ANSWER_ERROR_MESSAGES.choiceRequired,
             "answer_validation_failed"
@@ -834,26 +909,23 @@ async function processPlayerAnswer(
       persistedChoiceId = normalizedChoiceId;
       isCorrect = normalizedChoiceId === normalizedCorrectId;
 
-      logger.socket.info(`[SCORING] Q${questionId}: Player selected=${normalizedChoiceId} (type: ${typeof normalizedChoiceId}), Correct=${normalizedCorrectId} (type: ${typeof currentQuestion.correctChoiceId}), isCorrect=${isCorrect}, ChoiceIds in Q: ${currentQuestion.choices.map(c => c.id).join(',')}`);
-
-      session.choiceCounts[normalizedChoiceId] = (session.choiceCounts[normalizedChoiceId] || 0) + 1;
-      redisSyncChoiceCount(session.sessionId, normalizedChoiceId, session.choiceCounts[normalizedChoiceId]);
+      logger.socket.info(`[SCORING] Q${questionId}: Player selected=${normalizedChoiceId} (type: ${typeof normalizedChoiceId}), Correct=${normalizedCorrectId} (type: ${typeof currentQuestion.correctChoiceId}), isCorrect=${isCorrect}, ChoiceIds in Q: ${currentQuestion.choices.map(c => c.id).join(",")}`);
+      choiceCountDeltas.set(normalizedChoiceId, 1);
     } else if (currentQuestion.questionType === "multi_select") {
       persistedChoiceId = safeChoiceIds[0] || null;
-      const correctSet = new Set(currentQuestion.correctChoiceIds.map(id => Number(id)));
-      const selectedIds = safeChoiceIds.map(id => Number(id));
+      const correctSet = new Set(currentQuestion.correctChoiceIds.map((id) => Number(id)));
+      const selectedIds = safeChoiceIds.map((id) => Number(id));
       const selectedCorrect = selectedIds.filter((id) => correctSet.has(id)).length;
       const selectedWrong = selectedIds.filter((id) => !correctSet.has(id)).length;
       isCorrect = selectedCorrect > 0 && selectedWrong === 0;
       partialRatio = isCorrect ? selectedCorrect / correctSet.size : 0;
       for (const id of selectedIds) {
-        session.choiceCounts[id] = (session.choiceCounts[id] || 0) + 1;
-        redisSyncChoiceCount(session.sessionId, id, session.choiceCounts[id]);
+        choiceCountDeltas.set(id, (choiceCountDeltas.get(id) || 0) + 1);
       }
     } else if (currentQuestion.questionType === "ordering") {
       persistedChoiceId = safeOrderedChoiceIds[0] || null;
-      const normalizedOrdered = safeOrderedChoiceIds.map(id => Number(id));
-      const normalizedCorrectOrder = currentQuestion.correctOrderChoiceIds.map(id => Number(id));
+      const normalizedOrdered = safeOrderedChoiceIds.map((id) => Number(id));
+      const normalizedCorrectOrder = currentQuestion.correctOrderChoiceIds.map((id) => Number(id));
       isCorrect = normalizedOrdered.every(
         (id, idx) => id === normalizedCorrectOrder[idx]
       );
@@ -868,14 +940,13 @@ async function processPlayerAnswer(
 
     gameAnswersCounter.inc({ is_correct: String(isCorrect) });
 
-    let currentStreak = session.playerStreaks.get(playerInfo.playerId) || 0;
+    const previousStreak = session.playerStreaks.get(playerInfo.playerId) || 0;
+    let currentStreak = previousStreak;
     if (isCorrect) {
       currentStreak++;
     } else {
       currentStreak = 0;
     }
-    session.playerStreaks.set(playerInfo.playerId, currentStreak);
-    redisSyncStreak(session.sessionId, playerInfo.playerId, currentStreak);
 
     let points = calculateScore(
       {
@@ -899,6 +970,29 @@ async function processPlayerAnswer(
     }
     points += streakBonus;
 
+    const [player] = await db
+      .select()
+      .from(players)
+      .where(
+        and(
+          eq(players.id, playerInfo.playerId),
+          eq(players.sessionId, playerInfo.sessionId)
+        )
+      );
+
+    if (!player) {
+      emitSocketError(
+        io,
+        socketId,
+        createSocketErrorPayload(
+          ANSWER_ERROR_MESSAGES.playerNotFound,
+          "answer_session_unavailable"
+        )
+      );
+      return;
+    }
+
+    const newTotal = player.totalScore + points;
     const queued = await queueAnswer({
       playerId: playerInfo.playerId,
       questionId,
@@ -923,27 +1017,6 @@ async function processPlayerAnswer(
       });
     }
 
-    const [player] = await db
-      .select()
-      .from(players)
-      .where(
-        and(
-          eq(players.id, playerInfo.playerId),
-          eq(players.sessionId, playerInfo.sessionId)
-        )
-      );
-
-    if (!player) {
-      rollbackAnsweredPlayer(
-        createSocketErrorPayload(
-          ANSWER_ERROR_MESSAGES.playerNotFound,
-          "answer_session_unavailable"
-        )
-      );
-      return;
-    }
-
-    const newTotal = player.totalScore + points;
     await db
       .update(players)
       .set({ totalScore: newTotal })
@@ -964,15 +1037,36 @@ async function processPlayerAnswer(
       responseTimeMs: actualResponseTime,
     };
     session.pendingAnswers.set(playerInfo.playerId, pendingAnswer);
-    redisSyncPendingAnswer(session.sessionId, playerInfo.playerId, pendingAnswer);
+    syncAnsweredPlayersFromPendingAnswers(session);
 
-    io.to(socketId).emit("game:answer-ack", { received: true });
-    session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
-      io,
-      session.sessionId
+    const pendingAnswerSynced = await syncPendingAnswerWithRetry(
+      session.sessionId,
+      playerInfo.playerId,
+      pendingAnswer
     );
+    if (!pendingAnswerSynced && isRedisEnabled()) {
+      logger.socket.warn(
+        `Accepted answer sync degraded (session=${session.sessionId}, player=${playerInfo.playerId}, question=${questionId})`
+      );
+    }
 
-    if (session.answeredPlayerIds.size >= session.totalConnectedPlayers) {
+    applyChoiceCountDeltas(session, choiceCountDeltas);
+    session.playerStreaks.set(playerInfo.playerId, currentStreak);
+    void redisSyncStreak(session.sessionId, playerInfo.playerId, currentStreak);
+    for (const [choiceId, count] of Object.entries(session.choiceCounts)) {
+      void redisSyncChoiceCount(session.sessionId, Number(choiceId), count);
+    }
+
+    acceptedAnswerCommitted = true;
+    io.to(socketId).emit("game:answer-ack", { received: true });
+
+    if (
+      session.totalParticipants > 0 &&
+      session.pendingAnswers.size >= session.totalParticipants
+    ) {
+      logger.socket.info(
+        `Question ${questionId} ending early for session ${session.sessionId} (${session.pendingAnswers.size}/${session.totalParticipants} accepted answers)`
+      );
       if (session.timer) {
         clearTimeout(session.timer);
         session.timer = null;
@@ -981,18 +1075,23 @@ async function processPlayerAnswer(
       await handleTimeUp(io, session);
     }
   } catch (err) {
-    if (session) {
-      session.answeredPlayerIds.delete(playerInfo.playerId);
+    if (session && !acceptedAnswerCommitted) {
+      session.pendingAnswers.delete(playerInfo.playerId);
+      syncAnsweredPlayersFromPendingAnswers(session);
     }
     logger.socket.error("player:answer error", err);
-    emitSocketError(
-      io,
-      socketId,
-      createSocketErrorPayload(
-        ANSWER_ERROR_MESSAGES.processingFailed,
-        "answer_processing_failed"
-      )
-    );
+    if (!acceptedAnswerCommitted) {
+      emitSocketError(
+        io,
+        socketId,
+        createSocketErrorPayload(
+          ANSWER_ERROR_MESSAGES.processingFailed,
+          "answer_processing_failed"
+        )
+      );
+    }
+  } finally {
+    session?.processingPlayerIds.delete(playerInfo.playerId);
   }
 }
 
@@ -1459,7 +1558,7 @@ export function setupSocketHandlers(io: TypedServer) {
         } else if (dbSession.status === "in_progress") {
           if (session && getCurrentQuestion(session)) {
             phase = session.timer
-              ? session.answeredPlayerIds.has(player.id)
+              ? hasAcceptedAnswer(session, player.id)
                 ? "answered"
                 : "question"
               : "leaderboard";
@@ -1593,6 +1692,7 @@ export function setupSocketHandlers(io: TypedServer) {
           socket.id,
           questionsWithChoices
         );
+        activeSession.totalParticipants = await getTotalParticipantCount(sessionId);
         activeSession.totalConnectedPlayers = await getLiveConnectedPlayerCount(
           io,
           sessionId
@@ -1604,7 +1704,7 @@ export function setupSocketHandlers(io: TypedServer) {
           .where(eq(quizSessions.id, sessionId));
 
         gameSessionsGauge.inc();
-        gamePlayersGauge.inc(activeSession.totalConnectedPlayers);
+        gamePlayersGauge.inc(activeSession.totalParticipants);
         logger.socket.info(`Quiz started for session ${sessionId} with ${questionsWithChoices.length} questions`);
 
         for (let i = 3; i >= 1; i--) {
@@ -1715,16 +1815,6 @@ export function setupSocketHandlers(io: TypedServer) {
               io,
               playerInfo.sessionId
             );
-            if (
-              session.timer &&
-              session.answeredPlayerIds.size > 0 &&
-              session.answeredPlayerIds.size >= session.totalConnectedPlayers
-            ) {
-              clearTimeout(session.timer);
-              session.timer = null;
-              cancelTimer(session.sessionId);
-              await handleTimeUp(io, session);
-            }
           }
 
           if (player) {
@@ -1767,10 +1857,8 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
   cancelTimer(session.sessionId);
 
   session.currentQuestionIndex++;
-  session.answeredPlayerIds.clear();
-  session.choiceCounts = {};
-  session.pendingAnswers.clear();
-  redisClearAnswered(session.sessionId);
+  resetQuestionRuntimeState(session);
+  await redisClearQuestionState(session.sessionId);
 
   if (session.currentQuestionIndex >= session.questions.length) {
     await endQuiz(io, session.sessionId);
@@ -1778,6 +1866,9 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
   }
 
   const question = session.questions[session.currentQuestionIndex];
+  if (session.totalParticipants <= 0) {
+    session.totalParticipants = await getTotalParticipantCount(session.sessionId);
+  }
   session.questionStartTime = Date.now();
   syncSessionMeta(session);
 
@@ -1836,6 +1927,13 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   }
   cancelTimer(session.sessionId);
 
+  const earlyFinish =
+    session.totalParticipants > 0 &&
+    session.pendingAnswers.size >= session.totalParticipants;
+  logger.socket.info(
+    `Question ${currentQ.id} completed for session ${session.sessionId} (${session.pendingAnswers.size}/${session.totalParticipants || 0} accepted answers, reason=${earlyFinish ? "all_participants_answered" : "timer_elapsed"})`
+  );
+
   io.to(`session:${session.sessionId}`).emit("game:time-up");
 
   const allPlayersInSession = await db
@@ -1884,7 +1982,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     const targetSocketId =
       roomSocketByPlayerId.get(p.id) ||
       (p.socketId && io.sockets.sockets.has(p.socketId) ? p.socketId : null);
-    if (!session.answeredPlayerIds.has(p.id) && targetSocketId) {
+    if (!session.pendingAnswers.has(p.id) && targetSocketId) {
       io.to(targetSocketId).emit("game:batch-results", {
         questionId: currentQ.id,
         isCorrect: false,
@@ -2101,7 +2199,11 @@ export function handleTimerExpiry(sessionId: number): void {
 }
 
 export const __test__ = {
+  applyChoiceCountDeltas,
   createSocketErrorPayload,
+  hasAcceptedAnswer,
   normalizeLoadedQuestion,
   preflightPlayerAnswerSubmission,
+  resetQuestionRuntimeState,
+  syncAnsweredPlayersFromPendingAnswers,
 };

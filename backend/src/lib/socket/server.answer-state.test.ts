@@ -49,10 +49,29 @@ function createSession(question: ActiveSession["questions"][number]): ActiveSess
     questions: [question],
     timer: {} as ReturnType<typeof setTimeout>,
     answeredPlayerIds: new Set<number>(),
+    processingPlayerIds: new Set<number>(),
     choiceCounts: {},
     totalConnectedPlayers: 1,
+    totalParticipants: 1,
     pendingAnswers: new Map(),
     playerStreaks: new Map(),
+  };
+}
+
+function createPendingAnswer(playerId: number) {
+  return {
+    playerId,
+    socketId: "socket-1",
+    choiceId: 102,
+    choiceIds: [],
+    orderedChoiceIds: [],
+    textAnswer: "",
+    isCorrect: true,
+    points: 1000,
+    streakBonus: 0,
+    totalScore: 1000,
+    streak: 1,
+    responseTimeMs: 500,
   };
 }
 
@@ -93,16 +112,18 @@ test("invalid answer preflight does not mutate answered players and returns vali
   assert.equal(result.kind, "error");
   if (result.kind !== "error") return;
   assert.equal(result.error.code, "answer_validation_failed");
-  assert.equal(session.answeredPlayerIds.size, 0);
+  assert.equal(session.pendingAnswers.size, 0);
+  assert.equal(session.processingPlayerIds.size, 0);
 });
 
-test("already answered preflight uses answer_already_answered code", () => {
+test("already answered preflight uses pendingAnswers as the single accepted-answer source", () => {
   const question = __test__.normalizeLoadedQuestion(
     createQuestionRecord(),
     createChoiceRecords()
   );
   const session = createSession(question);
-  session.answeredPlayerIds.add(77);
+  session.pendingAnswers.set(77, createPendingAnswer(77));
+  __test__.syncAnsweredPlayersFromPendingAnswers(session);
 
   const result = __test__.preflightPlayerAnswerSubmission(session, question, 77, {
     questionId: question.id,
@@ -117,6 +138,47 @@ test("already answered preflight uses answer_already_answered code", () => {
   if (result.kind !== "error") return;
   assert.equal(result.error.code, "answer_already_answered");
   assert.equal(result.error.message, "Already answered");
+});
+
+test("processing answer preflight also blocks duplicate submits", () => {
+  const question = __test__.normalizeLoadedQuestion(
+    createQuestionRecord(),
+    createChoiceRecords()
+  );
+  const session = createSession(question);
+  session.processingPlayerIds.add(77);
+
+  const result = __test__.preflightPlayerAnswerSubmission(session, question, 77, {
+    questionId: question.id,
+    choiceId: 102,
+    choiceIds: [],
+    orderedChoiceIds: [],
+    textAnswer: "",
+    responseTimeMs: 400,
+  });
+
+  assert.equal(result.kind, "error");
+  if (result.kind !== "error") return;
+  assert.equal(result.error.code, "answer_already_answered");
+});
+
+test("resetQuestionRuntimeState clears accepted answers, processing locks, and choice counts", () => {
+  const question = __test__.normalizeLoadedQuestion(
+    createQuestionRecord(),
+    createChoiceRecords()
+  );
+  const session = createSession(question);
+  session.pendingAnswers.set(77, createPendingAnswer(77));
+  session.processingPlayerIds.add(77);
+  session.choiceCounts = { 102: 3 };
+  __test__.syncAnsweredPlayersFromPendingAnswers(session);
+
+  __test__.resetQuestionRuntimeState(session);
+
+  assert.equal(session.pendingAnswers.size, 0);
+  assert.equal(session.processingPlayerIds.size, 0);
+  assert.deepEqual(session.choiceCounts, {});
+  assert.equal(session.answeredPlayerIds.size, 0);
 });
 
 test("stale answer preflight returns resync question-start payload instead of socket error", () => {

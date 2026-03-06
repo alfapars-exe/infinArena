@@ -229,10 +229,14 @@ function getMotivationalMessage(language: string): string {
   return messages[Math.floor(Math.random() * messages.length)];
 }
 
-function isSingleAnswerType(
-  questionType: QuestionPayload["questionType"] | null | undefined
-): boolean {
-  return questionType === "multiple_choice" || questionType === "true_false";
+function mapServerPhaseToClientPhase(
+  phase: "lobby" | "question" | "answered" | "leaderboard" | "ended"
+): Phase {
+  if (phase === "ended") return "ended";
+  if (phase === "leaderboard") return "leaderboard";
+  if (phase === "answered") return "answered";
+  if (phase === "question") return "question";
+  return "lobby";
 }
 
 type Phase =
@@ -444,7 +448,6 @@ export default function PlayPage() {
   }, []);
 
   const releaseAnswerSubmission = useCallback((options?: {
-    clearSingleSelection?: boolean;
     didSubmit?: boolean;
     errorMessage?: string;
     nextPhase?: Phase;
@@ -453,9 +456,6 @@ export default function PlayPage() {
     setIsSubmittingAnswer(false);
     isSubmittingAnswerRef.current = false;
     setDidSubmit(options?.didSubmit === true);
-    if (options?.clearSingleSelection) {
-      setSelectedChoice(null);
-    }
     pendingAnswerQuestionTypeRef.current = null;
     if (options?.nextPhase) {
       setPhase(options.nextPhase);
@@ -465,22 +465,16 @@ export default function PlayPage() {
     }
   }, [clearSubmitWatchdog]);
 
-  const armSubmitWatchdog = useCallback((targetSocket: TypedSocket | null) => {
+  const armSubmitWatchdog = useCallback(function scheduleWatchdog(targetSocket: TypedSocket | null) {
     clearSubmitWatchdog();
     submitWatchdogRef.current = window.setTimeout(() => {
       if (!isSubmittingAnswerRef.current) return;
-      const shouldClearSingleSelection = isSingleAnswerType(
-        pendingAnswerQuestionTypeRef.current
-      );
-      releaseAnswerSubmission({
-        clearSingleSelection: shouldClearSingleSelection,
-        nextPhase: "question",
-      });
       if (targetSocket?.connected) {
-        emitRejoinFromCache(targetSocket);
+        emitRejoinFromCache(targetSocket, { force: true });
       }
+      scheduleWatchdog(targetSocket);
     }, 2500);
-  }, [clearSubmitWatchdog, emitRejoinFromCache, releaseAnswerSubmission]);
+  }, [clearSubmitWatchdog, emitRejoinFromCache]);
 
   const beginAnswerSubmission = useCallback((payload: PlayerAnswerPayload, options?: {
     selectedChoiceId?: number;
@@ -583,16 +577,14 @@ export default function PlayPage() {
       if (cachedSession?.nickname) {
         setNickname(cachedSession.nickname);
       }
-      if (serverPhase === "ended") {
-        setPhase("ended");
-      } else if (serverPhase === "leaderboard") {
-        setPhase("leaderboard");
-      } else if (serverPhase === "answered") {
-        setPhase("answered");
-      } else if (serverPhase === "question") {
-        setPhase("question");
+      const nextPhase = mapServerPhaseToClientPhase(serverPhase);
+      if (isSubmittingAnswerRef.current) {
+        releaseAnswerSubmission({
+          didSubmit: serverPhase === "answered",
+          nextPhase,
+        });
       } else {
-        setPhase("lobby");
+        setPhase(nextPhase);
       }
     });
 
@@ -627,9 +619,6 @@ export default function PlayPage() {
         });
       } else if ((isAnswerErrorCode || isLegacyAnswerError) && isSubmittingAnswerRef.current) {
         releaseAnswerSubmission({
-          clearSingleSelection: isSingleAnswerType(
-            pendingAnswerQuestionTypeRef.current
-          ),
           errorMessage: message,
           nextPhase: "question",
         });
@@ -749,7 +738,9 @@ export default function PlayPage() {
         emitRejoinFromCache(s, { force: true });
         return;
       }
-      clearSubmitWatchdog();
+      releaseAnswerSubmission({
+        didSubmit: result.playerAnswer !== null && result.playerAnswer !== undefined,
+      });
       setBatchResult(result);
       setTotalScore(result.totalScore);
       setCurrentStreak(result.streak);

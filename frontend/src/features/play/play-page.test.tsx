@@ -30,8 +30,12 @@ class MockSocket {
     handlers.forEach((handler) => handler(payload));
   }
 
+  getEmits(event: string) {
+    return this.emitted.filter((entry) => entry.event === event);
+  }
+
   getAnswerEmits() {
-    return this.emitted.filter((entry) => entry.event === "player:answer");
+    return this.getEmits("player:answer");
   }
 }
 
@@ -156,7 +160,7 @@ function renderQuestionScreen(questionType: "multiple_choice" | "multi_select" |
   });
 }
 
-describe("PlayPage answer retry flow", () => {
+describe("PlayPage authoritative answer recovery flow", () => {
   beforeEach(() => {
     mockSocket = new MockSocket();
     vi.useFakeTimers();
@@ -176,8 +180,9 @@ describe("PlayPage answer retry flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("re-enables single-choice answers after submit watchdog timeout", () => {
+  it("waits for authoritative rejoin before re-enabling single-choice answers", () => {
     renderQuestionScreen("multiple_choice");
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
 
     const choiceA = screen.getByRole("button", { name: /choice a/i });
 
@@ -189,6 +194,20 @@ describe("PlayPage answer retry flow", () => {
       vi.advanceTimersByTime(2600);
     });
 
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(initialRejoinCount + 1);
+    expect(screen.getByRole("button", { name: /choice b/i })).toBeDisabled();
+
+    act(() => {
+      mockSocket.trigger("player:rejoined-success", {
+        playerId: 7,
+        sessionId: 33,
+        quizTitle: "Quiz",
+        avatar: "A",
+        totalScore: 0,
+        phase: "question",
+      });
+    });
+
     const retriableChoiceB = screen.getByRole("button", { name: /choice b/i });
     expect(retriableChoiceB).not.toBeDisabled();
     fireEvent.click(retriableChoiceB);
@@ -198,8 +217,9 @@ describe("PlayPage answer retry flow", () => {
     expect(answerEmits[1]?.payload).toMatchObject({ choiceId: 2 });
   });
 
-  it("preserves multi-select choices after watchdog timeout", () => {
+  it("preserves multi-select choices until authoritative rejoin unlocks the form", () => {
     renderQuestionScreen("multi_select");
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
 
     fireEvent.click(screen.getByRole("button", { name: /choice a/i }));
     fireEvent.click(screen.getByRole("button", { name: /choice b/i }));
@@ -213,7 +233,21 @@ describe("PlayPage answer retry flow", () => {
       vi.advanceTimersByTime(2600);
     });
 
-    const retriableSubmitButton = screen.getByRole("button", { name: /^submit$/i });
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(initialRejoinCount + 1);
+    expect(screen.getByRole("button", { name: /submit/i })).toBeDisabled();
+
+    act(() => {
+      mockSocket.trigger("player:rejoined-success", {
+        playerId: 7,
+        sessionId: 33,
+        quizTitle: "Quiz",
+        avatar: "A",
+        totalScore: 0,
+        phase: "question",
+      });
+    });
+
+    const retriableSubmitButton = screen.getByRole("button", { name: /submit/i });
     expect(retriableSubmitButton).not.toBeDisabled();
     fireEvent.click(retriableSubmitButton);
 
@@ -222,8 +256,9 @@ describe("PlayPage answer retry flow", () => {
     expect(answerEmits[1]?.payload).toMatchObject({ choiceIds: [1, 2] });
   });
 
-  it("preserves ordering payload after watchdog timeout", () => {
+  it("preserves ordering payload until rejoin confirms retry is allowed", () => {
     renderQuestionScreen("ordering");
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
 
     const submitButton = screen.getByRole("button", { name: /^submit$/i });
     fireEvent.click(submitButton);
@@ -237,7 +272,21 @@ describe("PlayPage answer retry flow", () => {
       vi.advanceTimersByTime(2600);
     });
 
-    const retriableSubmitButton = screen.getByRole("button", { name: /^submit$/i });
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(initialRejoinCount + 1);
+    expect(screen.getByRole("button", { name: /submit/i })).toBeDisabled();
+
+    act(() => {
+      mockSocket.trigger("player:rejoined-success", {
+        playerId: 7,
+        sessionId: 33,
+        quizTitle: "Quiz",
+        avatar: "A",
+        totalScore: 0,
+        phase: "question",
+      });
+    });
+
+    const retriableSubmitButton = screen.getByRole("button", { name: /submit/i });
     expect(retriableSubmitButton).not.toBeDisabled();
     fireEvent.click(retriableSubmitButton);
 
@@ -248,8 +297,9 @@ describe("PlayPage answer retry flow", () => {
     });
   });
 
-  it("preserves text input after watchdog timeout", () => {
+  it("preserves text input while waiting for authoritative rejoin", () => {
     renderQuestionScreen("text_input");
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
 
     const input = screen.getByPlaceholderText(/type your answer/i);
     fireEvent.change(input, { target: { value: "Istanbul" } });
@@ -262,14 +312,56 @@ describe("PlayPage answer retry flow", () => {
       vi.advanceTimersByTime(2600);
     });
 
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(initialRejoinCount + 1);
+    expect(screen.getByRole("button", { name: /submit/i })).toBeDisabled();
     expect(input).toHaveValue("Istanbul");
-    const retriableSubmitButton = screen.getByRole("button", { name: /^submit$/i });
+
+    act(() => {
+      mockSocket.trigger("player:rejoined-success", {
+        playerId: 7,
+        sessionId: 33,
+        quizTitle: "Quiz",
+        avatar: "A",
+        totalScore: 0,
+        phase: "question",
+      });
+    });
+
+    const retriableSubmitButton = screen.getByRole("button", { name: /submit/i });
     expect(retriableSubmitButton).not.toBeDisabled();
     fireEvent.click(retriableSubmitButton);
 
     const answerEmits = mockSocket.getAnswerEmits();
     expect(answerEmits).toHaveLength(2);
     expect(answerEmits[1]?.payload).toMatchObject({ textAnswer: "Istanbul" });
+  });
+
+  it("keeps the form locked when rejoin confirms the answer was already accepted", () => {
+    renderQuestionScreen("multiple_choice");
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
+
+    fireEvent.click(screen.getByRole("button", { name: /choice a/i }));
+    expect(mockSocket.getAnswerEmits()).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(2600);
+    });
+
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(initialRejoinCount + 1);
+
+    act(() => {
+      mockSocket.trigger("player:rejoined-success", {
+        playerId: 7,
+        sessionId: 33,
+        quizTitle: "Quiz",
+        avatar: "A",
+        totalScore: 1000,
+        phase: "answered",
+      });
+    });
+
+    expect(screen.getByText(/answer submitted/i)).toBeInTheDocument();
+    expect(mockSocket.getAnswerEmits()).toHaveLength(1);
   });
 
   it("releases submit state on coded answer validation errors", () => {

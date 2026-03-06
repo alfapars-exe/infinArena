@@ -45,8 +45,10 @@ export interface ActiveSession {
   questions: QuestionWithAnswer[];
   timer: ReturnType<typeof setTimeout> | null;
   answeredPlayerIds: Set<number>;
+  processingPlayerIds: Set<number>;
   choiceCounts: Record<number, number>;
   totalConnectedPlayers: number;
+  totalParticipants: number;
   // Batch answer storage - results sent after time-up or all answered
   pendingAnswers: Map<number, PlayerAnswer>;
   // Streak tracking per player
@@ -75,8 +77,10 @@ export function createActiveSession(
     questions,
     timer: null,
     answeredPlayerIds: new Set(),
+    processingPlayerIds: new Set(),
     choiceCounts: {},
     totalConnectedPlayers: 0,
+    totalParticipants: 0,
     pendingAnswers: new Map(),
     playerStreaks: new Map(),
   };
