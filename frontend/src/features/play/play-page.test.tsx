@@ -69,13 +69,16 @@ vi.mock("motion/react", async () => {
     "whileTap",
     "layout",
   ]);
-  const createMotionComponent = (tagName: string) =>
-    React.forwardRef<any, any>(({ children, ...props }, ref) => {
+  const createMotionComponent = (tagName: string) => {
+    const MotionComponent = React.forwardRef<any, any>(({ children, ...props }, ref) => {
       const domProps = Object.fromEntries(
         Object.entries(props).filter(([key]) => !MOTION_ONLY_PROPS.has(key))
       );
       return React.createElement(tagName, { ...domProps, ref }, children);
     });
+    MotionComponent.displayName = `MockMotion(${tagName})`;
+    return MotionComponent;
+  };
 
   return {
     AnimatePresence: ({ children }: { children: React.ReactNode }) => (
