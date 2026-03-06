@@ -12,6 +12,7 @@
 import { isRedisEnabled, getRedisClient } from "@/lib/redis";
 import { createLogger } from "@/lib/logger";
 import type { PlayerAnswer } from "./session-manager";
+import type { SessionPhase } from "@/types";
 
 const log = createLogger("RedisSessionStore");
 
@@ -38,6 +39,10 @@ export interface SessionMeta {
   totalConnectedPlayers: number;
   questionCount: number;
   podId: string;
+  sessionVersion?: number;
+  phase?: SessionPhase;
+  phaseStartedAt?: number;
+  phaseDeadlineAt?: number | null;
 }
 
 const POD_ID = process.env.HOSTNAME || process.env.POD_NAME || `pod-${process.pid}`;
@@ -170,6 +175,13 @@ export async function redisSyncSessionMeta(meta: SessionMeta): Promise<void> {
       totalConnectedPlayers: String(meta.totalConnectedPlayers),
       questionCount: String(meta.questionCount),
       podId: meta.podId,
+      sessionVersion: String(meta.sessionVersion ?? 0),
+      phase: meta.phase ?? "lobby",
+      phaseStartedAt: String(meta.phaseStartedAt ?? 0),
+      phaseDeadlineAt:
+        meta.phaseDeadlineAt === null || meta.phaseDeadlineAt === undefined
+          ? ""
+          : String(meta.phaseDeadlineAt),
     });
     await client.expire(KEY.session(meta.sessionId), SESSION_TTL);
   } catch (err) {
@@ -193,6 +205,12 @@ export async function redisGetSessionMeta(
     const questionStartTime = Number(raw.questionStartTime);
     const totalConnectedPlayers = Number(raw.totalConnectedPlayers);
     const questionCount = Number(raw.questionCount);
+    const sessionVersion = Number(raw.sessionVersion || 0);
+    const phaseStartedAt = Number(raw.phaseStartedAt || 0);
+    const phaseDeadlineAt =
+      raw.phaseDeadlineAt === undefined || raw.phaseDeadlineAt === ""
+        ? null
+        : Number(raw.phaseDeadlineAt);
 
     if (
       !Number.isInteger(parsedSessionId) ||
@@ -200,7 +218,10 @@ export async function redisGetSessionMeta(
       !Number.isInteger(currentQuestionIndex) ||
       !Number.isInteger(questionStartTime) ||
       !Number.isInteger(totalConnectedPlayers) ||
-      !Number.isInteger(questionCount)
+      !Number.isInteger(questionCount) ||
+      !Number.isInteger(sessionVersion) ||
+      !Number.isInteger(phaseStartedAt) ||
+      !(phaseDeadlineAt === null || Number.isFinite(phaseDeadlineAt))
     ) {
       return null;
     }
@@ -214,6 +235,10 @@ export async function redisGetSessionMeta(
       totalConnectedPlayers,
       questionCount,
       podId: raw.podId || "",
+      sessionVersion,
+      phase: (raw.phase as SessionPhase) || "lobby",
+      phaseStartedAt,
+      phaseDeadlineAt,
     };
   } catch {
     return null;

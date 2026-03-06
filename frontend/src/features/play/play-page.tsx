@@ -15,6 +15,8 @@ import type {
   PlayerRanking,
   BatchAnswerResult,
   QuestionStats,
+  SessionPhase,
+  SessionSyncMeta,
   SocketErrorCode,
 } from "@/types";
 
@@ -232,12 +234,14 @@ function getMotivationalMessage(language: string): string {
 }
 
 function mapServerPhaseToClientPhase(
-  phase: "lobby" | "question" | "answered" | "leaderboard" | "ended"
+  phase: SessionPhase
 ): Phase {
   if (phase === "ended") return "ended";
   if (phase === "leaderboard") return "leaderboard";
+  if (phase === "stats") return "stats";
   if (phase === "answered") return "answered";
   if (phase === "question") return "question";
+  if (phase === "countdown") return "countdown";
   return "lobby";
 }
 
@@ -349,6 +353,7 @@ export default function PlayPage() {
     serverStartTime: number | null;
   } | null>(null);
   const awaitingQuestionSyncTimerRef = useRef<number | null>(null);
+  const latestSessionVersionRef = useRef<number>(0);
 
   const [batchResult, setBatchResult] = useState<BatchAnswerResult | null>(null);
   const [questionStats, setQuestionStats] = useState<QuestionStats | null>(null);
@@ -362,6 +367,20 @@ export default function PlayPage() {
   const scoringRef = useRef({ basePoints: 1000, deductionPoints: 50, deductionInterval: 1 });
 
   const [podiumStep, setPodiumStep] = useState(0);
+
+  const shouldApplySyncEvent = useCallback(
+    (sync?: SessionSyncMeta): boolean => {
+      if (!sync || !Number.isInteger(sync.sessionVersion)) {
+        return true;
+      }
+      if (sync.sessionVersion < latestSessionVersionRef.current) {
+        return false;
+      }
+      latestSessionVersionRef.current = sync.sessionVersion;
+      return true;
+    },
+    []
+  );
 
   const sessionCacheKey = `quiz-session-${pin}`;
   const hasValidPin = /^\d{6}$/.test(pin);
@@ -637,6 +656,7 @@ export default function PlayPage() {
     s.on(
       "player:joined-success",
       ({ playerId: pid, quizTitle: qt, avatar: av }) => {
+        latestSessionVersionRef.current = 0;
         setPlayerId(pid);
         setQuizTitle(qt);
         setAvatar(av);
@@ -656,7 +676,12 @@ export default function PlayPage() {
       phase: serverPhase,
       phaseQuestionId,
       phaseQuestionServerStartTime,
+      sync,
     }) => {
+      if (!shouldApplySyncEvent(sync)) {
+        return;
+      }
+
       setPlayerId(pid);
       setQuizTitle(qt);
       setAvatar(av);
@@ -829,7 +854,10 @@ export default function PlayPage() {
       }, 5000);
     });
 
-    s.on("game:countdown", ({ count }) => {
+    s.on("game:countdown", ({ count, sync }) => {
+      if (!shouldApplySyncEvent(sync)) {
+        return;
+      }
       if (leaderboardDelayTimerRef.current !== null) {
         window.clearTimeout(leaderboardDelayTimerRef.current);
         leaderboardDelayTimerRef.current = null;
@@ -840,7 +868,10 @@ export default function PlayPage() {
 
     s.on(
       "game:question-start",
-      ({ question, questionNumber: qn, totalQuestions: tq, serverStartTime }) => {
+      ({ question, questionNumber: qn, totalQuestions: tq, serverStartTime, sync }) => {
+        if (!shouldApplySyncEvent(sync)) {
+          return;
+        }
         clearAwaitingQuestionSync();
         setLeaderboard([]);
         setQuestionStats(null);
@@ -898,7 +929,11 @@ export default function PlayPage() {
       }
     );
 
-    s.on("game:answer-ack", () => {
+    s.on("game:answer-ack", (payload) => {
+      const sync = payload?.sync;
+      if (!shouldApplySyncEvent(sync)) {
+        return;
+      }
       clearAwaitingQuestionSync();
       releaseAnswerSubmission({
         didSubmit: true,
@@ -906,7 +941,10 @@ export default function PlayPage() {
       });
     });
 
-    s.on("game:time-up", () => {
+    s.on("game:time-up", (data) => {
+      if (!shouldApplySyncEvent(data?.sync)) {
+        return;
+      }
       clearSubmitWatchdog();
       setTimeLeft(0);
       setTimeProgress(0);
@@ -917,6 +955,9 @@ export default function PlayPage() {
     });
 
     s.on("game:batch-results", (result) => {
+      if (!shouldApplySyncEvent(result.sync)) {
+        return;
+      }
       const activeQuestionId = currentQuestionMetaRef.current.id;
       if (
         activeQuestionId !== null &&
@@ -955,11 +996,17 @@ export default function PlayPage() {
     });
 
     s.on("game:question-stats", (stats) => {
+      if (!shouldApplySyncEvent(stats.sync)) {
+        return;
+      }
       setQuestionStats(stats);
       setPhase("stats");
     });
 
-    s.on("game:leaderboard", ({ questionId, rankings }) => {
+    s.on("game:leaderboard", ({ questionId, rankings, sync }) => {
+      if (!shouldApplySyncEvent(sync)) {
+        return;
+      }
       const activeQuestionId = currentQuestionMetaRef.current.id;
       if (
         activeQuestionId !== null &&
@@ -987,7 +1034,10 @@ export default function PlayPage() {
       }, waitMs);
     });
 
-    s.on("game:quiz-ended", ({ finalRankings: fr }) => {
+    s.on("game:quiz-ended", ({ finalRankings: fr, sync }) => {
+      if (!shouldApplySyncEvent(sync)) {
+        return;
+      }
       clearAwaitingQuestionSync();
       if (leaderboardDelayTimerRef.current !== null) {
         window.clearTimeout(leaderboardDelayTimerRef.current);
@@ -1039,6 +1089,7 @@ export default function PlayPage() {
     scheduleAwaitingQuestionSync,
     sessionCacheKey,
     startSyncedTimer,
+    shouldApplySyncEvent,
   ]);
 
   useEffect(() => {

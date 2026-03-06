@@ -1,4 +1,4 @@
-import type { QuestionPayload } from "@/types";
+import type { QuestionPayload, SessionPhase } from "@/types";
 import {
   redisSetPin,
   redisDeletePin,
@@ -53,6 +53,10 @@ export interface ActiveSession {
   pendingAnswers: Map<number, PlayerAnswer>;
   // Streak tracking per player
   playerStreaks: Map<number, number>;
+  sessionVersion: number;
+  currentPhase: SessionPhase;
+  phaseStartedAt: number;
+  phaseDeadlineAt: number | null;
 }
 
 const activeSessions = new Map<number, ActiveSession>();
@@ -83,6 +87,10 @@ export function createActiveSession(
     totalParticipants: 0,
     pendingAnswers: new Map(),
     playerStreaks: new Map(),
+    sessionVersion: 0,
+    currentPhase: "lobby",
+    phaseStartedAt: 0,
+    phaseDeadlineAt: null,
   };
   activeSessions.set(sessionId, session);
   pinToSession.set(pin, sessionId);
@@ -191,5 +199,28 @@ export function syncSessionMeta(session: ActiveSession): void {
     totalConnectedPlayers: session.totalConnectedPlayers,
     questionCount: session.questions.length,
     podId: POD_ID,
+    sessionVersion: session.sessionVersion,
+    phase: session.currentPhase,
+    phaseStartedAt: session.phaseStartedAt,
+    phaseDeadlineAt: session.phaseDeadlineAt,
   });
+}
+
+export function advanceSessionPhase(
+  session: ActiveSession,
+  phase: SessionPhase,
+  options?: {
+    phaseStartedAt?: number;
+    phaseDeadlineAt?: number | null;
+    incrementVersion?: boolean;
+  }
+): void {
+  session.currentPhase = phase;
+  session.phaseStartedAt = options?.phaseStartedAt ?? Date.now();
+  session.phaseDeadlineAt =
+    options?.phaseDeadlineAt === undefined ? null : options.phaseDeadlineAt;
+  if (options?.incrementVersion !== false) {
+    session.sessionVersion += 1;
+  }
+  syncSessionMeta(session);
 }

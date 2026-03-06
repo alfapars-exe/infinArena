@@ -55,6 +55,10 @@ function createSession(question: ActiveSession["questions"][number]): ActiveSess
     totalParticipants: 1,
     pendingAnswers: new Map(),
     playerStreaks: new Map(),
+    sessionVersion: 0,
+    currentPhase: "question",
+    phaseStartedAt: Date.now(),
+    phaseDeadlineAt: null,
   };
 }
 

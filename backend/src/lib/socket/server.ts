@@ -4,6 +4,8 @@ import type {
   ClientToServerEvents,
   ServerToClientEvents,
   PlayerRanking,
+  SessionPhase,
+  SessionSyncMeta,
   SocketErrorCode,
   SocketErrorPayload,
 } from "@/types";
@@ -33,6 +35,7 @@ import {
   getCurrentQuestion,
   updateAdminSocket,
   syncSessionMeta,
+  advanceSessionPhase,
   type ActiveSession,
 } from "./session-manager";
 import {
@@ -90,7 +93,7 @@ type AnswerPreflightResult =
     };
 
 type PlayerRejoinSnapshot = {
-  phase: "lobby" | "question" | "answered" | "leaderboard" | "ended";
+  phase: SessionPhase;
   phaseQuestionId: number | null;
   phaseQuestionServerStartTime: number | null;
 };
@@ -294,6 +297,14 @@ function buildPlayerRejoinSnapshot(
   const phaseQuestionServerStartTime =
     session.questionStartTime > 0 ? session.questionStartTime : null;
 
+  if (session.currentPhase === "countdown" || session.currentPhase === "stats") {
+    return {
+      phase: session.currentPhase,
+      phaseQuestionId,
+      phaseQuestionServerStartTime,
+    };
+  }
+
   if (!currentQ) {
     return {
       phase: "question",
@@ -314,6 +325,16 @@ function buildPlayerRejoinSnapshot(
     phase: hasAcceptedAnswer(session, playerId) ? "answered" : "question",
     phaseQuestionId,
     phaseQuestionServerStartTime,
+  };
+}
+
+function buildSessionSyncMeta(session: ActiveSession): SessionSyncMeta {
+  return {
+    sessionVersion: session.sessionVersion,
+    phase: session.currentPhase,
+    questionIndex: session.currentQuestionIndex,
+    phaseStartedAt: session.phaseStartedAt,
+    phaseDeadlineAt: session.phaseDeadlineAt,
   };
 }
 
@@ -637,6 +658,7 @@ function buildQuestionStartPayload(
     questionNumber: session.currentQuestionIndex + 1,
     totalQuestions: session.questions.length,
     serverStartTime: session.questionStartTime,
+    sync: buildSessionSyncMeta(session),
   };
 }
 
@@ -893,6 +915,20 @@ async function recoverActiveSessionIfPossible(
       sessionMeta && sessionMeta.questionStartTime > 0
         ? sessionMeta.questionStartTime
         : Date.now();
+    recovered.sessionVersion =
+      sessionMeta && Number.isInteger(sessionMeta.sessionVersion)
+        ? Math.max(0, Number(sessionMeta.sessionVersion))
+        : 0;
+    recovered.currentPhase = (sessionMeta?.phase as SessionPhase) || "question";
+    recovered.phaseStartedAt =
+      sessionMeta && Number.isInteger(sessionMeta.phaseStartedAt)
+        ? Number(sessionMeta.phaseStartedAt)
+        : recovered.questionStartTime;
+    recovered.phaseDeadlineAt =
+      sessionMeta?.phaseDeadlineAt === null ||
+      sessionMeta?.phaseDeadlineAt === undefined
+        ? null
+        : Number(sessionMeta.phaseDeadlineAt);
     recovered.totalParticipants = await getTotalParticipantCount(sessionId);
     recovered.pendingAnswers = await redisGetPendingAnswers(sessionId);
     recovered.playerStreaks = await redisGetStreaks(sessionId);
@@ -1019,7 +1055,9 @@ async function processPlayerAnswer(
       if (preflight.event === "game:question-start") {
         io.to(socketId).emit(preflight.event, preflight.payload);
       } else {
-        io.to(socketId).emit(preflight.event);
+        io.to(socketId).emit(preflight.event, {
+          sync: buildSessionSyncMeta(session),
+        });
       }
       return;
     }
@@ -1218,7 +1256,10 @@ async function processPlayerAnswer(
     }
 
     acceptedAnswerCommitted = true;
-    io.to(socketId).emit("game:answer-ack", { received: true });
+    io.to(socketId).emit("game:answer-ack", {
+      received: true,
+      sync: buildSessionSyncMeta(session),
+    });
 
     if (
       session.totalParticipants > 0 &&
@@ -1742,6 +1783,7 @@ export function setupSocketHandlers(io: TypedServer) {
           phaseQuestionId: rejoinSnapshot.phaseQuestionId,
           phaseQuestionServerStartTime:
             rejoinSnapshot.phaseQuestionServerStartTime,
+          sync: session ? buildSessionSyncMeta(session) : undefined,
         });
 
         if (session) {
@@ -1766,10 +1808,14 @@ export function setupSocketHandlers(io: TypedServer) {
               questionNumber: session.currentQuestionIndex + 1,
               totalQuestions: session.questions.length,
               serverStartTime: session.questionStartTime,
+              sync: buildSessionSyncMeta(session),
             });
 
             if (phase === "answered") {
-              socket.emit("game:answer-ack", { received: true });
+              socket.emit("game:answer-ack", {
+                received: true,
+                sync: buildSessionSyncMeta(session),
+              });
             }
           } else if (phase === "leaderboard") {
             // First send batch results for this player if they answered
@@ -1788,6 +1834,7 @@ export function setupSocketHandlers(io: TypedServer) {
                 streak: playerAnswer.streak,
                 playerAnswer: playerAnswerDisplay,
                 correctAnswerText: buildCorrectAnswerText(currentQ),
+                sync: buildSessionSyncMeta(session),
               });
             }
 
@@ -1812,6 +1859,7 @@ export function setupSocketHandlers(io: TypedServer) {
             socket.emit("game:leaderboard", {
               questionId: currentQ?.id ?? null,
               rankings,
+              sync: buildSessionSyncMeta(session),
             });
           }
         }
@@ -1871,8 +1919,16 @@ export function setupSocketHandlers(io: TypedServer) {
         gamePlayersGauge.inc(activeSession.totalParticipants);
         logger.socket.info(`Quiz started for session ${sessionId} with ${questionsWithChoices.length} questions`);
 
+        advanceSessionPhase(activeSession, "countdown", {
+          phaseStartedAt: Date.now(),
+          phaseDeadlineAt: Date.now() + 3000,
+        });
+
         for (let i = 3; i >= 1; i--) {
-          io.to(`session:${sessionId}`).emit("game:countdown", { count: i });
+          io.to(`session:${sessionId}`).emit("game:countdown", {
+            count: i,
+            sync: buildSessionSyncMeta(activeSession),
+          });
           await sleep(1000);
         }
 
@@ -2041,8 +2097,12 @@ async function sendNextQuestion(io: TypedServer, session: ActiveSession) {
   if (session.totalParticipants <= 0) {
     session.totalParticipants = await getTotalParticipantCount(session.sessionId);
   }
-  session.questionStartTime = Date.now();
-  syncSessionMeta(session);
+  const questionStartedAt = Date.now();
+  session.questionStartTime = questionStartedAt;
+  advanceSessionPhase(session, "question", {
+    phaseStartedAt: questionStartedAt,
+    phaseDeadlineAt: questionStartedAt + question.timeLimitSeconds * 1000,
+  });
 
   session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
     io,
@@ -2108,7 +2168,14 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
     `Question ${currentQ.id} completed for session ${session.sessionId} (${session.pendingAnswers.size}/${session.totalParticipants || 0} accepted answers, reason=${earlyFinish ? "all_participants_answered" : "timer_elapsed"})`
   );
 
-  io.to(`session:${session.sessionId}`).emit("game:time-up");
+  advanceSessionPhase(session, "stats", {
+    phaseStartedAt: Date.now(),
+    phaseDeadlineAt: null,
+  });
+
+  io.to(`session:${session.sessionId}`).emit("game:time-up", {
+    sync: buildSessionSyncMeta(session),
+  });
 
   const allPlayersInSession = await db
     .select()
@@ -2148,6 +2215,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       streak: answer.streak,
       playerAnswer: playerAnswerDisplay,
       correctAnswerText: buildCorrectAnswerText(currentQ),
+      sync: buildSessionSyncMeta(session),
     });
   }
 
@@ -2168,6 +2236,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
         streak: 0,
         playerAnswer: null,
         correctAnswerText: buildCorrectAnswerText(currentQ),
+        sync: buildSessionSyncMeta(session),
       });
       session.playerStreaks.set(p.id, 0);
     }
@@ -2281,6 +2350,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
       totalQuestions: session.questions.length,
       remainingQuestions:
         session.questions.length - (session.currentQuestionIndex + 1),
+      sync: buildSessionSyncMeta(session),
     });
   }
 
@@ -2307,14 +2377,24 @@ async function sendLeaderboard(io: TypedServer, session: ActiveSession) {
     streak: session.playerStreaks.get(p.id) || 0,
   }));
 
+  advanceSessionPhase(session, "leaderboard", {
+    phaseStartedAt: Date.now(),
+    phaseDeadlineAt: null,
+  });
+
   io.to(`session:${session.sessionId}`).emit("game:leaderboard", {
     questionId,
     rankings,
+    sync: buildSessionSyncMeta(session),
   });
 
   for (const player of allPlayers) {
     if (!player.socketId) continue;
-    io.to(player.socketId).emit("game:leaderboard", { questionId, rankings });
+    io.to(player.socketId).emit("game:leaderboard", {
+      questionId,
+      rankings,
+      sync: buildSessionSyncMeta(session),
+    });
   }
 }
 
@@ -2341,8 +2421,14 @@ async function endQuiz(io: TypedServer, sessionId: number) {
       rank: i + 1,
     }));
 
+    advanceSessionPhase(session, "ended", {
+      phaseStartedAt: Date.now(),
+      phaseDeadlineAt: null,
+    });
+
     io.to(`session:${sessionId}`).emit("game:quiz-ended", {
       finalRankings,
+      sync: buildSessionSyncMeta(session),
     });
 
     if (session.timer) clearTimeout(session.timer);

@@ -98,6 +98,23 @@ export interface BatchAnswerResult {
   correctAnswerText?: string[];
 }
 
+export type SessionPhase =
+  | "lobby"
+  | "countdown"
+  | "question"
+  | "answered"
+  | "stats"
+  | "leaderboard"
+  | "ended";
+
+export interface SessionSyncMeta {
+  sessionVersion: number;
+  phase: SessionPhase;
+  questionIndex: number;
+  phaseStartedAt: number;
+  phaseDeadlineAt: number | null;
+}
+
 export type SocketErrorCode =
   | "answer_already_answered"
   | "answer_invalid_payload"
@@ -149,20 +166,27 @@ export interface ServerToClientEvents {
     nickname: string;
     playerCount: number;
   }) => void;
-  "game:countdown": (data: { count: number }) => void;
+  "game:countdown": (data: {
+    count: number;
+    sync?: SessionSyncMeta;
+  }) => void;
   "game:question-start": (data: {
     question: QuestionPayload;
     questionNumber: number;
     totalQuestions: number;
     serverStartTime: number;
+    sync?: SessionSyncMeta;
   }) => void;
-  "game:answer-ack": (data: AnswerAck) => void;
-  "game:time-up": () => void;
-  "game:batch-results": (data: BatchAnswerResult) => void;
+  "game:answer-ack": (data: AnswerAck & { sync?: SessionSyncMeta }) => void;
+  "game:time-up": (data?: { sync?: SessionSyncMeta }) => void;
+  "game:batch-results": (data: BatchAnswerResult & { sync?: SessionSyncMeta }) => void;
   "game:answer-result": (data: AnswerResult) => void;
-  "game:question-stats": (data: QuestionStats) => void;
-  "game:leaderboard": (data: LeaderboardPayload) => void;
-  "game:quiz-ended": (data: { finalRankings: PlayerRanking[] }) => void;
+  "game:question-stats": (data: QuestionStats & { sync?: SessionSyncMeta }) => void;
+  "game:leaderboard": (data: LeaderboardPayload & { sync?: SessionSyncMeta }) => void;
+  "game:quiz-ended": (data: {
+    finalRankings: PlayerRanking[];
+    sync?: SessionSyncMeta;
+  }) => void;
   "player:joined-success": (data: {
     playerId: number;
     sessionId: number;
@@ -175,9 +199,10 @@ export interface ServerToClientEvents {
     quizTitle: string;
     avatar: string;
     totalScore: number;
-    phase: "lobby" | "question" | "answered" | "leaderboard" | "ended";
+    phase: SessionPhase;
     phaseQuestionId?: number | null;
     phaseQuestionServerStartTime?: number | null;
+    sync?: SessionSyncMeta;
   }) => void;
   "session:admin-disconnected": () => void;
   "session:live": () => void;
