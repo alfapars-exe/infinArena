@@ -58,7 +58,11 @@ function createSession(question: ActiveSession["questions"][number]): ActiveSess
   };
 }
 
-function createPendingAnswer(playerId: number) {
+function createPendingAnswer(
+  playerId: number
+): ActiveSession["pendingAnswers"] extends Map<number, infer TValue>
+  ? TValue
+  : never {
   return {
     playerId,
     socketId: "socket-1",
@@ -268,4 +272,55 @@ test("buildPlayerRejoinSnapshot returns null question metadata outside active ga
   assert.equal(endedSnapshot.phase, "ended");
   assert.equal(endedSnapshot.phaseQuestionId, null);
   assert.equal(endedSnapshot.phaseQuestionServerStartTime, null);
+});
+
+test("mergeAuthoritativeQuestionRuntimeState hydrates accepted answers and derived choice counts", () => {
+  const question = __test__.normalizeLoadedQuestion(
+    createQuestionRecord(),
+    createChoiceRecords()
+  );
+  const session = createSession(question);
+  const authoritativePendingAnswers = new Map<number, ReturnType<typeof createPendingAnswer>>([
+    [77, createPendingAnswer(77)],
+  ]);
+  const authoritativeStreaks = new Map<number, number>([[77, 4]]);
+
+  __test__.mergeAuthoritativeQuestionRuntimeState(
+    session,
+    question,
+    authoritativePendingAnswers,
+    authoritativeStreaks
+  );
+
+  assert.equal(session.pendingAnswers.size, 1);
+  assert.equal(session.pendingAnswers.get(77)?.isCorrect, true);
+  assert.equal(session.answeredPlayerIds.has(77), true);
+  assert.deepEqual(session.choiceCounts, { 102: 1 });
+  assert.equal(session.playerStreaks.get(77), 4);
+});
+
+test("buildChoiceCountsFromPendingAnswers counts multi-select unique picks once per player", () => {
+  const question = {
+    ...__test__.normalizeLoadedQuestion(createQuestionRecord(), createChoiceRecords()),
+    questionType: "multi_select" as const,
+    correctChoiceIds: [101, 102],
+  };
+
+  const pendingAnswers = new Map<number, ReturnType<typeof createPendingAnswer>>([
+    [
+      77,
+      {
+        ...createPendingAnswer(77),
+        choiceId: 101,
+        choiceIds: [101, 102, 102],
+      },
+    ],
+  ]);
+
+  const counts = __test__.buildChoiceCountsFromPendingAnswers(
+    question,
+    pendingAnswers
+  );
+
+  assert.deepEqual(counts, { 101: 1, 102: 1 });
 });

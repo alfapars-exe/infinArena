@@ -37,7 +37,6 @@ import {
 } from "./session-manager";
 import {
   redisSyncStreak,
-  redisGetChoiceCounts,
   redisGetPendingAnswers,
   redisGetStreaks,
   redisClearQuestionState,
@@ -706,6 +705,108 @@ function applyChoiceCountDeltas(
   }
 }
 
+function buildChoiceCountsFromPendingAnswers(
+  question: LoadedQuestion | undefined,
+  pendingAnswers: ActiveSession["pendingAnswers"]
+): Record<number, number> {
+  if (!question) {
+    return {};
+  }
+
+  const counts: Record<number, number> = {};
+  for (const answer of pendingAnswers.values()) {
+    if (
+      question.questionType === "multiple_choice" ||
+      question.questionType === "true_false"
+    ) {
+      const choiceId = Number(answer.choiceId);
+      if (Number.isInteger(choiceId) && choiceId > 0) {
+        counts[choiceId] = (counts[choiceId] || 0) + 1;
+      }
+      continue;
+    }
+
+    if (question.questionType === "multi_select") {
+      const selectedChoiceIds = Array.from(
+        new Set(
+          [
+            ...answer.choiceIds.map((choiceId) => Number(choiceId)),
+            ...(Number.isInteger(answer.choiceId) ? [Number(answer.choiceId)] : []),
+          ].filter((choiceId) => Number.isInteger(choiceId) && choiceId > 0)
+        )
+      );
+
+      for (const choiceId of selectedChoiceIds) {
+        counts[choiceId] = (counts[choiceId] || 0) + 1;
+      }
+    }
+  }
+
+  return counts;
+}
+
+function mergeAuthoritativeQuestionRuntimeState(
+  session: ActiveSession,
+  question: LoadedQuestion | undefined,
+  authoritativePendingAnswers: ActiveSession["pendingAnswers"],
+  authoritativeStreaks?: Map<number, number>
+): void {
+  if (authoritativePendingAnswers.size > 0) {
+    const mergedPendingAnswers = new Map(session.pendingAnswers);
+    for (const [playerId, answer] of authoritativePendingAnswers.entries()) {
+      mergedPendingAnswers.set(playerId, answer);
+    }
+    session.pendingAnswers = mergedPendingAnswers;
+  }
+
+  if (authoritativeStreaks && authoritativeStreaks.size > 0) {
+    const mergedStreaks = new Map(session.playerStreaks);
+    for (const [playerId, streak] of authoritativeStreaks.entries()) {
+      mergedStreaks.set(playerId, streak);
+    }
+    session.playerStreaks = mergedStreaks;
+  }
+
+  syncAnsweredPlayersFromPendingAnswers(session);
+  session.choiceCounts = buildChoiceCountsFromPendingAnswers(
+    question,
+    session.pendingAnswers
+  );
+}
+
+async function hydrateAuthoritativeQuestionRuntimeState(
+  session: ActiveSession,
+  question: LoadedQuestion | undefined
+): Promise<void> {
+  if (!isRedisEnabled()) {
+    mergeAuthoritativeQuestionRuntimeState(
+      session,
+      question,
+      new Map<number, ActiveSession["pendingAnswers"] extends Map<number, infer TValue> ? TValue : never>()
+    );
+    return;
+  }
+
+  const [authoritativePendingAnswers, authoritativeStreaks] = await Promise.all([
+    redisGetPendingAnswers(session.sessionId),
+    redisGetStreaks(session.sessionId),
+  ]);
+
+  const previousAcceptedCount = session.pendingAnswers.size;
+  mergeAuthoritativeQuestionRuntimeState(
+    session,
+    question,
+    authoritativePendingAnswers,
+    authoritativeStreaks
+  );
+
+  if (session.pendingAnswers.size > previousAcceptedCount) {
+    logger.socket.info(
+      `Hydrated authoritative answers for session ${session.sessionId} before emitting results (${previousAcceptedCount} -> ${session.pendingAnswers.size})`
+    );
+  }
+}
+
 const sessionRecoveryLocks = new Map<number, Promise<ActiveSession | undefined>>();
 
 async function loadQuestionsWithChoices(
@@ -794,9 +895,13 @@ async function recoverActiveSessionIfPossible(
         : Date.now();
     recovered.totalParticipants = await getTotalParticipantCount(sessionId);
     recovered.pendingAnswers = await redisGetPendingAnswers(sessionId);
-    recovered.choiceCounts = await redisGetChoiceCounts(sessionId);
     recovered.playerStreaks = await redisGetStreaks(sessionId);
-    syncAnsweredPlayersFromPendingAnswers(recovered);
+    mergeAuthoritativeQuestionRuntimeState(
+      recovered,
+      getCurrentQuestion(recovered),
+      recovered.pendingAnswers,
+      recovered.playerStreaks
+    );
 
     recovered.totalConnectedPlayers = await getLiveConnectedPlayerCount(
       io,
@@ -1607,6 +1712,12 @@ export function setupSocketHandlers(io: TypedServer) {
         if (!session && dbSession.status === "in_progress") {
           session = await recoverActiveSessionIfPossible(io, dbSession.id);
         }
+        if (session) {
+          await hydrateAuthoritativeQuestionRuntimeState(
+            session,
+            getCurrentQuestion(session)
+          );
+        }
         const rejoinSnapshot = buildPlayerRejoinSnapshot(
           session,
           player.id,
@@ -1981,6 +2092,8 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
   const currentQ = getCurrentQuestion(session);
   if (!currentQ) return;
 
+  await hydrateAuthoritativeQuestionRuntimeState(session, currentQ);
+
   // Mark question timer as finished so rejoin phase resolves to leaderboard/stats flow.
   if (session.timer) {
     clearTimeout(session.timer);
@@ -2265,9 +2378,11 @@ export function handleTimerExpiry(sessionId: number): void {
 
 export const __test__ = {
   applyChoiceCountDeltas,
+  buildChoiceCountsFromPendingAnswers,
   buildPlayerRejoinSnapshot,
   createSocketErrorPayload,
   hasAcceptedAnswer,
+  mergeAuthoritativeQuestionRuntimeState,
   normalizeLoadedQuestion,
   preflightPlayerAnswerSubmission,
   resetQuestionRuntimeState,
