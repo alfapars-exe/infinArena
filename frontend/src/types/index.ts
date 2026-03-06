@@ -179,6 +179,7 @@ export interface ServerToClientEvents {
   }) => void;
   "game:answer-ack": (data: AnswerAck & { sync?: SessionSyncMeta }) => void;
   "game:time-up": (data?: { sync?: SessionSyncMeta }) => void;
+  "game:sync": (data?: { sync?: SessionSyncMeta }) => void;
   "game:answer-progress": (data: {
     answeredCount: number;
     totalParticipants: number;

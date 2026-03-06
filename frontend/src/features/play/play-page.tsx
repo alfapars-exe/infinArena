@@ -965,6 +965,10 @@ export default function PlayPage() {
       }
     });
 
+    s.on("game:sync", (data) => {
+      shouldApplySyncEvent(data?.sync);
+    });
+
     s.on("game:answer-progress", (data) => {
       if (!shouldApplySyncEvent(data?.sync)) return;
       setAnswerProgress({ answered: data.answeredCount, total: data.totalParticipants });
@@ -1551,10 +1555,10 @@ export default function PlayPage() {
                 >
                   <div
                     className={`text-[12rem] font-black leading-none ${countdownNumber === 3
-                        ? "text-inf-red"
-                        : countdownNumber === 2
-                          ? "text-inf-yellow"
-                          : "text-inf-green"
+                      ? "text-inf-red"
+                      : countdownNumber === 2
+                        ? "text-inf-yellow"
+                        : "text-inf-green"
                       }`}
                   >
                     {countdownNumber}
@@ -1582,10 +1586,10 @@ export default function PlayPage() {
                   </span>
                   <motion.div
                     className={`w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center text-xl md:text-2xl font-black border-4 ${timeLeft > 10
-                        ? "border-green-400 text-green-400"
-                        : timeLeft > 5
-                          ? "border-yellow-400 text-yellow-400"
-                          : "border-red-400 text-red-400"
+                      ? "border-green-400 text-green-400"
+                      : timeLeft > 5
+                        ? "border-yellow-400 text-yellow-400"
+                        : "border-red-400 text-red-400"
                       }`}
                     animate={timeLeft <= 5 ? { scale: [1, 1.15, 1] } : {}}
                     transition={{ repeat: Infinity, duration: 0.5 }}
@@ -2006,8 +2010,8 @@ export default function PlayPage() {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.1 }}
                         className={`relative overflow-hidden rounded-xl border-2 ${isCorrect
-                            ? "border-green-500 bg-green-500/20"
-                            : "border-white/20 bg-white/5"
+                          ? "border-green-500 bg-green-500/20"
+                          : "border-white/20 bg-white/5"
                           }`}
                       >
 
@@ -2110,19 +2114,19 @@ export default function PlayPage() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.1 }}
                       className={`flex items-center justify-between p-3 rounded-lg mb-1 ${p.playerId === playerId
-                          ? "bg-inf-red/30 border border-inf-red"
-                          : ""
+                        ? "bg-inf-red/30 border border-inf-red"
+                        : ""
                         }`}
                     >
                       <div className="flex items-center gap-3">
                         <span
                           className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${i === 0
-                              ? "bg-yellow-500 text-black"
-                              : i === 1
-                                ? "bg-gray-400 text-black"
-                                : i === 2
-                                  ? "bg-amber-700 text-white"
-                                  : "bg-white/20 text-white"
+                            ? "bg-yellow-500 text-black"
+                            : i === 1
+                              ? "bg-gray-400 text-black"
+                              : i === 2
+                                ? "bg-amber-700 text-white"
+                                : "bg-white/20 text-white"
                             }`}
                         >
                           {p.rank}
@@ -2323,8 +2327,8 @@ export default function PlayPage() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 5 + i * 0.1 }}
                       className={`flex items-center justify-between p-3 rounded-lg mb-1 ${p.playerId === playerId
-                          ? "bg-inf-red/30 border border-inf-red"
-                          : ""
+                        ? "bg-inf-red/30 border border-inf-red"
+                        : ""
                         }`}
                     >
                       <div className="flex items-center gap-3">

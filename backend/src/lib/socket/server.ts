@@ -89,7 +89,7 @@ type AnswerPreflightResult =
   }
   | {
     kind: "resync";
-    event: "game:time-up";
+    event: "game:sync";
   };
 
 type PlayerRejoinSnapshot = {
@@ -409,7 +409,7 @@ function preflightPlayerAnswerSubmission(
   }
 
   if (currentQ.id !== answer.questionId) {
-    if (session.timer && session.questionStartTime > 0) {
+    if (session.currentPhase === "question") {
       return {
         kind: "resync",
         event: "game:question-start",
@@ -419,7 +419,7 @@ function preflightPlayerAnswerSubmission(
 
     return {
       kind: "resync",
-      event: "game:time-up",
+      event: "game:sync", // Use a generic sync event instead of violently throwing game:time-up, giving them the current phase sync
     };
   }
 
@@ -1064,8 +1064,13 @@ async function processPlayerAnswer(
       );
       if (preflight.event === "game:question-start") {
         io.to(socketId).emit(preflight.event, preflight.payload);
+      } else if (preflight.event === "game:sync") {
+        io.to(socketId).emit("game:sync", {
+          sync: buildSessionSyncMeta(session),
+        });
       } else {
-        io.to(socketId).emit(preflight.event, {
+        // Fallback for legacy "game:time-up" just in case
+        io.to(socketId).emit("game:time-up", {
           sync: buildSessionSyncMeta(session),
         });
       }

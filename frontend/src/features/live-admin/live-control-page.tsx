@@ -258,6 +258,11 @@ export default function LiveControlPage() {
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
     });
 
+    s.on("game:sync", () => {
+      // Admin UI doesn't need to manually sync phase like players do
+      // as it derives state natively from the other authoritative events.
+    });
+
     s.on("game:answer-progress", ({ answeredCount, totalParticipants }) => {
       setAnswerProgress({ answered: answeredCount, total: totalParticipants });
     });
@@ -470,8 +475,8 @@ export default function LiveControlPage() {
                   onClick={music.togglePlay}
                   disabled={!music.youtubeVideoId}
                   className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${music.isPlaying
-                      ? "bg-gradient-to-br from-inf-red to-rose-600 text-white hover:from-red-700 hover:to-rose-700"
-                      : "bg-gradient-to-br from-inf-turquoise to-cyan-500 text-white hover:from-teal-600 hover:to-cyan-600"
+                    ? "bg-gradient-to-br from-inf-red to-rose-600 text-white hover:from-red-700 hover:to-rose-700"
+                    : "bg-gradient-to-br from-inf-turquoise to-cyan-500 text-white hover:from-teal-600 hover:to-cyan-600"
                     } disabled:opacity-40 disabled:cursor-not-allowed`}
                   aria-label={music.isPlaying ? t("live.pause") : t("live.play")}
                   title={music.isPlaying ? t("live.pause") : t("live.play")}
@@ -491,8 +496,8 @@ export default function LiveControlPage() {
                   onClick={music.toggleRepeat}
                   disabled={!music.youtubeVideoId}
                   className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${music.isRepeat
-                      ? "bg-gradient-to-br from-inf-yellow to-amber-500 text-white hover:from-yellow-500 hover:to-amber-600"
-                      : "bg-white/20 text-white/70 hover:bg-white/30 hover:text-white"
+                    ? "bg-gradient-to-br from-inf-yellow to-amber-500 text-white hover:from-yellow-500 hover:to-amber-600"
+                    : "bg-white/20 text-white/70 hover:bg-white/30 hover:text-white"
                     } disabled:opacity-40 disabled:cursor-not-allowed`}
                   aria-label={t("live.loop")}
                   title={t("live.loop")}
@@ -657,10 +662,10 @@ export default function LiveControlPage() {
               >
                 <div
                   className={`text-[14rem] font-black leading-none ${countdownNumber === 3
-                      ? "text-inf-red"
-                      : countdownNumber === 2
-                        ? "text-inf-yellow"
-                        : "text-inf-green"
+                    ? "text-inf-red"
+                    : countdownNumber === 2
+                      ? "text-inf-yellow"
+                      : "text-inf-green"
                     }`}
                 >
                   {countdownNumber}
@@ -692,10 +697,10 @@ export default function LiveControlPage() {
             <div className="flex justify-center mb-6">
               <motion.div
                 className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl font-black border-4 ${timeLeft > 10
-                    ? "border-green-400 text-green-400"
-                    : timeLeft > 5
-                      ? "border-yellow-400 text-yellow-400"
-                      : "border-red-400 text-red-400"
+                  ? "border-green-400 text-green-400"
+                  : timeLeft > 5
+                    ? "border-yellow-400 text-yellow-400"
+                    : "border-red-400 text-red-400"
                   }`}
                 animate={timeLeft <= 5 ? { scale: [1, 1.1, 1] } : {}}
                 transition={{ repeat: Infinity, duration: 0.5 }}
@@ -768,8 +773,8 @@ export default function LiveControlPage() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.08 }}
                       className={`rounded-xl border p-3 ${isCorrect
-                          ? "bg-green-500/20 border-green-400/50"
-                          : "bg-white/5 border-white/10"
+                        ? "bg-green-500/20 border-green-400/50"
+                        : "bg-white/5 border-white/10"
                         }`}
                     >
                       <p className={`text-3xl font-black ${isCorrect ? "text-green-300" : "text-white"}`}>
@@ -888,8 +893,8 @@ export default function LiveControlPage() {
                       <div
                         key={choice.id}
                         className={`rounded-xl p-3 border ${isCorrect
-                            ? "bg-green-500/20 border-green-400/50"
-                            : "bg-white/5 border-white/10"
+                          ? "bg-green-500/20 border-green-400/50"
+                          : "bg-white/5 border-white/10"
                           }`}
                       >
                         <div className="flex items-center justify-between mb-2">
@@ -994,8 +999,8 @@ export default function LiveControlPage() {
                       <div
                         key={selection.choiceId}
                         className={`relative overflow-hidden rounded-xl border-2 ${isCorrect
-                            ? "border-green-500 bg-green-500/20"
-                            : "border-white/20 bg-white/5"
+                          ? "border-green-500 bg-green-500/20"
+                          : "border-white/20 bg-white/5"
                           }`}
                       >
 
@@ -1080,12 +1085,12 @@ export default function LiveControlPage() {
                   <div className="flex items-center gap-3">
                     <span
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${i === 0
-                          ? "bg-yellow-500 text-black"
-                          : i === 1
-                            ? "bg-gray-400 text-black"
-                            : i === 2
-                              ? "bg-amber-700 text-white"
-                              : "bg-white/20 text-white"
+                        ? "bg-yellow-500 text-black"
+                        : i === 1
+                          ? "bg-gray-400 text-black"
+                          : i === 2
+                            ? "bg-amber-700 text-white"
+                            : "bg-white/20 text-white"
                         }`}
                     >
                       {p.rank}
