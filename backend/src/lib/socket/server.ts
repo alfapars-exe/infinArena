@@ -1648,7 +1648,10 @@ export function setupSocketHandlers(io: TypedServer) {
               })
             );
 
-            socket.emit("game:leaderboard", { rankings });
+            socket.emit("game:leaderboard", {
+              questionId: currentQ?.id ?? null,
+              rankings,
+            });
           }
         }
 
@@ -1817,13 +1820,21 @@ export function setupSocketHandlers(io: TypedServer) {
             );
           }
 
+          let participantCount = session?.totalParticipants ?? 0;
+          if (participantCount <= 0) {
+            participantCount = await getTotalParticipantCount(playerInfo.sessionId);
+            if (session) {
+              session.totalParticipants = participantCount;
+            }
+          }
+
           if (player) {
             io.to(`session:${playerInfo.sessionId}`).emit(
               "lobby:player-left",
               {
                 playerId: playerInfo.playerId,
                 nickname: player.nickname,
-                playerCount: session?.totalConnectedPlayers ?? 0,
+                playerCount: participantCount,
               }
             );
           }
@@ -2093,6 +2104,7 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 
   if (session.adminSocketId) {
     io.to(session.adminSocketId).emit("game:question-stats", {
+      questionId: currentQ.id,
       choiceSelections,
       unansweredPlayers,
       answeredPlayers,
@@ -2115,6 +2127,8 @@ async function handleTimeUp(io: TypedServer, session: ActiveSession) {
 async function sendLeaderboard(io: TypedServer, session: ActiveSession) {
   if (!session) return;
 
+  const questionId = getCurrentQuestion(session)?.id ?? null;
+
   const allPlayers = await db
     .select()
     .from(players)
@@ -2131,12 +2145,13 @@ async function sendLeaderboard(io: TypedServer, session: ActiveSession) {
   }));
 
   io.to(`session:${session.sessionId}`).emit("game:leaderboard", {
+    questionId,
     rankings,
   });
 
   for (const player of allPlayers) {
     if (!player.socketId) continue;
-    io.to(player.socketId).emit("game:leaderboard", { rankings });
+    io.to(player.socketId).emit("game:leaderboard", { questionId, rankings });
   }
 }
 

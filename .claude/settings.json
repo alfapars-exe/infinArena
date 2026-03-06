@@ -1,0 +1,53 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Bash(pnpm run *)",
+      "Bash(pnpm dev:*)",
+      "Bash(pnpm build*)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm typecheck*)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm install*)",
+      "Bash(pnpm l10n:*)",
+      "Bash(pnpm --dir backend *)",
+      "Bash(pnpm --dir frontend *)",
+      "Bash(npx drizzle-kit *)",
+      "Bash(npx tsx *)",
+      "Bash(node *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(wc *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(echo *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(pwd)",
+      "WebFetch(domain:*)",
+      "WebSearch",
+      "mcp__*"
+    ],
+    "deny": [],
+    "ask": [
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(git push *)",
+      "Bash(git reset --hard *)",
+      "Bash(git checkout -- *)",
+      "Bash(git branch -D *)",
+      "Bash(docker *)",
+      "Bash(kubectl *)",
+      "Bash(kill *)",
+      "Bash(killall *)"
+    ]
+  },
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70"
+  },
+  "respectGitignore": true,
+  "enableAllProjectMcpServers": true
+}

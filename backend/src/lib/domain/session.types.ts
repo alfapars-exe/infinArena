@@ -12,6 +12,7 @@ export interface SessionLookupResponse {
   quizTitle: string;
   pin: string;
   isLive: boolean;
+  playerCount: number;
 }
 
 export interface SessionLiveResponse {
@@ -20,4 +21,3 @@ export interface SessionLiveResponse {
   status: SessionStatus;
   isLive: boolean;
 }
-

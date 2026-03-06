@@ -76,6 +76,10 @@ export default function LiveControlPage() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const sessionIdRef = useRef<number | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionPayload | null>(null);
+  const currentQuestionMetaRef = useRef<{ id: number | null; serverStartTime: number }>({
+    id: null,
+    serverStartTime: 0,
+  });
   const [questionNumber, setQuestionNumber] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -148,9 +152,13 @@ export default function LiveControlPage() {
         if (!isActive || controller.signal.aborted) return;
 
         const resolvedSessionId = Number((data as { sessionId?: unknown })?.sessionId);
+        const resolvedPlayerCount = Number((data as { playerCount?: unknown })?.playerCount);
         if (Number.isInteger(resolvedSessionId) && resolvedSessionId > 0) {
           setSessionId(resolvedSessionId);
           setQuizTitle((data as { quizTitle?: string })?.quizTitle || quizDefaultTitle);
+          if (Number.isInteger(resolvedPlayerCount) && resolvedPlayerCount >= 0) {
+            setPlayerCount(resolvedPlayerCount);
+          }
           setPhase("lobby");
         }
       } catch (err) {
@@ -205,7 +213,10 @@ export default function LiveControlPage() {
     });
 
     s.on("lobby:player-joined", ({ playerId, nickname, avatar, playerCount: count }) => {
-      setLobbyPlayers((prev) => [...prev, { id: playerId, nickname, avatar }]);
+      setLobbyPlayers((prev) => [
+        ...prev.filter((player) => player.id !== playerId),
+        { id: playerId, nickname, avatar },
+      ]);
       setPlayerCount(count);
     });
 
@@ -228,6 +239,10 @@ export default function LiveControlPage() {
     });
 
     s.on("game:question-start", ({ question, questionNumber: qn, totalQuestions: tq, serverStartTime }) => {
+      currentQuestionMetaRef.current = {
+        id: question.id,
+        serverStartTime,
+      };
       setCurrentQuestion(question);
       setQuestionNumber(qn);
       setTotalQuestions(tq);
@@ -242,12 +257,26 @@ export default function LiveControlPage() {
     });
 
     s.on("game:question-stats", (data) => {
+      const activeQuestionId = currentQuestionMetaRef.current.id;
+      if (activeQuestionId !== null && data.questionId !== activeQuestionId) {
+        return;
+      }
       setStats(data);
+      setPlayerCount(data.totalPlayers);
       setPhase("stats");
     });
 
-    s.on("game:leaderboard", ({ rankings }) => {
+    s.on("game:leaderboard", ({ questionId, rankings }) => {
+      const activeQuestionId = currentQuestionMetaRef.current.id;
+      if (
+        activeQuestionId !== null &&
+        questionId !== null &&
+        questionId !== activeQuestionId
+      ) {
+        return;
+      }
       setLeaderboard(rankings);
+      setPlayerCount((prev) => (rankings.length > 0 ? rankings.length : prev));
       setPhase("leaderboard");
     });
 

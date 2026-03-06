@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ensureDbMigrations } from "@/lib/db/migrations";
-import { quizSessions, quizzes } from "@/lib/db/schema";
+import { players, quizSessions, quizzes } from "@/lib/db/schema";
 import type {
   SessionLiveResponse,
   SessionLookupResponse,
@@ -49,6 +49,11 @@ export async function getSessionByPin(pin: string): Promise<SessionLookupResult>
     return { ok: false, status: 410, message: "This quiz has already ended" };
   }
 
+  const participantRows = await db
+    .select({ id: players.id })
+    .from(players)
+    .where(eq(players.sessionId, row.id));
+
   return {
     ok: true,
     data: {
@@ -57,6 +62,7 @@ export async function getSessionByPin(pin: string): Promise<SessionLookupResult>
       quizTitle: row.quizTitle || "Quiz",
       pin: row.pin,
       isLive: row.isLive,
+      playerCount: participantRows.length,
     },
   };
 }
@@ -107,4 +113,3 @@ export async function markSessionLiveByPin(pin: string): Promise<SessionGoLiveRe
     },
   };
 }
-

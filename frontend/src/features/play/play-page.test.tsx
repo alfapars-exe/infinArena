@@ -94,7 +94,29 @@ vi.mock("motion/react", async () => {
   };
 });
 
-function createQuestion(questionType: "multiple_choice" | "multi_select" | "ordering" | "text_input") {
+type SupportedQuestionType =
+  | "multiple_choice"
+  | "multi_select"
+  | "ordering"
+  | "text_input";
+
+type TestQuestion = {
+  id: number;
+  questionText: string;
+  questionType: SupportedQuestionType;
+  timeLimitSeconds: number;
+  basePoints: number;
+  deductionPoints: number;
+  deductionInterval: number;
+  mediaUrl: null;
+  backgroundUrl: null;
+  choices: Array<{ id: number; choiceText: string; orderIndex: number }>;
+};
+
+function createQuestion(
+  questionType: SupportedQuestionType,
+  overrides: Partial<TestQuestion> = {}
+): TestQuestion {
   const base = {
     id: 99,
     questionText: `Question ${questionType}`,
@@ -110,42 +132,49 @@ function createQuestion(questionType: "multiple_choice" | "multi_select" | "orde
   if (questionType === "text_input") {
     return {
       ...base,
-      choices: [],
+      choices: overrides.choices ?? [],
+      ...overrides,
     };
   }
 
   if (questionType === "ordering") {
     return {
       ...base,
-      choices: [
+      choices: overrides.choices ?? [
         { id: 1, choiceText: "Step A", orderIndex: 0 },
         { id: 2, choiceText: "Step B", orderIndex: 1 },
         { id: 3, choiceText: "Step C", orderIndex: 2 },
       ],
+      ...overrides,
     };
   }
 
   if (questionType === "multi_select") {
     return {
       ...base,
-      choices: [
+      choices: overrides.choices ?? [
         { id: 1, choiceText: "Choice A", orderIndex: 0 },
         { id: 2, choiceText: "Choice B", orderIndex: 1 },
         { id: 3, choiceText: "Choice C", orderIndex: 2 },
       ],
+      ...overrides,
     };
   }
 
   return {
     ...base,
-    choices: [
+    choices: overrides.choices ?? [
       { id: 1, choiceText: "Choice A", orderIndex: 0 },
       { id: 2, choiceText: "Choice B", orderIndex: 1 },
     ],
+    ...overrides,
   };
 }
 
-function renderQuestionScreen(questionType: "multiple_choice" | "multi_select" | "ordering" | "text_input") {
+function renderQuestionScreen(
+  questionType: SupportedQuestionType,
+  overrides: Partial<TestQuestion> = {}
+) {
   render(<PlayPage />);
 
   act(() => {
@@ -154,7 +183,7 @@ function renderQuestionScreen(questionType: "multiple_choice" | "multi_select" |
 
   act(() => {
     mockSocket.trigger("game:question-start", {
-      question: createQuestion(questionType),
+      question: createQuestion(questionType, overrides),
       questionNumber: 1,
       totalQuestions: 5,
       serverStartTime: Date.now(),
@@ -389,5 +418,96 @@ describe("PlayPage authoritative answer recovery flow", () => {
     const answerEmits = mockSocket.getAnswerEmits();
     expect(answerEmits).toHaveLength(2);
     expect(answerEmits[1]?.payload).toMatchObject({ choiceId: 2 });
+  });
+
+  it("ignores stale leaderboard events after a newer question already started", () => {
+    renderQuestionScreen("multiple_choice", {
+      id: 99,
+      questionText: "First question",
+      choices: [
+        { id: 1, choiceText: "Old Choice A", orderIndex: 0 },
+        { id: 2, choiceText: "Old Choice B", orderIndex: 1 },
+      ],
+    });
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
+
+    act(() => {
+      mockSocket.trigger("game:question-start", {
+        question: createQuestion("multiple_choice", {
+          id: 100,
+          questionText: "Fresh question",
+          choices: [
+            { id: 11, choiceText: "Fresh Choice", orderIndex: 0 },
+            { id: 12, choiceText: "Backup Choice", orderIndex: 1 },
+          ],
+        }),
+        questionNumber: 2,
+        totalQuestions: 5,
+        serverStartTime: Date.now() + 1000,
+      });
+      vi.advanceTimersByTime(100);
+    });
+
+    act(() => {
+      mockSocket.trigger("game:leaderboard", {
+        questionId: 99,
+        rankings: [
+          {
+            playerId: 7,
+            nickname: "Old Leaderboard",
+            avatar: "A",
+            totalScore: 1000,
+            rank: 1,
+          },
+        ],
+      });
+    });
+
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(initialRejoinCount + 1);
+    expect(screen.getByRole("button", { name: /fresh choice/i })).toBeInTheDocument();
+    expect(screen.queryByText(/old leaderboard/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps polling authoritative rejoin while waiting on the leaderboard screen", () => {
+    renderQuestionScreen("multiple_choice");
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
+
+    act(() => {
+      mockSocket.trigger("game:batch-results", {
+        questionId: 99,
+        isCorrect: true,
+        pointsAwarded: 1000,
+        streakBonus: 0,
+        totalScore: 1000,
+        correctChoiceId: 1,
+        streak: 1,
+        playerAnswer: "Choice A",
+        correctAnswerText: ["Choice A"],
+      });
+      mockSocket.trigger("game:leaderboard", {
+        questionId: 99,
+        rankings: [
+          {
+            playerId: 7,
+            nickname: "Player One",
+            avatar: "A",
+            totalScore: 1000,
+            rank: 1,
+          },
+        ],
+      });
+      vi.advanceTimersByTime(2000);
+    });
+
+    const leaderboardRejoinCount = mockSocket.getEmits("player:rejoin").length;
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(leaderboardRejoinCount).toBeGreaterThanOrEqual(initialRejoinCount);
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(
+      leaderboardRejoinCount + 1
+    );
   });
 });

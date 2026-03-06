@@ -770,7 +770,16 @@ export default function PlayPage() {
       setPhase("stats");
     });
 
-    s.on("game:leaderboard", ({ rankings }) => {
+    s.on("game:leaderboard", ({ questionId, rankings }) => {
+      const activeQuestionId = currentQuestionMetaRef.current.id;
+      if (
+        activeQuestionId !== null &&
+        questionId !== null &&
+        questionId !== activeQuestionId
+      ) {
+        emitRejoinFromCache(s, { force: true });
+        return;
+      }
       setLeaderboard(rankings);
       if (leaderboardDelayTimerRef.current !== null) {
         window.clearTimeout(leaderboardDelayTimerRef.current);
@@ -863,7 +872,12 @@ export default function PlayPage() {
   }, [socket, emitRejoinFromCache]);
 
   useEffect(() => {
-    if (!socket || phase !== "answered") return;
+    if (
+      !socket ||
+      (phase !== "answered" && phase !== "result" && phase !== "leaderboard")
+    ) {
+      return;
+    }
 
     const interval = window.setInterval(() => {
       if (!socket.connected) return;

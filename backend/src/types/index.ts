@@ -43,6 +43,7 @@ export interface AnswerAck {
 }
 
 export interface QuestionStats {
+  questionId: number;
   choiceSelections: {
     choiceId: number;
     choiceText: string;
@@ -77,6 +78,11 @@ export interface QuestionStats {
   questionNumber: number;
   totalQuestions: number;
   remainingQuestions: number;
+}
+
+export interface LeaderboardPayload {
+  questionId: number | null;
+  rankings: PlayerRanking[];
 }
 
 export interface BatchAnswerResult {
@@ -155,7 +161,7 @@ export interface ServerToClientEvents {
   "game:batch-results": (data: BatchAnswerResult) => void;
   "game:answer-result": (data: AnswerResult) => void;
   "game:question-stats": (data: QuestionStats) => void;
-  "game:leaderboard": (data: { rankings: PlayerRanking[] }) => void;
+  "game:leaderboard": (data: LeaderboardPayload) => void;
   "game:quiz-ended": (data: { finalRankings: PlayerRanking[] }) => void;
   "player:joined-success": (data: {
     playerId: number;
