@@ -1350,11 +1350,17 @@ export function setupSocketHandlers(io: TypedServer) {
     logger.socket.debug(`Connected: ${socket.id}`);
     socketConnectionsGauge.inc();
 
-    // Per-IP connection limiting (max 20 concurrent connections per IP)
-    const clientIp = socket.handshake.address;
+    // Extract real IP from proxy headers if available, otherwise fallback to direct address
+    const xForwardedFor = socket.handshake.headers["x-forwarded-for"];
+    const clientIp = typeof xForwardedFor === "string"
+      ? xForwardedFor.split(",")[0].trim()
+      : socket.handshake.address;
+
     const currentCount = (ipConnectionCounts.get(clientIp) || 0) + 1;
     ipConnectionCounts.set(clientIp, currentCount);
-    if (currentCount > 20) {
+
+    // Increased to 200 to allow entire classrooms/schools on the same WiFi network
+    if (currentCount > 200) {
       logger.socket.warn(`Too many connections from IP ${clientIp}, disconnecting`);
       socket.disconnect(true);
       return;
