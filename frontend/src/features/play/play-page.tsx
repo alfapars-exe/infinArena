@@ -20,6 +20,8 @@ import type {
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 type PlayerAnswerPayload = Parameters<ClientToServerEvents["player:answer"]>[0];
+type PlayerRejoinedSuccessPayload =
+  Parameters<ServerToClientEvents["player:rejoined-success"]>[0];
 
 const CHOICE_COLORS = [
   "bg-inf-red hover:bg-red-700",
@@ -239,6 +241,40 @@ function mapServerPhaseToClientPhase(
   return "lobby";
 }
 
+function normalizeRejoinSnapshotServerStartTime(
+  value: number | null | undefined
+): number | null {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    return null;
+  }
+  return normalized;
+}
+
+function isOlderRejoinSnapshot(
+  snapshotTime: number | null | undefined,
+  currentServerStartTime: number
+): boolean {
+  return (
+    snapshotTime !== null &&
+    snapshotTime !== undefined &&
+    currentServerStartTime > 0 &&
+    snapshotTime < currentServerStartTime
+  );
+}
+
+function pointsToDifferentQuestion(
+  snapshotTime: number | null | undefined,
+  currentServerStartTime: number
+): boolean {
+  return (
+    snapshotTime !== null &&
+    snapshotTime !== undefined &&
+    snapshotTime > 0 &&
+    snapshotTime !== currentServerStartTime
+  );
+}
+
 type Phase =
   | "nickname"
   | "lobby"
@@ -308,6 +344,11 @@ export default function PlayPage() {
   const lastRejoinSocketIdRef = useRef<string | null>(null);
   const lastBatchResultAtRef = useRef<number>(0);
   const leaderboardDelayTimerRef = useRef<number | null>(null);
+  const awaitingQuestionSyncRef = useRef<{
+    questionId: number | null;
+    serverStartTime: number | null;
+  } | null>(null);
+  const awaitingQuestionSyncTimerRef = useRef<number | null>(null);
 
   const [batchResult, setBatchResult] = useState<BatchAnswerResult | null>(null);
   const [questionStats, setQuestionStats] = useState<QuestionStats | null>(null);
@@ -447,6 +488,45 @@ export default function PlayPage() {
     }
   }, []);
 
+  const clearAwaitingQuestionSync = useCallback(() => {
+    awaitingQuestionSyncRef.current = null;
+    if (awaitingQuestionSyncTimerRef.current !== null) {
+      window.clearTimeout(awaitingQuestionSyncTimerRef.current);
+      awaitingQuestionSyncTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleAwaitingQuestionSync = useCallback((
+    targetSocket: TypedSocket,
+    snapshot: Pick<
+      PlayerRejoinedSuccessPayload,
+      "phaseQuestionId" | "phaseQuestionServerStartTime"
+    >
+  ) => {
+    const normalizedServerStartTime = normalizeRejoinSnapshotServerStartTime(
+      snapshot.phaseQuestionServerStartTime
+    );
+    if (normalizedServerStartTime === null) {
+      emitRejoinFromCache(targetSocket, { force: true });
+      return;
+    }
+
+    clearAwaitingQuestionSync();
+    awaitingQuestionSyncRef.current = {
+      questionId:
+        Number.isInteger(snapshot.phaseQuestionId) &&
+        Number(snapshot.phaseQuestionId) > 0
+          ? Number(snapshot.phaseQuestionId)
+          : null,
+      serverStartTime: normalizedServerStartTime,
+    };
+    awaitingQuestionSyncTimerRef.current = window.setTimeout(() => {
+      awaitingQuestionSyncTimerRef.current = null;
+      if (!targetSocket.connected) return;
+      emitRejoinFromCache(targetSocket, { force: true });
+    }, 1000);
+  }, [clearAwaitingQuestionSync, emitRejoinFromCache]);
+
   const releaseAnswerSubmission = useCallback((options?: {
     didSubmit?: boolean;
     errorMessage?: string;
@@ -568,7 +648,15 @@ export default function PlayPage() {
       }
     );
 
-    s.on("player:rejoined-success", ({ playerId: pid, quizTitle: qt, avatar: av, totalScore: ts, phase: serverPhase }) => {
+    s.on("player:rejoined-success", ({
+      playerId: pid,
+      quizTitle: qt,
+      avatar: av,
+      totalScore: ts,
+      phase: serverPhase,
+      phaseQuestionId,
+      phaseQuestionServerStartTime,
+    }) => {
       setPlayerId(pid);
       setQuizTitle(qt);
       setAvatar(av);
@@ -577,13 +665,108 @@ export default function PlayPage() {
       if (cachedSession?.nickname) {
         setNickname(cachedSession.nickname);
       }
+
+      const normalizedPhaseQuestionId =
+        Number.isInteger(phaseQuestionId) && Number(phaseQuestionId) > 0
+          ? Number(phaseQuestionId)
+          : null;
+      const normalizedPhaseQuestionServerStartTime =
+        normalizeRejoinSnapshotServerStartTime(phaseQuestionServerStartTime);
+      const currentQuestionMeta = currentQuestionMetaRef.current;
+      const hasMatchingCurrentQuestionSnapshot =
+        normalizedPhaseQuestionServerStartTime !== null &&
+        currentQuestionMeta.serverStartTime > 0 &&
+        normalizedPhaseQuestionServerStartTime ===
+          currentQuestionMeta.serverStartTime &&
+        (normalizedPhaseQuestionId === null ||
+          currentQuestionMeta.id === null ||
+          normalizedPhaseQuestionId === currentQuestionMeta.id);
+
+      if (
+        isOlderRejoinSnapshot(
+          normalizedPhaseQuestionServerStartTime,
+          currentQuestionMeta.serverStartTime
+        )
+      ) {
+        emitRejoinFromCache(s, { force: true });
+        return;
+      }
+
       const nextPhase = mapServerPhaseToClientPhase(serverPhase);
       if (isSubmittingAnswerRef.current) {
+        if (
+          (serverPhase === "question" || serverPhase === "answered") &&
+          !hasMatchingCurrentQuestionSnapshot &&
+          pointsToDifferentQuestion(
+            normalizedPhaseQuestionServerStartTime,
+            currentQuestionMeta.serverStartTime
+          )
+        ) {
+          scheduleAwaitingQuestionSync(s, {
+            phaseQuestionId: normalizedPhaseQuestionId,
+            phaseQuestionServerStartTime:
+              normalizedPhaseQuestionServerStartTime,
+          });
+          return;
+        }
+        clearAwaitingQuestionSync();
         releaseAnswerSubmission({
           didSubmit: serverPhase === "answered",
           nextPhase,
         });
-      } else {
+        return;
+      }
+
+      if (serverPhase === "lobby") {
+        clearAwaitingQuestionSync();
+        setPhase("lobby");
+        return;
+      }
+
+      if (serverPhase === "ended") {
+        clearAwaitingQuestionSync();
+        setPhase("ended");
+        return;
+      }
+
+      if (serverPhase === "answered" && hasMatchingCurrentQuestionSnapshot) {
+        clearAwaitingQuestionSync();
+        setDidSubmit(true);
+        setPhase("answered");
+        return;
+      }
+
+      if (serverPhase === "question" || serverPhase === "answered") {
+        if (
+          pointsToDifferentQuestion(
+            normalizedPhaseQuestionServerStartTime,
+            currentQuestionMeta.serverStartTime
+          )
+        ) {
+          scheduleAwaitingQuestionSync(s, {
+            phaseQuestionId: normalizedPhaseQuestionId,
+            phaseQuestionServerStartTime:
+              normalizedPhaseQuestionServerStartTime,
+          });
+        }
+        return;
+      }
+
+      if (serverPhase === "leaderboard") {
+        if (
+          phaseRef.current !== "result" &&
+          phaseRef.current !== "leaderboard"
+        ) {
+          scheduleAwaitingQuestionSync(s, {
+            phaseQuestionId: normalizedPhaseQuestionId,
+            phaseQuestionServerStartTime:
+              normalizedPhaseQuestionServerStartTime,
+          });
+        }
+        return;
+      }
+
+      if (nextPhase !== phaseRef.current) {
         setPhase(nextPhase);
       }
     });
@@ -658,6 +841,10 @@ export default function PlayPage() {
     s.on(
       "game:question-start",
       ({ question, questionNumber: qn, totalQuestions: tq, serverStartTime }) => {
+        clearAwaitingQuestionSync();
+        setLeaderboard([]);
+        setQuestionStats(null);
+
         const isDuplicateQuestionStart =
           currentQuestionMetaRef.current.id === question.id &&
           currentQuestionMetaRef.current.serverStartTime === serverStartTime;
@@ -712,6 +899,7 @@ export default function PlayPage() {
     );
 
     s.on("game:answer-ack", () => {
+      clearAwaitingQuestionSync();
       releaseAnswerSubmission({
         didSubmit: true,
         nextPhase: "answered",
@@ -738,6 +926,7 @@ export default function PlayPage() {
         emitRejoinFromCache(s, { force: true });
         return;
       }
+      clearAwaitingQuestionSync();
       releaseAnswerSubmission({
         didSubmit: result.playerAnswer !== null && result.playerAnswer !== undefined,
       });
@@ -780,6 +969,7 @@ export default function PlayPage() {
         emitRejoinFromCache(s, { force: true });
         return;
       }
+      clearAwaitingQuestionSync();
       setLeaderboard(rankings);
       if (leaderboardDelayTimerRef.current !== null) {
         window.clearTimeout(leaderboardDelayTimerRef.current);
@@ -798,6 +988,7 @@ export default function PlayPage() {
     });
 
     s.on("game:quiz-ended", ({ finalRankings: fr }) => {
+      clearAwaitingQuestionSync();
       if (leaderboardDelayTimerRef.current !== null) {
         window.clearTimeout(leaderboardDelayTimerRef.current);
         leaderboardDelayTimerRef.current = null;
@@ -823,6 +1014,7 @@ export default function PlayPage() {
     });
 
     return () => {
+      clearAwaitingQuestionSync();
       clearSubmitWatchdog();
       if (timerRafRef.current) cancelAnimationFrame(timerRafRef.current);
       if (leaderboardDelayTimerRef.current !== null) {
@@ -836,6 +1028,7 @@ export default function PlayPage() {
       s.disconnect();
     };
   }, [
+    clearAwaitingQuestionSync,
     clearSubmitWatchdog,
     emitRejoinFromCache,
     hasValidPin,
@@ -843,6 +1036,7 @@ export default function PlayPage() {
     readCachedSession,
     releaseAnswerSubmission,
     saveSession,
+    scheduleAwaitingQuestionSync,
     sessionCacheKey,
     startSyncedTimer,
   ]);

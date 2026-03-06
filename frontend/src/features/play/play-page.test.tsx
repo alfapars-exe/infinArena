@@ -175,6 +175,8 @@ function renderQuestionScreen(
   questionType: SupportedQuestionType,
   overrides: Partial<TestQuestion> = {}
 ) {
+  const question = createQuestion(questionType, overrides);
+  const serverStartTime = Date.now();
   render(<PlayPage />);
 
   act(() => {
@@ -183,13 +185,15 @@ function renderQuestionScreen(
 
   act(() => {
     mockSocket.trigger("game:question-start", {
-      question: createQuestion(questionType, overrides),
+      question,
       questionNumber: 1,
       totalQuestions: 5,
-      serverStartTime: Date.now(),
+      serverStartTime,
     });
     vi.advanceTimersByTime(100);
   });
+
+  return { question, serverStartTime };
 }
 
 describe("PlayPage authoritative answer recovery flow", () => {
@@ -369,7 +373,7 @@ describe("PlayPage authoritative answer recovery flow", () => {
   });
 
   it("keeps the form locked when rejoin confirms the answer was already accepted", () => {
-    renderQuestionScreen("multiple_choice");
+    const { question, serverStartTime } = renderQuestionScreen("multiple_choice");
     const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
 
     fireEvent.click(screen.getByRole("button", { name: /choice a/i }));
@@ -389,6 +393,8 @@ describe("PlayPage authoritative answer recovery flow", () => {
         avatar: "A",
         totalScore: 1000,
         phase: "answered",
+        phaseQuestionId: question.id,
+        phaseQuestionServerStartTime: serverStartTime,
       });
     });
 
@@ -469,12 +475,12 @@ describe("PlayPage authoritative answer recovery flow", () => {
   });
 
   it("keeps polling authoritative rejoin while waiting on the leaderboard screen", () => {
-    renderQuestionScreen("multiple_choice");
+    const { question, serverStartTime } = renderQuestionScreen("multiple_choice");
     const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
 
     act(() => {
       mockSocket.trigger("game:batch-results", {
-        questionId: 99,
+        questionId: question.id,
         isCorrect: true,
         pointsAwarded: 1000,
         streakBonus: 0,
@@ -485,7 +491,7 @@ describe("PlayPage authoritative answer recovery flow", () => {
         correctAnswerText: ["Choice A"],
       });
       mockSocket.trigger("game:leaderboard", {
-        questionId: 99,
+        questionId: question.id,
         rankings: [
           {
             playerId: 7,
@@ -509,5 +515,165 @@ describe("PlayPage authoritative answer recovery flow", () => {
     expect(mockSocket.getEmits("player:rejoin")).toHaveLength(
       leaderboardRejoinCount + 1
     );
+  });
+
+  it("ignores stale player rejoin responses after a newer question already started", () => {
+    const firstRender = renderQuestionScreen("multiple_choice", {
+      id: 99,
+      questionText: "First question",
+      choices: [
+        { id: 1, choiceText: "Old Choice A", orderIndex: 0 },
+        { id: 2, choiceText: "Old Choice B", orderIndex: 1 },
+      ],
+    });
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
+
+    const nextQuestion = createQuestion("multiple_choice", {
+      id: 100,
+      questionText: "Fresh question",
+      choices: [
+        { id: 11, choiceText: "Fresh Choice", orderIndex: 0 },
+        { id: 12, choiceText: "Backup Choice", orderIndex: 1 },
+      ],
+    });
+    const nextServerStartTime = firstRender.serverStartTime + 5000;
+
+    act(() => {
+      mockSocket.trigger("game:question-start", {
+        question: nextQuestion,
+        questionNumber: 2,
+        totalQuestions: 5,
+        serverStartTime: nextServerStartTime,
+      });
+      vi.advanceTimersByTime(100);
+    });
+
+    act(() => {
+      mockSocket.trigger("player:rejoined-success", {
+        playerId: 7,
+        sessionId: 33,
+        quizTitle: "Quiz",
+        avatar: "A",
+        totalScore: 1000,
+        phase: "leaderboard",
+        phaseQuestionId: firstRender.question.id,
+        phaseQuestionServerStartTime: firstRender.serverStartTime,
+      });
+    });
+
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(initialRejoinCount + 1);
+    expect(screen.getByRole("button", { name: /fresh choice/i })).toBeInTheDocument();
+    expect(screen.queryByText(/leaderboard/i)).not.toBeInTheDocument();
+  });
+
+  it("waits for game:question-start before leaving the leaderboard on question rejoin snapshots", () => {
+    const { question, serverStartTime } = renderQuestionScreen("multiple_choice");
+    const initialRejoinCount = mockSocket.getEmits("player:rejoin").length;
+
+    act(() => {
+      mockSocket.trigger("game:batch-results", {
+        questionId: question.id,
+        isCorrect: true,
+        pointsAwarded: 1000,
+        streakBonus: 0,
+        totalScore: 1000,
+        correctChoiceId: 1,
+        streak: 1,
+        playerAnswer: "Choice A",
+        correctAnswerText: ["Choice A"],
+      });
+      mockSocket.trigger("game:leaderboard", {
+        questionId: question.id,
+        rankings: [
+          {
+            playerId: 7,
+            nickname: "Player One",
+            avatar: "A",
+            totalScore: 1000,
+            rank: 1,
+          },
+        ],
+      });
+      vi.advanceTimersByTime(2000);
+    });
+
+    const leaderboardRejoinCount = mockSocket.getEmits("player:rejoin").length;
+
+    act(() => {
+      mockSocket.trigger("player:rejoined-success", {
+        playerId: 7,
+        sessionId: 33,
+        quizTitle: "Quiz",
+        avatar: "A",
+        totalScore: 1000,
+        phase: "question",
+        phaseQuestionId: 100,
+        phaseQuestionServerStartTime: serverStartTime + 5000,
+      });
+    });
+
+    expect(screen.getByText(/player one/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /choice a/i })).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(mockSocket.getEmits("player:rejoin")).toHaveLength(
+      leaderboardRejoinCount + 1
+    );
+  });
+
+  it("clears stale leaderboard state when the next question starts", () => {
+    const { question, serverStartTime } = renderQuestionScreen("multiple_choice");
+
+    act(() => {
+      mockSocket.trigger("game:batch-results", {
+        questionId: question.id,
+        isCorrect: true,
+        pointsAwarded: 1000,
+        streakBonus: 0,
+        totalScore: 1000,
+        correctChoiceId: 1,
+        streak: 1,
+        playerAnswer: "Choice A",
+        correctAnswerText: ["Choice A"],
+      });
+      mockSocket.trigger("game:leaderboard", {
+        questionId: question.id,
+        rankings: [
+          {
+            playerId: 7,
+            nickname: "Player One",
+            avatar: "A",
+            totalScore: 1000,
+            rank: 1,
+          },
+        ],
+      });
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(screen.getByText(/player one/i)).toBeInTheDocument();
+
+    act(() => {
+      mockSocket.trigger("game:question-start", {
+        question: createQuestion("multiple_choice", {
+          id: 101,
+          questionText: "Another question",
+          choices: [
+            { id: 21, choiceText: "Next Choice", orderIndex: 0 },
+            { id: 22, choiceText: "Other Choice", orderIndex: 1 },
+          ],
+        }),
+        questionNumber: 2,
+        totalQuestions: 5,
+        serverStartTime: serverStartTime + 5000,
+      });
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(screen.queryByText(/player one/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /next choice/i })).toBeInTheDocument();
   });
 });

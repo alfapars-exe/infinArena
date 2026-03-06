@@ -176,6 +176,8 @@ export interface ServerToClientEvents {
     avatar: string;
     totalScore: number;
     phase: "lobby" | "question" | "answered" | "leaderboard" | "ended";
+    phaseQuestionId?: number | null;
+    phaseQuestionServerStartTime?: number | null;
   }) => void;
   "session:admin-disconnected": () => void;
   "session:live": () => void;

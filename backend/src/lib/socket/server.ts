@@ -90,6 +90,12 @@ type AnswerPreflightResult =
       event: "game:time-up";
     };
 
+type PlayerRejoinSnapshot = {
+  phase: "lobby" | "question" | "answered" | "leaderboard" | "ended";
+  phaseQuestionId: number | null;
+  phaseQuestionServerStartTime: number | null;
+};
+
 const ANSWER_ERROR_MESSAGES = {
   alreadyAnswered: "Already answered",
   invalidPayload: "Invalid answer data",
@@ -261,6 +267,55 @@ function emitSocketError(
   payload: SocketErrorPayload
 ): void {
   io.to(socketId).emit("error", payload);
+}
+
+function buildPlayerRejoinSnapshot(
+  session: ActiveSession | undefined,
+  playerId: number,
+  dbSessionStatus: "lobby" | "in_progress" | "completed"
+): PlayerRejoinSnapshot {
+  if (dbSessionStatus === "completed") {
+    return {
+      phase: "ended",
+      phaseQuestionId: null,
+      phaseQuestionServerStartTime: null,
+    };
+  }
+
+  if (dbSessionStatus !== "in_progress" || !session) {
+    return {
+      phase: "lobby",
+      phaseQuestionId: null,
+      phaseQuestionServerStartTime: null,
+    };
+  }
+
+  const currentQ = getCurrentQuestion(session);
+  const phaseQuestionId = currentQ?.id ?? null;
+  const phaseQuestionServerStartTime =
+    session.questionStartTime > 0 ? session.questionStartTime : null;
+
+  if (!currentQ) {
+    return {
+      phase: "question",
+      phaseQuestionId,
+      phaseQuestionServerStartTime,
+    };
+  }
+
+  if (!session.timer) {
+    return {
+      phase: "leaderboard",
+      phaseQuestionId,
+      phaseQuestionServerStartTime,
+    };
+  }
+
+  return {
+    phase: hasAcceptedAnswer(session, playerId) ? "answered" : "question",
+    phaseQuestionId,
+    phaseQuestionServerStartTime,
+  };
 }
 
 function normalizeLoadedQuestion(
@@ -1552,20 +1607,12 @@ export function setupSocketHandlers(io: TypedServer) {
         if (!session && dbSession.status === "in_progress") {
           session = await recoverActiveSessionIfPossible(io, dbSession.id);
         }
-        let phase: "lobby" | "question" | "answered" | "leaderboard" | "ended" = "lobby";
-        if (dbSession.status === "completed") {
-          phase = "ended";
-        } else if (dbSession.status === "in_progress") {
-          if (session && getCurrentQuestion(session)) {
-            phase = session.timer
-              ? hasAcceptedAnswer(session, player.id)
-                ? "answered"
-                : "question"
-              : "leaderboard";
-          } else {
-            phase = "question";
-          }
-        }
+        const rejoinSnapshot = buildPlayerRejoinSnapshot(
+          session,
+          player.id,
+          dbSession.status
+        );
+        const { phase } = rejoinSnapshot;
 
         if (session) {
           session.totalConnectedPlayers = await getLiveConnectedPlayerCount(
@@ -1581,6 +1628,9 @@ export function setupSocketHandlers(io: TypedServer) {
           avatar: player.avatar || "🎮",
           totalScore: player.totalScore,
           phase,
+          phaseQuestionId: rejoinSnapshot.phaseQuestionId,
+          phaseQuestionServerStartTime:
+            rejoinSnapshot.phaseQuestionServerStartTime,
         });
 
         if (session) {
@@ -2215,6 +2265,7 @@ export function handleTimerExpiry(sessionId: number): void {
 
 export const __test__ = {
   applyChoiceCountDeltas,
+  buildPlayerRejoinSnapshot,
   createSocketErrorPayload,
   hasAcceptedAnswer,
   normalizeLoadedQuestion,

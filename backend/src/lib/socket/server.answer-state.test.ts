@@ -203,3 +203,69 @@ test("stale answer preflight returns resync question-start payload instead of so
   assert.equal(result.payload.question.id, question.id);
   assert.equal(result.payload.serverStartTime, session.questionStartTime);
 });
+
+test("buildPlayerRejoinSnapshot returns active question metadata while the timer is running", () => {
+  const question = __test__.normalizeLoadedQuestion(
+    createQuestionRecord(),
+    createChoiceRecords()
+  );
+  const session = createSession(question);
+
+  const snapshot = __test__.buildPlayerRejoinSnapshot(
+    session,
+    77,
+    "in_progress"
+  );
+
+  assert.equal(snapshot.phase, "question");
+  assert.equal(snapshot.phaseQuestionId, question.id);
+  assert.equal(
+    snapshot.phaseQuestionServerStartTime,
+    session.questionStartTime
+  );
+});
+
+test("buildPlayerRejoinSnapshot returns leaderboard metadata after time-up", () => {
+  const question = __test__.normalizeLoadedQuestion(
+    createQuestionRecord(),
+    createChoiceRecords()
+  );
+  const session = createSession(question);
+  session.timer = null;
+  session.pendingAnswers.set(77, createPendingAnswer(77));
+
+  const snapshot = __test__.buildPlayerRejoinSnapshot(
+    session,
+    77,
+    "in_progress"
+  );
+
+  assert.equal(snapshot.phase, "leaderboard");
+  assert.equal(snapshot.phaseQuestionId, question.id);
+  assert.equal(
+    snapshot.phaseQuestionServerStartTime,
+    session.questionStartTime
+  );
+});
+
+test("buildPlayerRejoinSnapshot returns null question metadata outside active gameplay", () => {
+  const question = __test__.normalizeLoadedQuestion(
+    createQuestionRecord(),
+    createChoiceRecords()
+  );
+  const session = createSession(question);
+
+  const lobbySnapshot = __test__.buildPlayerRejoinSnapshot(session, 77, "lobby");
+  assert.equal(lobbySnapshot.phase, "lobby");
+  assert.equal(lobbySnapshot.phaseQuestionId, null);
+  assert.equal(lobbySnapshot.phaseQuestionServerStartTime, null);
+
+  const endedSnapshot = __test__.buildPlayerRejoinSnapshot(
+    session,
+    77,
+    "completed"
+  );
+  assert.equal(endedSnapshot.phase, "ended");
+  assert.equal(endedSnapshot.phaseQuestionId, null);
+  assert.equal(endedSnapshot.phaseQuestionServerStartTime, null);
+});
