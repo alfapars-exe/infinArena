@@ -1,0 +1,16 @@
+{
+  "name": "loadtest",
+  "version": "1.0.0",
+  "description": "k6-based load test scenarios for the infinArena backend.",
+  "main": "scenario-1000-users.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}
